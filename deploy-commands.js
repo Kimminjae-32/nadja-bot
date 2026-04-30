@@ -41,6 +41,6 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try {
         console.log('⏳ 명령어 목록 업데이트 중...');
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-        console.log('✅ 업데이트 성공! 디스코드에서 Ctrl + R을 눌러 새로고침 하세요.');
+        console.log('✅ 업데이트 성공! 디스코드 새로고침(Ctrl+R)을 해주세요.');
     } catch (error) { console.error(error); }
 })();
