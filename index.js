@@ -412,23 +412,38 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 const { userNum, nickname: realNick } = userData.user;
 
-                // 현재 시즌 ID 조회
+                // 현재 시즌 ID 조회 (/v1/data/Season)
                 let seasonId = 0;
                 try {
-                    const seasonRes  = await fetch(`${BASE_URL}/v1/season`, { headers: { 'x-api-key': ER_API_KEY } });
+                    const seasonRes  = await fetch(`${BASE_URL}/v1/data/Season`, { headers: { 'x-api-key': ER_API_KEY } });
                     const seasonData = await seasonRes.json();
-                    const current = seasonData.seasons?.find(s => s.isCurrent);
+                    const seasons = seasonData.data?.Season ?? seasonData.Season ?? [];
+                    const current = seasons.find(s => s.isCurrent) ?? seasons.at(-1);
                     if (current?.seasonID) seasonId = current.seasonID;
-                } catch { /* 실패 시 0 유지 */ }
+                    console.log(`[전적] season raw:`, JSON.stringify(seasonData).slice(0, 300));
+                } catch (e) { console.log('[전적] season fetch failed:', e.message); }
 
-                const [statsRes, rankRes] = await Promise.all([
-                    fetch(`${BASE_URL}/v1/user/stats/${userNum}/${seasonId}`, { headers: { 'x-api-key': ER_API_KEY } }),
-                    fetch(`${BASE_URL}/v1/rank/${userNum}/${seasonId}`,       { headers: { 'x-api-key': ER_API_KEY } })
+                // stats + 모드별 rank(1/2/3) 병렬 요청
+                const [statsRes, rank1Res, rank2Res, rank3Res] = await Promise.all([
+                    fetch(`${BASE_URL}/v1/user/stats/${userNum}/${seasonId}`,   { headers: { 'x-api-key': ER_API_KEY } }),
+                    fetch(`${BASE_URL}/v1/rank/${userNum}/${seasonId}/1`,        { headers: { 'x-api-key': ER_API_KEY } }),
+                    fetch(`${BASE_URL}/v1/rank/${userNum}/${seasonId}/2`,        { headers: { 'x-api-key': ER_API_KEY } }),
+                    fetch(`${BASE_URL}/v1/rank/${userNum}/${seasonId}/3`,        { headers: { 'x-api-key': ER_API_KEY } }),
                 ]);
-                const [statsData, rankData] = await Promise.all([statsRes.json(), rankRes.json()]);
-                console.log(`[전적] ${realNick} (seasonId=${seasonId}) stats.code=${statsData.code} stats.len=${statsData.userStats?.length ?? 'null'} rank.code=${rankData.code} rank.len=${rankData.userRanks?.length ?? rankData.ranks?.length ?? 'null'}`);
+                const [statsData, rank1Data, rank2Data, rank3Data] = await Promise.all([
+                    statsRes.json(), rank1Res.json(), rank2Res.json(), rank3Res.json()
+                ]);
+                console.log(`[전적] ${realNick} seasonId=${seasonId} stats.code=${statsData.code} len=${statsData.userStats?.length ?? 'null'}`);
+                console.log(`[전적] rank1 raw:`, JSON.stringify(rank1Data).slice(0, 200));
                 if (statsData.code !== 200) console.log('[전적] stats raw:', JSON.stringify(statsData).slice(0, 300));
-                if (rankData.code !== 200)  console.log('[전적] rank  raw:', JSON.stringify(rankData).slice(0, 300));
+
+                // 모드별 rank 맵 구성 (응답 구조가 확인되면 정리 예정)
+                const rankRaw = { 1: rank1Data, 2: rank2Data, 3: rank3Data };
+                const rankMap = {};
+                for (const [mode, rd] of Object.entries(rankRaw)) {
+                    const entry = rd.userRank ?? rd.rank ?? (rd.userRanks ?? rd.ranks ?? [])[0];
+                    if (entry?.mmr) rankMap[mode] = entry;
+                }
 
                 const modeNames = { 1: '솔로', 2: '듀오', 3: '스쿼드' };
                 const modeEmoji = { 1: '🟣', 2: '🟢', 3: '🟡' };
@@ -439,9 +454,6 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setURL(`https://er.dakgg.io/player/${encodeURIComponent(realNick)}`)
                     .setTimestamp()
                     .setFooter({ text: 'Eternal Return Open API' });
-
-                // v1 rank: userRanks 필드 사용
-                const rankList = rankData.userRanks ?? rankData.ranks ?? [];
 
                 if (statsData.code === 200 && statsData.userStats?.length) {
                     for (const stat of statsData.userStats) {
@@ -456,7 +468,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         const avgKills  = (stat.totalKills / games).toFixed(2);
                         const avgDamage = Math.round((stat.damageToPlayer || 0) / games).toLocaleString();
                         let rankInfo = '';
-                        const r = rankList.find(r => r.matchingTeamMode === stat.matchingTeamMode);
+                        const r = rankMap[stat.matchingTeamMode];
                         if (r?.mmr) rankInfo = `\n🏅 MMR: **${r.mmr}** | 랭킹: **${r.rank ?? '?'}위**`;
                         embed.addFields({
                             name: `${emoji} ${mode}`,
@@ -467,11 +479,10 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
 
                 // 전적 없지만 랭크 데이터는 있으면 MMR만 표시
-                if (!embed.data.fields?.length && rankList.length) {
-                    for (const r of rankList) {
-                        if (!r.mmr) continue;
-                        const mode  = modeNames[r.matchingTeamMode] || `모드${r.matchingTeamMode}`;
-                        const emoji = modeEmoji[r.matchingTeamMode] || '⚪';
+                if (!embed.data.fields?.length && Object.keys(rankMap).length) {
+                    for (const [modeKey, r] of Object.entries(rankMap)) {
+                        const mode  = modeNames[modeKey] || `모드${modeKey}`;
+                        const emoji = modeEmoji[modeKey] || '⚪';
                         embed.addFields({
                             name: `${emoji} ${mode}`,
                             value: `🏅 MMR: **${r.mmr}** | 랭킹: **${r.rank ?? '?'}위**\n📊 이번 시즌 상세 전적 없음`,
