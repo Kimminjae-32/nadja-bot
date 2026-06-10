@@ -427,6 +427,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 ]);
                 const [statsData, rankData] = await Promise.all([statsRes.json(), rankRes.json()]);
                 console.log(`[전적] ${realNick} (seasonId=${seasonId}) stats.code=${statsData.code} stats.len=${statsData.userStats?.length ?? 'null'} rank.code=${rankData.code} rank.len=${rankData.ranks?.length ?? 'null'}`);
+                if (statsData.code !== 200) console.log('[전적] stats raw:', JSON.stringify(statsData).slice(0, 300));
+                if (rankData.code !== 200)  console.log('[전적] rank  raw:', JSON.stringify(rankData).slice(0, 300));
 
                 const modeNames = { 1: '솔로', 2: '듀오', 3: '스쿼드' };
                 const modeEmoji = { 1: '🟣', 2: '🟢', 3: '🟡' };
