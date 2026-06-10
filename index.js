@@ -423,10 +423,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 const [statsRes, rankRes] = await Promise.all([
                     fetch(`${BASE_URL}/v1/user/stats/${userNum}/${seasonId}`, { headers: { 'x-api-key': ER_API_KEY } }),
-                    fetch(`${BASE_URL}/v2/rank/user/${userNum}/${seasonId}`,  { headers: { 'x-api-key': ER_API_KEY } })
+                    fetch(`${BASE_URL}/v1/rank/${userNum}/${seasonId}`,       { headers: { 'x-api-key': ER_API_KEY } })
                 ]);
                 const [statsData, rankData] = await Promise.all([statsRes.json(), rankRes.json()]);
-                console.log(`[전적] ${realNick} (seasonId=${seasonId}) stats.code=${statsData.code} stats.len=${statsData.userStats?.length ?? 'null'} rank.code=${rankData.code} rank.len=${rankData.ranks?.length ?? 'null'}`);
+                console.log(`[전적] ${realNick} (seasonId=${seasonId}) stats.code=${statsData.code} stats.len=${statsData.userStats?.length ?? 'null'} rank.code=${rankData.code} rank.len=${rankData.userRanks?.length ?? rankData.ranks?.length ?? 'null'}`);
                 if (statsData.code !== 200) console.log('[전적] stats raw:', JSON.stringify(statsData).slice(0, 300));
                 if (rankData.code !== 200)  console.log('[전적] rank  raw:', JSON.stringify(rankData).slice(0, 300));
 
@@ -439,6 +439,9 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setURL(`https://er.dakgg.io/player/${encodeURIComponent(realNick)}`)
                     .setTimestamp()
                     .setFooter({ text: 'Eternal Return Open API' });
+
+                // v1 rank: userRanks 필드 사용
+                const rankList = rankData.userRanks ?? rankData.ranks ?? [];
 
                 if (statsData.code === 200 && statsData.userStats?.length) {
                     for (const stat of statsData.userStats) {
@@ -453,10 +456,8 @@ client.on(Events.InteractionCreate, async interaction => {
                         const avgKills  = (stat.totalKills / games).toFixed(2);
                         const avgDamage = Math.round((stat.damageToPlayer || 0) / games).toLocaleString();
                         let rankInfo = '';
-                        if (rankData.code === 200 && rankData.ranks) {
-                            const r = rankData.ranks.find(r => r.matchingTeamMode === stat.matchingTeamMode);
-                            if (r?.mmr) rankInfo = `\n🏅 MMR: **${r.mmr}** | 랭킹: **${r.rank ?? '?'}위**`;
-                        }
+                        const r = rankList.find(r => r.matchingTeamMode === stat.matchingTeamMode);
+                        if (r?.mmr) rankInfo = `\n🏅 MMR: **${r.mmr}** | 랭킹: **${r.rank ?? '?'}위**`;
                         embed.addFields({
                             name: `${emoji} ${mode}`,
                             value: `📊 **${games}판** | 🥇 ${wins}승 (${winRate}%) | 🏆 TOP3: ${top3}회 (${top3Rate}%)\n⚔️ 평균 킬: **${avgKills}** | 💥 평균 딜량: **${avgDamage}**${rankInfo}`,
@@ -466,8 +467,8 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
 
                 // 전적 없지만 랭크 데이터는 있으면 MMR만 표시
-                if (!embed.data.fields?.length && rankData.code === 200 && rankData.ranks?.length) {
-                    for (const r of rankData.ranks) {
+                if (!embed.data.fields?.length && rankList.length) {
+                    for (const r of rankList) {
                         if (!r.mmr) continue;
                         const mode  = modeNames[r.matchingTeamMode] || `모드${r.matchingTeamMode}`;
                         const emoji = modeEmoji[r.matchingTeamMode] || '⚪';
