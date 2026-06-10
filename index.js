@@ -17,13 +17,11 @@ const client = new Client({
 });
 
 const DATA_PATH       = './recruits.json';
-const MATCH_DATA_PATH = './matches.json';
 
 let allRecruits        = new Map();
 let activeUserRecruits = new Map();
 let moveProgress       = new Map();
 let pendingLumia       = new Map();
-let matchHistory       = [];
 
 function loadData() {
     try {
@@ -49,22 +47,8 @@ function saveData() {
     } catch (e) { console.error('데이터 저장 실패:', e); }
 }
 
-function loadMatches() {
-    try {
-        if (fs.existsSync(MATCH_DATA_PATH)) {
-            matchHistory = JSON.parse(fs.readFileSync(MATCH_DATA_PATH, 'utf-8'));
-        }
-    } catch (e) { console.error('매치 데이터 로드 실패:', e); }
-}
-
-function saveMatches() {
-    try {
-        fs.writeFileSync(MATCH_DATA_PATH, JSON.stringify(matchHistory, null, 2));
-    } catch (e) { console.error('매치 데이터 저장 실패:', e); }
-}
 
 loadData();
-loadMatches();
 
 const TEAM_EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫','🔵','🔴','🟢','🟡','🟠','⚪','🔶','🔷','🔸','🔹'];
 const TEAM_NAMES  = ['1팀','2팀','3팀','4팀','5팀','6팀','7팀','8팀','9팀','10팀','11팀','12팀','13팀','14팀','15팀','16팀','17팀','18팀'];
@@ -266,24 +250,27 @@ cron.schedule('* * * * *', async () => {
     }
 });
 
-// MMR 조회
-async function fetchMMR(userNum) {
-    try {
-        const res  = await fetch(`https://open-api.bser.io/v2/rank/user/${userNum}/0`, { headers: { 'x-api-key': process.env.ER_API_KEY } });
-        const data = await res.json();
-        if (data.code !== 200 || !data.ranks?.length) return null;
-        const rank = data.ranks.find(r => r.matchingTeamMode === 3) || data.ranks[0];
-        return rank?.mmr || null;
-    } catch { return null; }
-}
 
-async function fetchUserNum(nickname) {
+
+// 시즌 종료 7일 전 알림 (매일 오전 9시)
+cron.schedule('0 9 * * *', async () => {
+    const channelId = process.env.SEASON_ALERT_CHANNEL_ID;
+    if (!channelId || !process.env.ER_API_KEY) return;
     try {
-        const res  = await fetch(`https://open-api.bser.io/v1/user/nickname?query=${encodeURIComponent(nickname)}`, { headers: { 'x-api-key': process.env.ER_API_KEY } });
-        const data = await res.json();
-        return data.code === 200 ? data.user?.userNum : null;
-    } catch { return null; }
-}
+        const res  = await fetch('https://open-api.bser.io/v1/data/Season', { headers: { 'x-api-key': process.env.ER_API_KEY } });
+        const json = await res.json();
+        const seasons = Array.isArray(json.data) ? json.data : [];
+        const current = seasons.find(s => s.isCurrent) ?? seasons.at(-1);
+        if (!current) return;
+        const daysLeft = Math.ceil((new Date(current.seasonEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        if (daysLeft === 7 || daysLeft === 3 || daysLeft === 1) {
+            const channel = await client.channels.fetch(channelId).catch(() => null);
+            if (channel?.isTextBased()) {
+                await channel.send(`⚠️ **${current.seasonName ?? `Season ${current.seasonID}`}** 종료까지 **${daysLeft}일** 남았어요!`);
+            }
+        }
+    } catch (e) { console.error('시즌 알림 오류:', e); }
+});
 
 // =====================================================
 // 이벤트 핸들러
@@ -387,301 +374,79 @@ client.on(Events.InteractionCreate, async interaction => {
                         { name: '👢 참가자 킥',        value: '방장이 특정 참가자를 구인에서 제외합니다.' },
                         { name: '🗺️ 맵 변경',          value: '론울프에서 루미아 섬/코발트로 변경 가능. 인원 유지.' },
                         { name: '🔊 방 이동',          value: '각 팀별로 이동할 음성 채널을 순서대로 선택합니다.' },
-                        { name: '📊 팀 MMR 밸런스',   value: 'API 키 발급 후 자동 활성화\n팀 섞기 후 각 팀 평균 MMR 표시.' },
-                        { name: '🏆 /내전결과',        value: 'API 키 발급 후 사용 가능\n내전 결과를 기록합니다.' },
-                        { name: '🔍 /전적',            value: '/전적 [닉네임] 으로 이터널 리턴 전적을 확인합니다.' },
-                        { name: '🃏 /추천실험체',      value: '/추천실험체 [닉네임] 으로 가장 많이 쓴 실험체 TOP3를 확인합니다.' },
-                        { name: '🏆 /랭킹',            value: '서버 내 멤버들의 MMR 순위를 보여줍니다.\n※ 디스코드 닉네임 = 이터널 리턴 닉네임인 경우만 표시.' }
+                        { name: '🗓️ /시즌',            value: '현재 이터널 리턴 시즌 정보 및 종료까지 남은 기간 표시.' },
+                        { name: '🆓 /무료실험체',      value: '이번 주 무료 실험체 목록을 모드별로 표시합니다.' }
                     )],
                 ephemeral: true
             });
         }
 
-        // /전적
-        if (interaction.commandName === '전적') {
-            const nickname = interaction.options.getString('닉네임');
+        // /시즌
+        if (interaction.commandName === '시즌') {
             await interaction.deferReply();
             try {
-                const ER_API_KEY = process.env.ER_API_KEY;
-                const BASE_URL   = 'https://open-api.bser.io';
-                if (!ER_API_KEY) return await interaction.editReply({ content: '⚠️ API 키가 설정되지 않았어요.' });
+                const res  = await fetch('https://open-api.bser.io/v1/data/Season', { headers: { 'x-api-key': process.env.ER_API_KEY } });
+                const json = await res.json();
+                const seasons = Array.isArray(json.data) ? json.data : [];
+                const current = seasons.find(s => s.isCurrent) ?? seasons.at(-1);
+                if (!current) return await interaction.editReply({ content: '⚠️ 시즌 정보를 불러올 수 없어요.' });
 
-                const userRes  = await fetch(`${BASE_URL}/v1/user/nickname?query=${encodeURIComponent(nickname)}`, { headers: { 'x-api-key': ER_API_KEY } });
-                const userData = await userRes.json();
-                if (userData.code !== 200 || !userData.user) return await interaction.editReply({ content: `❌ **${nickname}** 닉네임을 찾을 수 없어요.` });
-
-                const { userNum, nickname: realNick } = userData.user;
-
-                // 현재 시즌 ID 조회 (/v1/data/Season)
-                let seasonId = 0;
-                try {
-                    const seasonRes  = await fetch(`${BASE_URL}/v1/data/Season`, { headers: { 'x-api-key': ER_API_KEY } });
-                    const seasonData = await seasonRes.json();
-                    // 응답: { code:200, data: [ {seasonID, isCurrent, ...}, ... ] }
-                    const seasons = Array.isArray(seasonData.data) ? seasonData.data : [];
-                    const current = seasons.find(s => s.isCurrent) ?? seasons.at(-1);
-                    if (current?.seasonID) seasonId = current.seasonID;
-                    console.log(`[전적] seasonId=${seasonId} (total ${seasons.length})`);
-                } catch (e) { console.log('[전적] season fetch failed:', e.message); }
-
-                // stats + 모드별 rank(1/2/3) 병렬 요청
-                const [statsRes, rank1Res, rank2Res, rank3Res] = await Promise.all([
-                    fetch(`${BASE_URL}/v1/user/stats/${userNum}/${seasonId}`,   { headers: { 'x-api-key': ER_API_KEY } }),
-                    fetch(`${BASE_URL}/v1/rank/${userNum}/${seasonId}/1`,        { headers: { 'x-api-key': ER_API_KEY } }),
-                    fetch(`${BASE_URL}/v1/rank/${userNum}/${seasonId}/2`,        { headers: { 'x-api-key': ER_API_KEY } }),
-                    fetch(`${BASE_URL}/v1/rank/${userNum}/${seasonId}/3`,        { headers: { 'x-api-key': ER_API_KEY } }),
-                ]);
-                const [statsData, rank1Data, rank2Data, rank3Data] = await Promise.all([
-                    statsRes.json(), rank1Res.json(), rank2Res.json(), rank3Res.json()
-                ]);
-                console.log(`[전적] ${realNick} seasonId=${seasonId} stats.code=${statsData.code} len=${statsData.userStats?.length ?? 'null'}`);
-                console.log(`[전적] rank1 raw:`, JSON.stringify(rank1Data).slice(0, 200));
-                if (statsData.code !== 200) console.log('[전적] stats raw:', JSON.stringify(statsData).slice(0, 300));
-
-                // 모드별 rank 맵 구성 (응답 구조가 확인되면 정리 예정)
-                const rankRaw = { 1: rank1Data, 2: rank2Data, 3: rank3Data };
-                const rankMap = {};
-                for (const [mode, rd] of Object.entries(rankRaw)) {
-                    const entry = rd.userRank ?? rd.rank ?? (rd.userRanks ?? rd.ranks ?? [])[0];
-                    if (entry?.mmr) rankMap[mode] = entry;
-                }
-
-                const modeNames = { 1: '솔로', 2: '듀오', 3: '스쿼드' };
-                const modeEmoji = { 1: '🟣', 2: '🟢', 3: '🟡' };
+                const now     = Date.now();
+                const endMs   = new Date(current.seasonEnd).getTime();
+                const daysLeft = Math.ceil((endMs - now) / (1000 * 60 * 60 * 24));
+                const startStr = current.seasonStart?.slice(0, 10) ?? '?';
+                const endStr   = current.seasonEnd?.slice(0, 10)   ?? '?';
 
                 const embed = new EmbedBuilder()
-                    .setTitle(`🔍 ${realNick}의 이터널 리턴 전적`)
+                    .setTitle(`🗓️ 이터널 리턴 현재 시즌`)
                     .setColor(0x00AE86)
-                    .setURL(`https://er.dakgg.io/player/${encodeURIComponent(realNick)}`)
-                    .setTimestamp()
-                    .setFooter({ text: 'Eternal Return Open API' });
-
-                if (statsData.code === 401) {
-                    return await interaction.editReply({ content: `⚠️ API 키에 전적 조회 권한이 없어요.\nER Open API 포털에서 서비스 키 권한을 신청해 주세요.` });
-                }
-
-                if (statsData.code === 200 && statsData.userStats?.length) {
-                    for (const stat of statsData.userStats) {
-                        const games = stat.totalGames || 0;
-                        if (games === 0) continue;
-                        const mode  = modeNames[stat.matchingTeamMode] || `모드${stat.matchingTeamMode}`;
-                        const emoji = modeEmoji[stat.matchingTeamMode] || '⚪';
-                        const wins  = stat.totalWins || 0;
-                        const top3  = stat.top3      || 0;
-                        const winRate   = ((wins / games) * 100).toFixed(1);
-                        const top3Rate  = ((top3 / games) * 100).toFixed(1);
-                        const avgKills  = (stat.totalKills / games).toFixed(2);
-                        const avgDamage = Math.round((stat.damageToPlayer || 0) / games).toLocaleString();
-                        let rankInfo = '';
-                        const r = rankMap[stat.matchingTeamMode];
-                        if (r?.mmr) rankInfo = `\n🏅 MMR: **${r.mmr}** | 랭킹: **${r.rank ?? '?'}위**`;
-                        embed.addFields({
-                            name: `${emoji} ${mode}`,
-                            value: `📊 **${games}판** | 🥇 ${wins}승 (${winRate}%) | 🏆 TOP3: ${top3}회 (${top3Rate}%)\n⚔️ 평균 킬: **${avgKills}** | 💥 평균 딜량: **${avgDamage}**${rankInfo}`,
-                            inline: false
-                        });
-                    }
-                }
-
-                // 전적 없지만 랭크 데이터는 있으면 MMR만 표시
-                if (!embed.data.fields?.length && Object.keys(rankMap).length) {
-                    for (const [modeKey, r] of Object.entries(rankMap)) {
-                        const mode  = modeNames[modeKey] || `모드${modeKey}`;
-                        const emoji = modeEmoji[modeKey] || '⚪';
-                        embed.addFields({
-                            name: `${emoji} ${mode}`,
-                            value: `🏅 MMR: **${r.mmr}** | 랭킹: **${r.rank ?? '?'}위**\n📊 이번 시즌 상세 전적 없음`,
-                            inline: false
-                        });
-                    }
-                }
-
-                if (!embed.data.fields?.length) return await interaction.editReply({ content: `📭 **${realNick}**님의 전적 데이터가 없어요.` });
+                    .addFields(
+                        { name: '시즌',   value: current.seasonName ?? `Season ${current.seasonID}`, inline: true },
+                        { name: '시작일', value: startStr, inline: true },
+                        { name: '종료일', value: endStr,   inline: true },
+                        { name: '남은 기간', value: daysLeft > 0 ? `⏳ **${daysLeft}일** 남음` : '⚠️ 시즌 종료됨', inline: false }
+                    )
+                    .setTimestamp();
                 await interaction.editReply({ embeds: [embed] });
             } catch (err) {
-                console.error('전적 조회 오류:', err);
-                await interaction.editReply({ content: '⚠️ 전적 조회 중 오류가 발생했어요.' });
+                console.error('시즌 조회 오류:', err);
+                await interaction.editReply({ content: '⚠️ 시즌 정보 조회 중 오류가 발생했어요.' });
             }
         }
 
-        // /내전결과
-        // /추천실험체
-        if (interaction.commandName === '추천실험체') {
-            const nickname = interaction.options.getString('닉네임');
-            const modeFilter = interaction.options.getString('모드') ? parseInt(interaction.options.getString('모드')) : null;
+        // /무료실험체
+        if (interaction.commandName === '무료실험체') {
             await interaction.deferReply();
-
             try {
                 const ER_API_KEY = process.env.ER_API_KEY;
                 const BASE_URL   = 'https://open-api.bser.io';
-                if (!ER_API_KEY) return await interaction.editReply({ content: '⚠️ API 키가 설정되지 않았어요.' });
+                const modeNames  = { 1: '솔로', 2: '듀오', 3: '스쿼드' };
 
-                const userRes  = await fetch(`${BASE_URL}/v1/user/nickname?query=${encodeURIComponent(nickname)}`, { headers: { 'x-api-key': ER_API_KEY } });
-                const userData = await userRes.json();
-                if (userData.code !== 200 || !userData.user) return await interaction.editReply({ content: `❌ **${nickname}** 닉네임을 찾을 수 없어요.` });
+                const results = await Promise.all([1, 2, 3].map(async mode => {
+                    const res  = await fetch(`${BASE_URL}/v1/freeCharacters/${mode}`, { headers: { 'x-api-key': ER_API_KEY } });
+                    const json = await res.json();
+                    return { mode, chars: json.freeCharacters ?? [] };
+                }));
 
-                const { userNum, nickname: realNick } = userData.user;
-
-                const statsRes  = await fetch(`${BASE_URL}/v1/user/stats/${userNum}/0`, { headers: { 'x-api-key': ER_API_KEY } });
-                const statsData = await statsRes.json();
-                if (statsData.code !== 200 || !statsData.userStats?.length) return await interaction.editReply({ content: `📭 **${realNick}**님의 데이터가 없어요.` });
-
-                const modeNames = { 1: '솔로', 2: '듀오', 3: '스쿼드' };
-
-                // 모드 필터링 후 characterStats 합산
-                const charUsageMap = new Map();
-                for (const stat of statsData.userStats) {
-                    if (modeFilter && stat.matchingTeamMode !== modeFilter) continue;
-                    for (const cs of (stat.characterStats || [])) {
-                        const prev = charUsageMap.get(cs.characterCode) || { usages: 0, wins: 0, top3: 0, games: 0 };
-                        charUsageMap.set(cs.characterCode, {
-                            usages: prev.usages + (cs.usages || cs.totalGames || 0),
-                            wins:   prev.wins   + (cs.wins   || 0),
-                            top3:   prev.top3   + (cs.top3   || 0),
-                            games:  prev.games  + (cs.totalGames || cs.usages || 0)
-                        });
-                    }
-                }
-
-                if (charUsageMap.size === 0) return await interaction.editReply({ content: `📭 **${realNick}**님의 실험체 데이터가 없어요.` });
-
-                // 사용 횟수 기준 정렬 후 TOP3
-                const sorted = [...charUsageMap.entries()].sort((a, b) => b[1].usages - a[1].usages).slice(0, 3);
-
-                const modeStr = modeFilter ? modeNames[modeFilter] : '전체';
                 const embed = new EmbedBuilder()
-                    .setTitle(`🃏 ${realNick}의 추천 실험체 TOP3 (${modeStr})`)
+                    .setTitle('🆓 이번 주 무료 실험체')
                     .setColor(0x9B59B6)
-                    .setURL(`https://er.dakgg.io/player/${encodeURIComponent(realNick)}`)
                     .setTimestamp();
 
-                const medals = ['🥇', '🥈', '🥉'];
-                sorted.forEach(([code, s], i) => {
-                    const name     = getCharName(code);
-                    const winRate  = s.games > 0 ? ((s.wins / s.games) * 100).toFixed(1) : '0.0';
-                    const top3Rate = s.games > 0 ? ((s.top3 / s.games) * 100).toFixed(1) : '0.0';
-                    embed.addFields({
-                        name:  `${medals[i]} ${name}`,
-                        value: `📊 **${s.usages}판** | 🥇 승률 ${winRate}% | 🏆 TOP3 ${top3Rate}%`,
-                        inline: false
-                    });
-                });
+                for (const { mode, chars } of results) {
+                    if (!chars.length) continue;
+                    const names = chars.map(c => getCharName(c.characterCode) ?? `#${c.characterCode}`).join(', ');
+                    embed.addFields({ name: `${modeNames[mode]}`, value: names, inline: false });
+                }
 
+                if (!embed.data.fields?.length) return await interaction.editReply({ content: '📭 무료 실험체 정보를 불러올 수 없어요.' });
                 await interaction.editReply({ embeds: [embed] });
             } catch (err) {
-                console.error('추천실험체 오류:', err);
-                await interaction.editReply({ content: '⚠️ 조회 중 오류가 발생했어요.' });
+                console.error('무료실험체 오류:', err);
+                await interaction.editReply({ content: '⚠️ 무료 실험체 조회 중 오류가 발생했어요.' });
             }
         }
 
-        // /랭킹 (서버 내 유저 MMR 순위)
-        if (interaction.commandName === '랭킹') {
-            const modeOption = interaction.options.getString('모드') ?? '3';
-            const teamMode   = parseInt(modeOption);
-            const modeNames  = { 1: '솔로', 2: '듀오', 3: '스쿼드' };
-            await interaction.deferReply();
-
-            try {
-                const ER_API_KEY = process.env.ER_API_KEY;
-                const BASE_URL   = 'https://open-api.bser.io';
-                if (!ER_API_KEY) return await interaction.editReply({ content: '⚠️ API 키가 설정되지 않았어요.' });
-
-                // 서버 멤버 전체 순회하며 MMR 조회
-                const guild   = interaction.guild;
-                const members = await guild.members.fetch();
-                const results = [];
-
-                await interaction.editReply({ content: `🔍 서버 멤버 MMR 조회 중... (시간이 걸릴 수 있어요)` });
-
-                for (const [, member] of members) {
-                    if (member.user.bot) continue;
-                    const uname = member.user.username;
-
-                    // 닉네임으로 userNum 조회
-                    const userRes = await fetch(`${BASE_URL}/v1/user/nickname?query=${encodeURIComponent(uname)}`, { headers: { 'x-api-key': ER_API_KEY } }).catch(() => null);
-                    if (!userRes) continue;
-                    const userData = await userRes.json().catch(() => null);
-                    if (!userData || userData.code !== 200 || !userData.user) continue;
-
-                    const userNum = userData.user.userNum;
-                    const realNick = userData.user.nickname;
-
-                    // MMR 조회
-                    const rankRes = await fetch(`${BASE_URL}/v2/rank/user/${userNum}/0`, { headers: { 'x-api-key': ER_API_KEY } }).catch(() => null);
-                    if (!rankRes) continue;
-                    const rankData = await rankRes.json().catch(() => null);
-                    if (!rankData || rankData.code !== 200 || !rankData.ranks?.length) continue;
-
-                    const modeRank = rankData.ranks.find(r => r.matchingTeamMode === teamMode);
-                    if (!modeRank?.mmr) continue;
-
-                    results.push({ nickname: realNick, mmr: modeRank.mmr, rank: modeRank.rank });
-
-                    // API 속도 제한 방지
-                    await new Promise(r => setTimeout(r, 600));
-                }
-
-                if (results.length === 0) {
-                    return await interaction.editReply({ content: `📭 이터널 리턴 계정과 연결된 서버 멤버를 찾지 못했어요.
-디스코드 닉네임과 이터널 리턴 닉네임이 같아야 조회돼요.` });
-                }
-
-                // MMR 높은 순 정렬
-                results.sort((a, b) => b.mmr - a.mmr);
-
-                const medals = ['🥇', '🥈', '🥉'];
-                const lines  = results.map((r, i) => {
-                    const medal = medals[i] || `**${i + 1}.**`;
-                    return `${medal} **${r.nickname}** — MMR: ${r.mmr} (랭킹 ${r.rank ?? '?'}위)`;
-                });
-
-                const embed = new EmbedBuilder()
-                    .setTitle(`🏆 서버 MMR 랭킹 (${modeNames[teamMode]})`)
-                    .setColor(0xFFD700)
-                    .setDescription(lines.join('\n'))
-                    .setTimestamp()
-                    .setFooter({ text: '디스코드 닉네임 = 이터널 리턴 닉네임인 유저만 표시됩니다.' });
-
-                await interaction.editReply({ content: null, embeds: [embed] });
-            } catch (err) {
-                console.error('랭킹 오류:', err);
-                await interaction.editReply({ content: '⚠️ 랭킹 조회 중 오류가 발생했어요.' });
-            }
-        }
-
-        if (interaction.commandName === '내전결과') {
-            if (!process.env.ER_API_KEY) return await interaction.reply({ content: '⚠️ API 키가 설정되지 않았어요.', ephemeral: true });
-            const msgId = activeUserRecruits.get(interaction.user.id);
-            const data  = msgId ? allRecruits.get(msgId) : null;
-            if (!data || (data.gameType !== '내전' && data.gameType !== '론울프')) return await interaction.reply({ content: '❌ 진행 중인 내전이 없어요.', ephemeral: true });
-            if (data.creatorId !== interaction.user.id) return await interaction.reply({ content: '❌ 방장만 결과를 입력할 수 있어요.', ephemeral: true });
-
-            const winTeamIdx = interaction.options.getInteger('승팀') - 1;
-            const teams      = data.teams || [data.team1, data.team2];
-            if (winTeamIdx >= teams.length || !teams[winTeamIdx]?.length) return await interaction.reply({ content: `❌ ${winTeamIdx + 1}팀이 존재하지 않아요.`, ephemeral: true });
-
-            await interaction.deferReply();
-            const teamNicknames = await Promise.all(teams.map(async team =>
-                await Promise.all(team.map(async id => {
-                    const u = await client.users.fetch(id).catch(() => null);
-                    return u?.username || id;
-                }))
-            ));
-
-            matchHistory.push({ date: new Date().toISOString(), gameType: data.gameType, mapType: data.mapType, teams: teamNicknames, winTeam: winTeamIdx, creatorId: data.creatorId });
-            saveMatches();
-
-            const embed = new EmbedBuilder()
-                .setTitle(`🏆 내전 결과 기록 [${data.gameType} / ${data.mapType}]`)
-                .setColor(0xFFD700)
-                .setTimestamp();
-
-            teams.forEach((_, i) => {
-                embed.addFields({ name: `${TEAM_EMOJIS[i]} ${TEAM_NAMES[i]} ${i === winTeamIdx ? '🏆 승리' : '패배'}`, value: teamNicknames[i].join(', ') || '없음', inline: false });
-            });
-            embed.setFooter({ text: `총 ${matchHistory.length}번째 내전 기록` });
-            await interaction.editReply({ embeds: [embed] });
-        }
     }
 
     // ──────────────────────────────────────────────
@@ -729,26 +494,6 @@ client.on(Events.InteractionCreate, async interaction => {
             // 임베드 업데이트
             await interaction.message.edit({ embeds: [await createRecruitEmbed(data)] }).catch(() => null);
 
-            if (process.env.ER_API_KEY) {
-                try {
-                    const teamMMRs = await Promise.all(data.teams.map(async team => {
-                        const mmrs = await Promise.all(team.map(async id => {
-                            const u = await client.users.fetch(id).catch(() => null);
-                            if (!u) return null;
-                            const userNum = await fetchUserNum(u.username);
-                            if (!userNum) return null;
-                            return await fetchMMR(userNum);
-                        }));
-                        const valid = mmrs.filter(m => m !== null);
-                        return valid.length ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length) : null;
-                    }));
-                    if (teamMMRs.some(m => m !== null)) {
-                        const embed = new EmbedBuilder().setTitle('📊 팀 MMR 밸런스').setColor(0x00AE86);
-                        teamMMRs.forEach((mmr, i) => embed.addFields({ name: `${TEAM_EMOJIS[i]} ${TEAM_NAMES[i]}`, value: mmr ? `평균 MMR: **${mmr}**` : '정보 없음', inline: true }));
-                        await interaction.followUp({ embeds: [embed], ephemeral: true });
-                    }
-                } catch (e) { console.error('MMR 조회 오류:', e); }
-            }
         }
         // 팀 설정 (수동)
         else if (action === 'manual') {

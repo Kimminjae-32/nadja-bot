@@ -70,64 +70,18 @@ const commands = [
         .setDescription('나쟈 봇 사용법 확인'),
 
     // =====================
-    // /전적
+    // /시즌
     // =====================
     new SlashCommandBuilder()
-        .setName('전적')
-        .setDescription('이터널 리턴 유저의 전적을 조회합니다.')
-        .addStringOption(option =>
-            option.setName('닉네임')
-                .setDescription('조회할 유저의 닉네임을 입력하세요')
-                .setRequired(true)),
+        .setName('시즌')
+        .setDescription('현재 이터널 리턴 시즌 정보를 표시합니다.'),
 
     // =====================
-    // /추천실험체
+    // /무료실험체
     // =====================
     new SlashCommandBuilder()
-        .setName('추천실험체')
-        .setDescription('유저가 가장 많이 플레이한 실험체 TOP3를 보여줍니다.')
-        .addStringOption(option =>
-            option.setName('닉네임')
-                .setDescription('조회할 유저의 닉네임을 입력하세요')
-                .setRequired(true))
-        .addStringOption(option =>
-            option.setName('모드')
-                .setDescription('게임 모드 (기본: 전체)')
-                .setRequired(false)
-                .addChoices(
-                    { name: '솔로', value: '1' },
-                    { name: '듀오', value: '2' },
-                    { name: '스쿼드', value: '3' }
-                )),
-
-    // =====================
-    // /랭킹
-    // =====================
-    new SlashCommandBuilder()
-        .setName('랭킹')
-        .setDescription('서버 유저들의 MMR 랭킹을 보여줍니다.')
-        .addStringOption(option =>
-            option.setName('모드')
-                .setDescription('게임 모드 (기본: 스쿼드)')
-                .setRequired(false)
-                .addChoices(
-                    { name: '솔로', value: '1' },
-                    { name: '듀오', value: '2' },
-                    { name: '스쿼드', value: '3' }
-                )),
-
-    // =====================
-    // /내전결과
-    // =====================
-    new SlashCommandBuilder()
-        .setName('내전결과')
-        .setDescription('내전 결과를 기록합니다. (방장 전용)')
-        .addIntegerOption(option =>
-            option.setName('승팀')
-                .setDescription('이긴 팀 번호 (예: 1 → 1팀 승리)')
-                .setRequired(true)
-                .setMinValue(1)
-                .setMaxValue(18)),
+        .setName('무료실험체')
+        .setDescription('이번 주 무료 실험체 목록을 표시합니다.'),
 
 ].map(command => command.toJSON());
 
