@@ -456,6 +456,10 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setTimestamp()
                     .setFooter({ text: 'Eternal Return Open API' });
 
+                if (statsData.code === 401) {
+                    return await interaction.editReply({ content: `⚠️ API 키에 전적 조회 권한이 없어요.\nER Open API 포털에서 서비스 키 권한을 신청해 주세요.` });
+                }
+
                 if (statsData.code === 200 && statsData.userStats?.length) {
                     for (const stat of statsData.userStats) {
                         const games = stat.totalGames || 0;
