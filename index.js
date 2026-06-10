@@ -212,17 +212,8 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
                 new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId(`leave_${msgId}`).setLabel('취소').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId(`shuffle_${msgId}`).setLabel('팀 섞기(자동)').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`manual_${msgId}`).setLabel('팀 설정(수동)').setStyle(ButtonStyle.Secondary)
-            ),
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`kick_${msgId}`).setLabel('참가자 킥').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId(`charRandom_${msgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`transfer_${msgId}`).setLabel('방장 양도').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`move_${msgId}`).setLabel('방 이동').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`return_${msgId}`).setLabel('원래대로').setStyle(ButtonStyle.Secondary)
-            ),
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`changeMap_${msgId}`).setLabel('맵 변경').setStyle(ButtonStyle.Secondary)
+                new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
             )
         ];
     } else if (gameType === '론울프') {
@@ -231,11 +222,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
                 new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId(`leave_${msgId}`).setLabel('취소').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId(`charRandom_${msgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`kick_${msgId}`).setLabel('참가자 킥').setStyle(ButtonStyle.Danger),
-                new ButtonBuilder().setCustomId(`transfer_${msgId}`).setLabel('방장 양도').setStyle(ButtonStyle.Primary)
-            ),
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`changeMap_${msgId}`).setLabel('맵 변경').setStyle(ButtonStyle.Secondary)
+                new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
             )
         ];
     } else {
@@ -424,12 +411,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (userData.code !== 200 || !userData.user) return await interaction.editReply({ content: `❌ **${nickname}** 닉네임을 찾을 수 없어요.` });
 
                 const { userNum, nickname: realNick } = userData.user;
-                const statsRes  = await fetch(`${BASE_URL}/v1/user/stats/${userNum}/0`, { headers: { 'x-api-key': ER_API_KEY } });
-                const statsData = await statsRes.json();
-                if (statsData.code !== 200 || !statsData.userStats?.length) return await interaction.editReply({ content: `📭 **${realNick}**님의 전적 데이터가 없어요.` });
 
-                const rankRes  = await fetch(`${BASE_URL}/v2/rank/user/${userNum}/0`, { headers: { 'x-api-key': ER_API_KEY } });
-                const rankData = await rankRes.json();
+                const [statsRes, rankRes] = await Promise.all([
+                    fetch(`${BASE_URL}/v1/user/stats/${userNum}/0`, { headers: { 'x-api-key': ER_API_KEY } }),
+                    fetch(`${BASE_URL}/v2/rank/user/${userNum}/0`,  { headers: { 'x-api-key': ER_API_KEY } })
+                ]);
+                const [statsData, rankData] = await Promise.all([statsRes.json(), rankRes.json()]);
 
                 const modeNames = { 1: '솔로', 2: '듀오', 3: '스쿼드' };
                 const modeEmoji = { 1: '🟣', 2: '🟢', 3: '🟡' };
@@ -441,27 +428,43 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setTimestamp()
                     .setFooter({ text: 'Eternal Return Open API' });
 
-                for (const stat of statsData.userStats) {
-                    const games = stat.totalGames || 0;
-                    if (games === 0) continue;
-                    const mode  = modeNames[stat.matchingTeamMode] || `모드${stat.matchingTeamMode}`;
-                    const emoji = modeEmoji[stat.matchingTeamMode] || '⚪';
-                    const wins  = stat.totalWins || 0;
-                    const top3  = stat.top3      || 0;
-                    const winRate   = ((wins / games) * 100).toFixed(1);
-                    const top3Rate  = ((top3 / games) * 100).toFixed(1);
-                    const avgKills  = (stat.totalKills / games).toFixed(2);
-                    const avgDamage = Math.round((stat.damageToPlayer || 0) / games).toLocaleString();
-                    let rankInfo = '';
-                    if (rankData.code === 200 && rankData.ranks) {
-                        const r = rankData.ranks.find(r => r.matchingTeamMode === stat.matchingTeamMode);
-                        if (r?.mmr) rankInfo = `\n🏅 MMR: **${r.mmr}** | 랭킹: **${r.rank ?? '?'}위**`;
+                if (statsData.code === 200 && statsData.userStats?.length) {
+                    for (const stat of statsData.userStats) {
+                        const games = stat.totalGames || 0;
+                        if (games === 0) continue;
+                        const mode  = modeNames[stat.matchingTeamMode] || `모드${stat.matchingTeamMode}`;
+                        const emoji = modeEmoji[stat.matchingTeamMode] || '⚪';
+                        const wins  = stat.totalWins || 0;
+                        const top3  = stat.top3      || 0;
+                        const winRate   = ((wins / games) * 100).toFixed(1);
+                        const top3Rate  = ((top3 / games) * 100).toFixed(1);
+                        const avgKills  = (stat.totalKills / games).toFixed(2);
+                        const avgDamage = Math.round((stat.damageToPlayer || 0) / games).toLocaleString();
+                        let rankInfo = '';
+                        if (rankData.code === 200 && rankData.ranks) {
+                            const r = rankData.ranks.find(r => r.matchingTeamMode === stat.matchingTeamMode);
+                            if (r?.mmr) rankInfo = `\n🏅 MMR: **${r.mmr}** | 랭킹: **${r.rank ?? '?'}위**`;
+                        }
+                        embed.addFields({
+                            name: `${emoji} ${mode}`,
+                            value: `📊 **${games}판** | 🥇 ${wins}승 (${winRate}%) | 🏆 TOP3: ${top3}회 (${top3Rate}%)\n⚔️ 평균 킬: **${avgKills}** | 💥 평균 딜량: **${avgDamage}**${rankInfo}`,
+                            inline: false
+                        });
                     }
-                    embed.addFields({
-                        name: `${emoji} ${mode}`,
-                        value: `📊 **${games}판** | 🥇 ${wins}승 (${winRate}%) | 🏆 TOP3: ${top3}회 (${top3Rate}%)\n⚔️ 평균 킬: **${avgKills}** | 💥 평균 딜량: **${avgDamage}**${rankInfo}`,
-                        inline: false
-                    });
+                }
+
+                // 전적 없지만 랭크 데이터는 있으면 MMR만 표시
+                if (!embed.data.fields?.length && rankData.code === 200 && rankData.ranks?.length) {
+                    for (const r of rankData.ranks) {
+                        if (!r.mmr) continue;
+                        const mode  = modeNames[r.matchingTeamMode] || `모드${r.matchingTeamMode}`;
+                        const emoji = modeEmoji[r.matchingTeamMode] || '⚪';
+                        embed.addFields({
+                            name: `${emoji} ${mode}`,
+                            value: `🏅 MMR: **${r.mmr}** | 랭킹: **${r.rank ?? '?'}위**\n📊 이번 시즌 상세 전적 없음`,
+                            inline: false
+                        });
+                    }
                 }
 
                 if (!embed.data.fields?.length) return await interaction.editReply({ content: `📭 **${realNick}**님의 전적 데이터가 없어요.` });
@@ -846,6 +849,29 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             return await interaction.reply({ content: '✅ 모두 원래 채널로 복구했어요!', ephemeral: true });
         }
+        // 관리 메뉴
+        else if (action === 'manage') {
+            if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
+            const menuOptions = data.gameType === '내전'
+                ? [
+                    { label: '팀 설정(수동)', value: 'manual',    description: '방장이 직접 팀을 구성합니다' },
+                    { label: '참가자 킥',     value: 'kick',      description: '참가자를 제외합니다' },
+                    { label: '방장 양도',     value: 'transfer',  description: '방장 권한을 양도합니다' },
+                    { label: '방 이동',       value: 'move',      description: '팀별로 음성 채널을 이동합니다' },
+                    { label: '원래대로',      value: 'return',    description: '모든 참가자를 원래 채널로 복구합니다' },
+                    { label: '맵 변경',       value: 'changeMap', description: '맵/모드를 변경합니다' },
+                ]
+                : [
+                    { label: '참가자 킥',     value: 'kick',      description: '참가자를 제외합니다' },
+                    { label: '방장 양도',     value: 'transfer',  description: '방장 권한을 양도합니다' },
+                    { label: '맵 변경',       value: 'changeMap', description: '맵/모드를 변경합니다' },
+                ];
+            const menu = new StringSelectMenuBuilder()
+                .setCustomId(`selectManage_${targetMsgId}`)
+                .setPlaceholder('관리 기능 선택')
+                .addOptions(menuOptions);
+            return await interaction.reply({ content: '⚙️ 관리 기능을 선택하세요:', components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
+        }
         // 참가 / 취소
         else if (action === 'join' || action === 'leave') {
             await interaction.deferUpdate();
@@ -883,6 +909,83 @@ client.on(Events.InteractionCreate, async interaction => {
         const data = allRecruits.get(targetMsgId);
         if (!data) return;
 
+        // 관리 메뉴 라우터
+        if (action === 'selectManage') {
+            if (interaction.user.id !== data.creatorId) return await interaction.update({ content: '방장만 가능합니다.', components: [] });
+            const selected = interaction.values[0];
+
+            if (selected === 'manual') {
+                const options = await Promise.all(data.participants.map(async id => {
+                    const u = await client.users.fetch(id);
+                    return { label: u.username, value: id };
+                }));
+                const menu = new StringSelectMenuBuilder()
+                    .setCustomId(`setTeamManual_${targetMsgId}`)
+                    .setPlaceholder('1팀에 넣을 멤버를 선택하세요')
+                    .setMinValues(1).setMaxValues(Math.min(options.length, 25))
+                    .addOptions(options);
+                return await interaction.update({ content: '🟦 **1팀** 멤버를 골라주세요. 나머지는 자동으로 2팀에 배정됩니다.', components: [new ActionRowBuilder().addComponents(menu)] });
+            }
+            else if (selected === 'kick') {
+                const others = data.participants.filter(id => id !== data.creatorId);
+                if (others.length === 0) return await interaction.update({ content: '킥할 참가자가 없습니다.', components: [] });
+                const options = await Promise.all(others.map(async id => {
+                    const u = await client.users.fetch(id);
+                    return { label: u.username, value: id };
+                }));
+                const menu = new StringSelectMenuBuilder()
+                    .setCustomId(`selectKick_${targetMsgId}`)
+                    .setPlaceholder('제외할 참가자를 선택하세요')
+                    .setMinValues(1).setMaxValues(Math.min(options.length, 25))
+                    .addOptions(options);
+                return await interaction.update({ content: '👢 제외할 참가자를 선택하세요.', components: [new ActionRowBuilder().addComponents(menu)] });
+            }
+            else if (selected === 'transfer') {
+                const others = data.participants.filter(id => id !== data.creatorId);
+                if (others.length === 0) return await interaction.update({ content: '양도할 사람이 없습니다.', components: [] });
+                const menu = new StringSelectMenuBuilder()
+                    .setCustomId(`selectTransfer_${targetMsgId}`)
+                    .setPlaceholder('새 방장 선택')
+                    .addOptions(await Promise.all(others.map(async id => {
+                        const u = await client.users.fetch(id);
+                        return { label: u.username, value: id };
+                    })));
+                return await interaction.update({ content: '누구에게 양도할까요?', components: [new ActionRowBuilder().addComponents(menu)] });
+            }
+            else if (selected === 'move') {
+                const member = await interaction.guild.members.fetch(interaction.user.id);
+                if (!member.voice.channel) return await interaction.update({ content: '음성 채널에 먼저 접속해주세요.', components: [] });
+                data.originalVoiceChannelId = member.voice.channelId;
+                const teamCount = data.teamCount || 2;
+                moveProgress.set(targetMsgId, { step: 0, teamChannels: [], teamCount });
+                const voiceChannels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).map(c => ({ label: c.name, value: c.id })).slice(0, 25);
+                const menu = new StringSelectMenuBuilder().setCustomId(`selectMoveTeam_${targetMsgId}`).setPlaceholder(`${TEAM_EMOJIS[0]} ${TEAM_NAMES[0]} 이동 채널 선택`).addOptions(voiceChannels);
+                return await interaction.update({ content: `${TEAM_EMOJIS[0]} **${TEAM_NAMES[0]}**이 갈 채널을 골라주세요. (1/${teamCount})`, components: [new ActionRowBuilder().addComponents(menu)] });
+            }
+            else if (selected === 'return') {
+                if (!data.originalVoiceChannelId) return await interaction.update({ content: '기록이 없습니다.', components: [] });
+                for (const id of data.participants) {
+                    const m = await interaction.guild.members.fetch(id).catch(() => null);
+                    if (m?.voice.channel) await m.voice.setChannel(data.originalVoiceChannelId).catch(() => null);
+                }
+                return await interaction.update({ content: '✅ 모두 원래 채널로 복구했어요!', components: [] });
+            }
+            else if (selected === 'changeMap') {
+                const choices = [
+                    { label: '🏝️ 루미아 섬 (내전)', value: '루미아 섬' },
+                    { label: '🌊 코발트 (내전 4vs4)', value: '코발트' },
+                    { label: '🐺 론울프 (개인전)', value: '론울프' },
+                ].filter(c => !(data.gameType === '론울프' && c.value === '론울프')
+                           && !(data.gameType === '내전' && data.mapType === '루미아 섬' && c.value === '루미아 섬')
+                           && !(data.gameType === '내전' && data.mapType === '코발트' && c.value === '코발트'));
+                const menu = new StringSelectMenuBuilder()
+                    .setCustomId(`selectChangeMap_${targetMsgId}`)
+                    .setPlaceholder('변경할 맵을 선택하세요')
+                    .addOptions(choices);
+                return await interaction.update({ content: `현재: **${data.gameType} / ${data.mapType}**\n변경할 맵을 선택해주세요. 인원은 그대로 유지됩니다.`, components: [new ActionRowBuilder().addComponents(menu)] });
+            }
+            return;
+        }
         // 수동 팀 배정
         if (action === 'setTeamManual') {
             const teamCount = data.teamCount || 2;
@@ -945,17 +1048,8 @@ client.on(Events.InteractionCreate, async interaction => {
                         new ButtonBuilder().setCustomId(`join_${targetMsgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
                         new ButtonBuilder().setCustomId(`leave_${targetMsgId}`).setLabel('취소').setStyle(ButtonStyle.Danger),
                         new ButtonBuilder().setCustomId(`shuffle_${targetMsgId}`).setLabel('팀 섞기(자동)').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId(`manual_${targetMsgId}`).setLabel('팀 설정(수동)').setStyle(ButtonStyle.Secondary)
-                    ),
-                    new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`kick_${targetMsgId}`).setLabel('참가자 킥').setStyle(ButtonStyle.Danger),
                         new ButtonBuilder().setCustomId(`charRandom_${targetMsgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId(`transfer_${targetMsgId}`).setLabel('방장 양도').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`move_${targetMsgId}`).setLabel('방 이동').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`return_${targetMsgId}`).setLabel('원래대로').setStyle(ButtonStyle.Secondary)
-                    ),
-                    new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`changeMap_${targetMsgId}`).setLabel('맵 변경').setStyle(ButtonStyle.Secondary)
+                        new ButtonBuilder().setCustomId(`manage_${targetMsgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
                     )
                 ];
             } else if (data.gameType === '론울프') {
@@ -964,11 +1058,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         new ButtonBuilder().setCustomId(`join_${targetMsgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
                         new ButtonBuilder().setCustomId(`leave_${targetMsgId}`).setLabel('취소').setStyle(ButtonStyle.Danger),
                         new ButtonBuilder().setCustomId(`charRandom_${targetMsgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId(`kick_${targetMsgId}`).setLabel('참가자 킥').setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder().setCustomId(`transfer_${targetMsgId}`).setLabel('방장 양도').setStyle(ButtonStyle.Primary)
-                    ),
-                    new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`changeMap_${targetMsgId}`).setLabel('맵 변경').setStyle(ButtonStyle.Secondary)
+                        new ButtonBuilder().setCustomId(`manage_${targetMsgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
                     )
                 ];
             }
