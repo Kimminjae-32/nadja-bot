@@ -252,25 +252,6 @@ cron.schedule('* * * * *', async () => {
 
 
 
-// 시즌 종료 7일 전 알림 (매일 오전 9시)
-cron.schedule('0 9 * * *', async () => {
-    const channelId = process.env.SEASON_ALERT_CHANNEL_ID;
-    if (!channelId || !process.env.ER_API_KEY) return;
-    try {
-        const res  = await fetch('https://open-api.bser.io/v1/data/Season', { headers: { 'x-api-key': process.env.ER_API_KEY } });
-        const json = await res.json();
-        const seasons = Array.isArray(json.data) ? json.data : [];
-        const current = seasons.find(s => s.isCurrent) ?? seasons.at(-1);
-        if (!current) return;
-        const daysLeft = Math.ceil((new Date(current.seasonEnd).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-        if (daysLeft === 7 || daysLeft === 3 || daysLeft === 1) {
-            const channel = await client.channels.fetch(channelId).catch(() => null);
-            if (channel?.isTextBased()) {
-                await channel.send(`⚠️ **${current.seasonName ?? `Season ${current.seasonID}`}** 종료까지 **${daysLeft}일** 남았어요!`);
-            }
-        }
-    } catch (e) { console.error('시즌 알림 오류:', e); }
-});
 
 // =====================================================
 // 이벤트 핸들러
