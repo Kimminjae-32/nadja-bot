@@ -417,10 +417,11 @@ client.on(Events.InteractionCreate, async interaction => {
                 try {
                     const seasonRes  = await fetch(`${BASE_URL}/v1/data/Season`, { headers: { 'x-api-key': ER_API_KEY } });
                     const seasonData = await seasonRes.json();
-                    const seasons = seasonData.data?.Season ?? seasonData.Season ?? [];
+                    // 응답: { code:200, data: [ {seasonID, isCurrent, ...}, ... ] }
+                    const seasons = Array.isArray(seasonData.data) ? seasonData.data : [];
                     const current = seasons.find(s => s.isCurrent) ?? seasons.at(-1);
                     if (current?.seasonID) seasonId = current.seasonID;
-                    console.log(`[전적] season raw:`, JSON.stringify(seasonData).slice(0, 300));
+                    console.log(`[전적] seasonId=${seasonId} (total ${seasons.length})`);
                 } catch (e) { console.log('[전적] season fetch failed:', e.message); }
 
                 // stats + 모드별 rank(1/2/3) 병렬 요청
