@@ -412,11 +412,21 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 const { userNum, nickname: realNick } = userData.user;
 
+                // 현재 시즌 ID 조회
+                let seasonId = 0;
+                try {
+                    const seasonRes  = await fetch(`${BASE_URL}/v1/season`, { headers: { 'x-api-key': ER_API_KEY } });
+                    const seasonData = await seasonRes.json();
+                    const current = seasonData.seasons?.find(s => s.isCurrent);
+                    if (current?.seasonID) seasonId = current.seasonID;
+                } catch { /* 실패 시 0 유지 */ }
+
                 const [statsRes, rankRes] = await Promise.all([
-                    fetch(`${BASE_URL}/v1/user/stats/${userNum}/0`, { headers: { 'x-api-key': ER_API_KEY } }),
-                    fetch(`${BASE_URL}/v2/rank/user/${userNum}/0`,  { headers: { 'x-api-key': ER_API_KEY } })
+                    fetch(`${BASE_URL}/v1/user/stats/${userNum}/${seasonId}`, { headers: { 'x-api-key': ER_API_KEY } }),
+                    fetch(`${BASE_URL}/v2/rank/user/${userNum}/${seasonId}`,  { headers: { 'x-api-key': ER_API_KEY } })
                 ]);
                 const [statsData, rankData] = await Promise.all([statsRes.json(), rankRes.json()]);
+                console.log(`[전적] ${realNick} (seasonId=${seasonId}) stats.code=${statsData.code} stats.len=${statsData.userStats?.length ?? 'null'} rank.code=${rankData.code} rank.len=${rankData.ranks?.length ?? 'null'}`);
 
                 const modeNames = { 1: '솔로', 2: '듀오', 3: '스쿼드' };
                 const modeEmoji = { 1: '🟣', 2: '🟢', 3: '🟡' };
