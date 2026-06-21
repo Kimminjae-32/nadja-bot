@@ -7,6 +7,10 @@ const fs   = require('fs');
 const cron = require('node-cron');
 require('dotenv').config();
 
+const db        = require('./db');
+const webServer = require('./server');
+webServer.start(Number(process.env.WEB_PORT) || 3000);
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -189,8 +193,11 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     activeUserRecruits.set(user.id, msgId);
     saveData();
 
+    if (gameType === '내전') db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id);
+
     let rows;
     if (gameType === '내전') {
+        const webUrl = `${process.env.WEB_URL || 'http://localhost:3000'}/join?event=${msgId}`;
         rows = [
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
@@ -198,6 +205,9 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
                 new ButtonBuilder().setCustomId(`shuffle_${msgId}`).setLabel('팀 섞기(자동)').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`charRandom_${msgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
+            ),
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setLabel('🔗 웹 폼으로 참가').setStyle(ButtonStyle.Link).setURL(webUrl)
             )
         ];
     } else if (gameType === '론울프') {
@@ -464,17 +474,41 @@ client.on(Events.InteractionCreate, async interaction => {
         if (action === 'shuffle') {
             if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
             const teamCount = data.teamCount || 2;
-            const shuffled  = [...data.participants].sort(() => Math.random() - 0.5);
+
+            const webParticipants = db.getParticipants(targetMsgId);
+            if (webParticipants.length >= 2) {
+                await interaction.deferReply();
+                const shuffled = [...webParticipants].sort(() => Math.random() - 0.5);
+                const teams = Array.from({ length: teamCount }, () => []);
+                shuffled.forEach((p, i) => teams[i % teamCount].push(p));
+
+                const POS_EMOJI = { '탱커': '🛡️', '전사': '⚔️', '암살자': '🗡️', '스킬 딜러': '✨', '원거리 딜러': '🏹', '지원가': '💚' };
+                const embed = new EmbedBuilder()
+                    .setTitle('🎲 팀 배정 결과')
+                    .setColor(0xFF0000)
+                    .setFooter({ text: `총 ${webParticipants.length}명 참가` })
+                    .setTimestamp();
+
+                for (let i = 0; i < teamCount; i++) {
+                    const team = teams[i];
+                    if (!team.length) continue;
+                    const lines = team.map(p =>
+                        `${POS_EMOJI[p.position] || ''}**${p.discord_nickname}** (${p.ingame_nickname})\n└ ${p.position}`
+                    );
+                    embed.addFields({ name: `${TEAM_EMOJIS[i]} ${TEAM_NAMES[i]} (${team.length}명)`, value: lines.join('\n\n'), inline: true });
+                }
+                return await interaction.editReply({ embeds: [embed] });
+            }
+
+            // 웹 폼 참가자 없으면 기존 Discord 참가자로 섞기
+            const shuffled = [...data.participants].sort(() => Math.random() - 0.5);
             data.teams = Array.from({ length: teamCount }, () => []);
             shuffled.forEach((id, i) => data.teams[i % teamCount].push(id));
             data.team1 = data.teams[0] || [];
             data.team2 = data.teams[1] || [];
             saveData();
             await interaction.deferUpdate();
-
-            // 임베드 업데이트
             await interaction.message.edit({ embeds: [await createRecruitEmbed(data)] }).catch(() => null);
-
         }
         // 팀 설정 (수동)
         else if (action === 'manual') {

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>참가 관리</title>
+    <style>
+        :root {
+            --bg: #0f0f1a; --card: #1a1a2e; --border: #2a2a4a;
+            --accent: #e94560; --accent2: #0f3460; --text: #e0e0f0; --muted: #8888aa;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif;
+            min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 2rem 1rem;
+        }
+        .container { width: 100%; max-width: 480px; }
+        h1 { font-size: 1.6rem; margin-bottom: .3rem; }
+        .subtitle { color: var(--muted); font-size: .9rem; margin-bottom: 1.8rem; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; }
+        .info-row { display: flex; justify-content: space-between; align-items: center; padding: .55rem 0; border-bottom: 1px solid var(--border); }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: var(--muted); font-size: .85rem; }
+        .info-value { font-weight: 600; }
+        .badge {
+            background: var(--accent2); border: 1px solid var(--accent);
+            border-radius: 6px; padding: .25rem .7rem; font-size: .85rem;
+        }
+        .btn {
+            display: block; width: 100%; border: none; border-radius: 8px;
+            padding: .9rem; font-size: 1rem; font-weight: 700; cursor: pointer;
+            transition: opacity .2s; margin-bottom: .6rem; text-align: center; text-decoration: none;
+        }
+        .btn:hover { opacity: .85; }
+        .btn:disabled { opacity: .45; cursor: not-allowed; }
+        .btn-edit  { background: var(--accent2); color: #fff; border: 1px solid var(--accent); }
+        .btn-cancel { background: var(--accent); color: #fff; }
+        .loading { text-align: center; padding: 3rem; color: var(--muted); }
+        .center { text-align: center; }
+        .big-icon { font-size: 2.5rem; margin-bottom: .75rem; display: block; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>⚙️ 참가 관리</h1>
+    <p class="subtitle">내 참가 정보를 수정하거나 취소할 수 있어요.</p>
+
+    <div id="loading" class="loading">불러오는 중...</div>
+
+    <div id="main" style="display:none">
+        <div class="card" id="info-card"></div>
+
+        <div id="actions">
+            <a href="#" id="edit-link" class="btn btn-edit">✏️ 정보 수정하기</a>
+            <button type="button" class="btn btn-cancel" id="cancel-btn">🗑️ 참가 취소하기</button>
+        </div>
+
+        <div id="confirm" class="card" style="display:none">
+            <p class="center" style="margin-bottom:1rem;">정말 참가를 취소할까요?</p>
+            <button type="button" class="btn btn-cancel" id="confirm-btn">네, 취소합니다</button>
+            <button type="button" class="btn btn-edit"   id="back-btn">아니요, 돌아가기</button>
+        </div>
+    </div>
+
+    <div id="done" class="card" style="display:none">
+        <p class="center"><span class="big-icon">✅</span>참가가 취소되었습니다.</p>
+    </div>
+
+    <div id="error" class="card" style="display:none">
+        <p class="center" style="color:var(--accent);">링크가 유효하지 않거나 이미 취소된 참가 정보입니다.</p>
+    </div>
+</div>
+
+<script>
+    const params = new URLSearchParams(location.search);
+    const token  = params.get('token');
+    const POS_EMOJI = { '탱커':'🛡️', '전사':'⚔️', '암살자':'🗡️', '스킬 딜러':'✨', '원거리 딜러':'🏹', '지원가':'💚' };
+
+    function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function show(id) { document.getElementById(id).style.display = 'block'; }
+    function hide(id) { document.getElementById(id).style.display = 'none'; }
+
+    if (!token) {
+        hide('loading'); show('error');
+    } else {
+        fetch(`/api/participant?token=${token}`)
+            .then(r => r.json())
+            .then(d => {
+                hide('loading');
+                if (d.error) { show('error'); return; }
+                const emoji = POS_EMOJI[d.position] || '';
+                document.getElementById('info-card').innerHTML = `
+                    <div class="info-row"><span class="info-label">디스코드 닉네임</span><span class="info-value">${esc(d.discord_nickname)}</span></div>
+                    <div class="info-row"><span class="info-label">인게임 닉네임</span><span class="info-value">${esc(d.ingame_nickname)}</span></div>
+                    <div class="info-row"><span class="info-label">선호 포지션</span><span class="badge">${emoji} ${esc(d.position)}</span></div>
+                `;
+                document.getElementById('edit-link').href = `/join?event=${d.event_id}&token=${token}`;
+                show('main');
+            })
+            .catch(() => { hide('loading'); show('error'); });
+    }
+
+    document.getElementById('cancel-btn').addEventListener('click', () => {
+        hide('actions'); show('confirm');
+    });
+    document.getElementById('back-btn').addEventListener('click', () => {
+        hide('confirm'); show('actions');
+    });
+    document.getElementById('confirm-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('confirm-btn');
+        btn.disabled = true; btn.textContent = '처리 중...';
+        try {
+            const res  = await fetch('/cancel', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `token=${token}` });
+            const data = await res.json();
+            if (data.success) { hide('main'); show('done'); }
+            else { btn.disabled = false; btn.textContent = '네, 취소합니다'; alert(data.error || '오류가 발생했습니다.'); }
+        } catch (e) {
+            btn.disabled = false; btn.textContent = '네, 취소합니다'; alert('서버 오류가 발생했습니다.');
+        }
+    });
+</script>
+</body>
+</html>
