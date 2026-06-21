@@ -197,7 +197,6 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
 
     let rows;
     if (gameType === '내전') {
-        const webUrl = `${process.env.WEB_URL || 'http://localhost:3000'}/join?event=${msgId}`;
         rows = [
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
@@ -205,9 +204,6 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
                 new ButtonBuilder().setCustomId(`shuffle_${msgId}`).setLabel('팀 섞기(자동)').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`charRandom_${msgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
-            ),
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setLabel('🔗 웹 폼으로 참가').setStyle(ButtonStyle.Link).setURL(webUrl)
             )
         ];
     } else if (gameType === '론울프') {
@@ -663,6 +659,39 @@ client.on(Events.InteractionCreate, async interaction => {
         }
         // 참가 / 취소
         else if (action === 'join' || action === 'leave') {
+            const BASE = process.env.WEB_URL || 'http://localhost:3000';
+
+            // ── 내전: 웹 폼 기반 참가/취소 ──
+            if (data.gameType === '내전') {
+                if (action === 'join') {
+                    const existing = db.getByDiscordId(targetMsgId, interaction.user.id);
+                    if (existing) {
+                        return await interaction.reply({
+                            content: `이미 참가 신청이 되어 있어요!\n✏️ 수정/취소: ${BASE}/cancel?token=${existing.cancel_token}`,
+                            ephemeral: true
+                        });
+                    }
+                    const webUrl = `${BASE}/join?event=${targetMsgId}&discord_id=${interaction.user.id}`;
+                    return await interaction.reply({
+                        content: `아래 링크에서 참가 신청해주세요!\n${webUrl}`,
+                        ephemeral: true
+                    });
+                }
+                // leave
+                if (interaction.user.id === data.creatorId) {
+                    allRecruits.delete(targetMsgId);
+                    activeUserRecruits.delete(data.creatorId);
+                    saveData();
+                    return await interaction.message.delete().catch(() => null);
+                }
+                const deleted = db.deleteByDiscordId(targetMsgId, interaction.user.id);
+                return await interaction.reply({
+                    content: deleted ? '✅ 참가가 취소됐어요.' : '참가 내역이 없어요. 웹 폼으로 신청한 경우 신청 완료 시 받은 링크로 취소해주세요.',
+                    ephemeral: true
+                });
+            }
+
+            // ── 구인 / 론울프: 기존 Discord 방식 ──
             await interaction.deferUpdate();
             if (action === 'join') {
                 if (data.participants.length < data.maxPlayers && !data.participants.includes(interaction.user.id)) {

@@ -23,11 +23,23 @@ module.exports = {
         }
     },
 
-    addParticipant(eventId, discordNick, ingameNick, position) {
-        const data  = load();
+    // discord_id가 있으면 같은 이벤트에 중복 제출 시 업데이트
+    addParticipant(eventId, discordId, discordNick, ingameNick, position) {
+        const data = load();
+        if (discordId) {
+            const existing = Object.values(data.participants).find(
+                p => p.event_id === eventId && p.discord_id === discordId
+            );
+            if (existing) {
+                Object.assign(existing, { discord_nickname: discordNick, ingame_nickname: ingameNick, position });
+                save(data);
+                return existing.cancel_token;
+            }
+        }
         const token = crypto.randomBytes(8).toString('hex');
         data.participants[token] = {
             event_id:         eventId,
+            discord_id:       discordId || null,
             discord_nickname: discordNick,
             ingame_nickname:  ingameNick,
             position,
@@ -49,6 +61,12 @@ module.exports = {
         return load().participants[token] || null;
     },
 
+    getByDiscordId(eventId, discordId) {
+        return Object.values(load().participants).find(
+            p => p.event_id === eventId && p.discord_id === discordId
+        ) || null;
+    },
+
     updateByToken(token, discordNick, ingameNick, position) {
         const data = load();
         if (data.participants[token]) {
@@ -65,6 +83,15 @@ module.exports = {
         const data = load();
         delete data.participants[token];
         save(data);
+    },
+
+    deleteByDiscordId(eventId, discordId) {
+        const data = load();
+        const token = Object.keys(data.participants).find(
+            k => data.participants[k].event_id === eventId && data.participants[k].discord_id === discordId
+        );
+        if (token) { delete data.participants[token]; save(data); return true; }
+        return false;
     },
 
     eventExists(id) {

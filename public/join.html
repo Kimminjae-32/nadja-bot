@@ -157,9 +157,10 @@
 </div>
 
 <script>
-    const params   = new URLSearchParams(location.search);
-    const eventId  = params.get('event');
+    const params    = new URLSearchParams(location.search);
+    const eventId   = params.get('event');
     const editToken = params.get('token');
+    const discordId = params.get('discord_id');
     let selectedPos = '';
 
     if (editToken) {
@@ -201,6 +202,7 @@
 
         const body = new URLSearchParams({ event: eventId, discord_nickname: dn, ingame_nickname: inn, position: selectedPos });
         if (editToken) body.append('token', editToken);
+        if (discordId) body.append('discord_id', discordId);
 
         try {
             const res  = await fetch('/join', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });

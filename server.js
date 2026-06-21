@@ -25,7 +25,7 @@ app.get('/join', (req, res) => {
 
 // POST /join
 app.post('/join', (req, res) => {
-    const { event, token, discord_nickname, ingame_nickname, position } = req.body;
+    const { event, token, discord_id, discord_nickname, ingame_nickname, position } = req.body;
 
     if (!event || !discord_nickname?.trim() || !ingame_nickname?.trim() || !position) {
         return res.status(400).json({ error: '모든 항목을 입력해주세요.' });
@@ -46,7 +46,7 @@ app.post('/join', (req, res) => {
         return res.json({ success: true, cancel_token: token, updated: true });
     }
 
-    const cancel_token = db.addParticipant(event, discord_nickname.trim(), ingame_nickname.trim(), position);
+    const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position);
     res.json({ success: true, cancel_token, updated: false });
 });
 
