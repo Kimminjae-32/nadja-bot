@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>내전 관리자</title>
+    <style>
+        :root { --bg:#0f0f1a; --card:#1a1a2e; --border:#2a2a4a; --accent:#e94560; --accent2:#0f3460; --text:#e0e0f0; --muted:#8888aa; --green:#2ecc71; }
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{background:var(--bg);color:var(--text);font-family:'Segoe UI',sans-serif;min-height:100vh;padding:1.5rem 1rem;}
+        .container{max-width:960px;margin:0 auto;}
+        h1{font-size:1.5rem;margin-bottom:.25rem;}
+        .subtitle{color:var(--muted);font-size:.85rem;margin-bottom:1.5rem;}
+        .stats-row{display:flex;gap:1rem;margin-bottom:1.2rem;flex-wrap:wrap;}
+        .stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.75rem 1.2rem;text-align:center;}
+        .stat-num{font-size:1.6rem;font-weight:700;}
+        .stat-label{font-size:.75rem;color:var(--muted);}
+        .actions{display:flex;gap:.6rem;margin-bottom:1.5rem;flex-wrap:wrap;}
+        .btn{border:none;border-radius:8px;padding:.65rem 1.2rem;font-size:.9rem;font-weight:600;cursor:pointer;transition:opacity .2s;}
+        .btn:hover{opacity:.85;}
+        .btn:disabled{opacity:.4;cursor:not-allowed;}
+        .btn-primary{background:var(--accent);color:#fff;}
+        .btn-secondary{background:var(--accent2);color:#fff;border:1px solid var(--accent);}
+        .btn-success{background:#27ae60;color:#fff;}
+        .btn-danger{background:#c0392b;color:#fff;}
+        .btn-sm{padding:.35rem .75rem;font-size:.8rem;}
+        .tabs{display:flex;gap:.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:.5rem;}
+        .tab{background:none;border:none;color:var(--muted);cursor:pointer;padding:.5rem 1rem;border-radius:6px 6px 0 0;font-size:.9rem;}
+        .tab.active{background:var(--card);color:var(--text);border:1px solid var(--border);border-bottom:none;}
+        table{width:100%;border-collapse:collapse;}
+        th,td{padding:.65rem .75rem;text-align:left;border-bottom:1px solid var(--border);font-size:.88rem;}
+        th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;}
+        tr:hover td{background:rgba(255,255,255,.03);}
+        .pos-badge{display:inline-flex;align-items:center;gap:.3rem;background:var(--accent2);border:1px solid #1a4a80;border-radius:5px;padding:.2rem .5rem;font-size:.8rem;white-space:nowrap;}
+        .team-select{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.3rem .5rem;font-size:.85rem;cursor:pointer;}
+        .team-select:focus{outline:none;border-color:var(--accent);}
+        .teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;}
+        .team-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem;}
+        .team-card h3{font-size:.95rem;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border);}
+        .member-item{padding:.4rem 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.85rem;}
+        .member-item:last-child{border-bottom:none;}
+        .member-name{font-weight:600;}
+        .member-sub{color:var(--muted);font-size:.78rem;}
+        .unassigned{background:#2a1a1a;border-color:#4a2a2a;}
+        .loading{text-align:center;padding:3rem;color:var(--muted);}
+        .toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#27ae60;color:#fff;padding:.75rem 1.2rem;border-radius:8px;font-size:.9rem;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;}
+        .toast.show{opacity:1;}
+        .toast.error{background:var(--accent);}
+        select option{background:#1a1a2e;}
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>⚙️ 내전 관리자</h1>
+    <p class="subtitle" id="subtitle">로딩 중...</p>
+
+    <div class="stats-row">
+        <div class="stat-card"><div class="stat-num" id="stat-total">-</div><div class="stat-label">총 참가자</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-assigned">-</div><div class="stat-label">팀 배정됨</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-teams">-</div><div class="stat-label">팀 수</div></div>
+    </div>
+
+    <div class="actions">
+        <button class="btn btn-primary" id="shuffle-btn">🎲 자동 배정</button>
+        <button class="btn btn-success" id="send-btn">📤 디스코드에 결과 전송</button>
+    </div>
+
+    <div class="tabs">
+        <button class="tab active" data-tab="list">전체 목록</button>
+        <button class="tab" data-tab="teams">팀별 보기</button>
+    </div>
+
+    <div id="view-list">
+        <div class="loading" id="list-loading">불러오는 중...</div>
+        <table id="participants-table" style="display:none">
+            <thead><tr><th>디스코드</th><th>인게임</th><th>포지션</th><th>팀 배정</th><th>삭제</th></tr></thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+
+    <div id="view-teams" style="display:none">
+        <div class="teams-grid" id="teams-grid"></div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const EVENT  = params.get('event');
+const TOKEN  = params.get('token');
+const POS_EMOJI = { '탱커':'🛡️','전사':'⚔️','암살자':'🗡️','스킬 딜러':'✨','원거리 딜러':'🏹','지원가':'💚' };
+const TEAM_COLORS = ['#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22','#95a5a6','#1abc9c'];
+
+let eventData = null;
+let participants = [];
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function toast(msg, isError=false){
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (isError?' error':'');
+    clearTimeout(el._t);
+    el._t = setTimeout(()=>el.classList.remove('show'),2500);
+}
+
+async function api(url, body=null){
+    const opts = body
+        ? { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }
+        : { method:'GET' };
+    const res = await fetch(url, opts);
+    return res.json();
+}
+
+async function load(){
+    const data = await api(`/api/admin/data?event=${EVENT}&token=${TOKEN}`);
+    if(data.error){ document.getElementById('subtitle').textContent='오류: '+data.error; return; }
+    eventData = data.event;
+    participants = data.participants;
+    document.getElementById('subtitle').textContent = `이벤트 ID: ${EVENT}`;
+    render();
+}
+
+function render(){
+    const assigned = participants.filter(p=>p.team_num).length;
+    document.getElementById('stat-total').textContent    = participants.length;
+    document.getElementById('stat-assigned').textContent = assigned;
+    document.getElementById('stat-teams').textContent    = eventData?.teamCount || 2;
+
+    renderTable();
+    renderTeams();
+}
+
+function teamOptions(current, teamCount){
+    let html = `<option value="">미배정</option>`;
+    for(let i=1;i<=teamCount;i++){
+        html += `<option value="${i}" ${current==i?'selected':''}>${i}팀</option>`;
+    }
+    return html;
+}
+
+function renderTable(){
+    const tc = eventData?.teamCount || 2;
+    const tbody = document.getElementById('table-body');
+    tbody.innerHTML = participants.map(p=>`
+        <tr data-token="${esc(p.cancel_token)}">
+            <td><strong>${esc(p.discord_nickname)}</strong></td>
+            <td>${esc(p.ingame_nickname)}</td>
+            <td><span class="pos-badge">${POS_EMOJI[p.position]||''} ${esc(p.position)}</span></td>
+            <td>
+                <select class="team-select" onchange="assignTeam('${esc(p.cancel_token)}', this.value)">
+                    ${teamOptions(p.team_num, tc)}
+                </select>
+            </td>
+            <td><button class="btn btn-danger btn-sm" onclick="removeMember('${esc(p.cancel_token)}')">삭제</button></td>
+        </tr>
+    `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:2rem">참가자가 없어요</td></tr>';
+    document.getElementById('list-loading').style.display='none';
+    document.getElementById('participants-table').style.display='table';
+}
+
+function renderTeams(){
+    const tc = eventData?.teamCount || 2;
+    const teams = {};
+    for(let i=1;i<=tc;i++) teams[i]=[];
+    const unassigned=[];
+    for(const p of participants){
+        if(p.team_num && teams[p.team_num]) teams[p.team_num].push(p);
+        else unassigned.push(p);
+    }
+    const grid = document.getElementById('teams-grid');
+    let html='';
+    for(let i=1;i<=tc;i++){
+        const color = TEAM_COLORS[(i-1)%TEAM_COLORS.length];
+        html+=`<div class="team-card"><h3 style="color:${color}">${i}팀 (${teams[i].length}명)</h3>`;
+        if(!teams[i].length) html+='<p style="color:var(--muted);font-size:.85rem">없음</p>';
+        for(const p of teams[i]) html+=`
+            <div class="member-item">
+                <div class="member-name">${esc(p.discord_nickname)}</div>
+                <div class="member-sub">${esc(p.ingame_nickname)} · ${POS_EMOJI[p.position]||''} ${esc(p.position)}</div>
+            </div>`;
+        html+='</div>';
+    }
+    if(unassigned.length){
+        html+=`<div class="team-card unassigned"><h3 style="color:var(--muted)">❓ 미배정 (${unassigned.length}명)</h3>`;
+        for(const p of unassigned) html+=`<div class="member-item"><div class="member-name">${esc(p.discord_nickname)}</div></div>`;
+        html+='</div>';
+    }
+    grid.innerHTML = html || '<p style="color:var(--muted)">참가자가 없어요</p>';
+}
+
+async function assignTeam(cancelToken, teamNum){
+    await api('/api/admin/assign', { event:EVENT, token:TOKEN, cancel_token:cancelToken, team_num:teamNum });
+    const p = participants.find(x=>x.cancel_token===cancelToken);
+    if(p) p.team_num = teamNum===''? null : Number(teamNum);
+    renderTeams();
+    toast('팀 배정 저장됨');
+}
+
+async function removeMember(cancelToken){
+    if(!confirm('이 참가자를 삭제할까요?')) return;
+    await api('/api/admin/remove', { event:EVENT, token:TOKEN, cancel_token:cancelToken });
+    participants = participants.filter(p=>p.cancel_token!==cancelToken);
+    render();
+    toast('삭제됐어요');
+}
+
+document.getElementById('shuffle-btn').addEventListener('click', async ()=>{
+    if(!confirm(`참가자 ${participants.length}명을 ${eventData?.teamCount||2}팀으로 자동 배정할까요?`)) return;
+    const btn = document.getElementById('shuffle-btn');
+    btn.disabled=true;
+    const data = await api('/api/admin/shuffle', { event:EVENT, token:TOKEN });
+    participants = data.participants;
+    render();
+    btn.disabled=false;
+    toast('자동 배정 완료!');
+});
+
+document.getElementById('send-btn').addEventListener('click', async ()=>{
+    const assigned = participants.filter(p=>p.team_num).length;
+    if(!assigned){ toast('팀 배정 먼저 해주세요!', true); return; }
+    if(!confirm('현재 팀 배정 결과를 디스코드 채널에 전송할까요?')) return;
+    const btn = document.getElementById('send-btn');
+    btn.disabled=true;
+    const data = await api('/api/admin/send-discord', { event:EVENT, token:TOKEN });
+    btn.disabled=false;
+    data.success ? toast('디스코드에 전송됐어요!') : toast('전송 실패: '+data.error, true);
+});
+
+document.querySelectorAll('.tab').forEach(tab=>{
+    tab.addEventListener('click',()=>{
+        document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('view-list').style.display  = tab.dataset.tab==='list'  ?'block':'none';
+        document.getElementById('view-teams').style.display = tab.dataset.tab==='teams' ?'block':'none';
+    });
+});
+
+load();
+</script>
+</body>
+</html>

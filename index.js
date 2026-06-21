@@ -19,6 +19,7 @@ const client = new Client({
         GatewayIntentBits.GuildMembers
     ]
 });
+webServer.setClient(client);
 
 const DATA_PATH       = './recruits.json';
 
@@ -193,7 +194,11 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     activeUserRecruits.set(user.id, msgId);
     saveData();
 
-    if (gameType === '내전') db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id);
+    if (gameType === '내전') {
+        const adminToken = db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount);
+        const adminUrl   = `${process.env.WEB_URL || 'http://localhost:3000'}/admin?event=${msgId}&token=${adminToken}`;
+        client.users.fetch(user.id).then(u => u.send(`🛠️ 내전 관리자 페이지 (방장 전용):\n${adminUrl}`).catch(() => null));
+    }
 
     let rows;
     if (gameType === '내전') {

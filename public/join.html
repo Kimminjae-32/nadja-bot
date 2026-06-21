@@ -75,7 +75,7 @@
             font-size: .9rem;
             line-height: 1.3;
         }
-        .pos-btn .em { font-size: 1.4rem; display: block; margin-bottom: .2rem; }
+        .pos-icon { width: 36px; height: 36px; display: block; margin: 0 auto .2rem; object-fit: contain; }
         .pos-btn:hover { border-color: var(--accent); }
         .pos-btn.on { background: var(--accent2); border-color: var(--accent); color: #fff; }
         .submit-btn {
@@ -136,12 +136,12 @@
             <div class="field">
                 <label>선호 포지션</label>
                 <div class="positions">
-                    <button type="button" class="pos-btn" data-pos="탱커"><span class="em">🛡️</span>탱커</button>
-                    <button type="button" class="pos-btn" data-pos="전사"><span class="em">⚔️</span>전사</button>
-                    <button type="button" class="pos-btn" data-pos="암살자"><span class="em">🗡️</span>암살자</button>
-                    <button type="button" class="pos-btn" data-pos="스킬 딜러"><span class="em">✨</span>스킬 딜러</button>
-                    <button type="button" class="pos-btn" data-pos="원거리 딜러"><span class="em">🏹</span>원거리 딜러</button>
-                    <button type="button" class="pos-btn" data-pos="지원가"><span class="em">💚</span>지원가</button>
+                    <button type="button" class="pos-btn" data-pos="탱커"><img src="/icons/tank.png" class="pos-icon" onerror="this.style.display='none'">탱커</button>
+                    <button type="button" class="pos-btn" data-pos="전사"><img src="/icons/warrior.png" class="pos-icon" onerror="this.style.display='none'">전사</button>
+                    <button type="button" class="pos-btn" data-pos="암살자"><img src="/icons/assassin.png" class="pos-icon" onerror="this.style.display='none'">암살자</button>
+                    <button type="button" class="pos-btn" data-pos="스킬 딜러"><img src="/icons/skill.png" class="pos-icon" onerror="this.style.display='none'">스킬 딜러</button>
+                    <button type="button" class="pos-btn" data-pos="원거리 딜러"><img src="/icons/range.png" class="pos-icon" onerror="this.style.display='none'">원거리 딜러</button>
+                    <button type="button" class="pos-btn" data-pos="지원가"><img src="/icons/support.png" class="pos-icon" onerror="this.style.display='none'">지원가</button>
                 </div>
             </div>
             <p class="err" id="err"></p>

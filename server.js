@@ -6,7 +6,12 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+let discordClient = null;
+
 const VALID_POSITIONS = ['탱커', '전사', '암살자', '스킬 딜러', '원거리 딜러', '지원가'];
+const POS_EMOJI = { '탱커':'🛡️','전사':'⚔️','암살자':'🗡️','스킬 딜러':'✨','원거리 딜러':'🏹','지원가':'💚' };
+const TEAM_EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫','🔵','🔴','🟢','🟡','🟠','⚪','🔶','🔷','🔸','🔹'];
+const TEAM_NAMES  = ['1팀','2팀','3팀','4팀','5팀','6팀','7팀','8팀','9팀','10팀','11팀','12팀','13팀','14팀','15팀','16팀','17팀','18팀'];
 
 function errorPage(msg) {
     return `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>오류</title>
@@ -14,11 +19,17 @@ function errorPage(msg) {
     </head><body><div class="box"><h2>⚠️ 오류</h2><p>${msg}</p></div></body></html>`;
 }
 
-// GET /join?event=MSGID[&token=CANCEL_TOKEN]
+// ── 참가 신청 ──────────────────────────────────
+// GET /join?event=MSGID[&discord_id=ID][&token=TOKEN]
 app.get('/join', (req, res) => {
-    const { event } = req.query;
+    const { event, discord_id } = req.query;
     if (!event || !db.eventExists(event)) {
         return res.status(404).send(errorPage('존재하지 않는 내전입니다.'));
+    }
+    // 이미 신청한 경우 수정/취소 페이지로 리다이렉트
+    if (discord_id) {
+        const existing = db.getByDiscordId(event, discord_id);
+        if (existing) return res.redirect(`/cancel?token=${existing.cancel_token}`);
     }
     res.sendFile(path.join(__dirname, 'public', 'join.html'));
 });
@@ -26,49 +37,38 @@ app.get('/join', (req, res) => {
 // POST /join
 app.post('/join', (req, res) => {
     const { event, token, discord_id, discord_nickname, ingame_nickname, position } = req.body;
-
-    if (!event || !discord_nickname?.trim() || !ingame_nickname?.trim() || !position) {
+    if (!event || !discord_nickname?.trim() || !ingame_nickname?.trim() || !position)
         return res.status(400).json({ error: '모든 항목을 입력해주세요.' });
-    }
-    if (!VALID_POSITIONS.includes(position)) {
+    if (!VALID_POSITIONS.includes(position))
         return res.status(400).json({ error: '올바른 포지션을 선택해주세요.' });
-    }
-    if (!db.eventExists(event)) {
+    if (!db.eventExists(event))
         return res.status(404).json({ error: '존재하지 않는 내전입니다.' });
-    }
 
     if (token) {
         const existing = db.getByToken(token);
-        if (!existing || existing.event_id !== event) {
+        if (!existing || existing.event_id !== event)
             return res.status(403).json({ error: '유효하지 않은 수정 토큰입니다.' });
-        }
         db.updateByToken(token, discord_nickname.trim(), ingame_nickname.trim(), position);
         return res.json({ success: true, cancel_token: token, updated: true });
     }
-
     const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position);
     res.json({ success: true, cancel_token, updated: false });
 });
 
 // GET /api/participant?token=TOKEN
 app.get('/api/participant', (req, res) => {
-    const { token } = req.query;
-    if (!token) return res.status(400).json({ error: '토큰이 필요합니다.' });
-    const p = db.getByToken(token);
-    if (!p) return res.status(404).json({ error: '참가 정보를 찾을 수 없습니다.' });
-    res.json(p);
+    const p = db.getByToken(req.query.token || '');
+    p ? res.json(p) : res.status(404).json({ error: '참가 정보를 찾을 수 없습니다.' });
 });
 
-// GET /cancel?token=TOKEN
+// ── 참가 취소/수정 ────────────────────────────
 app.get('/cancel', (req, res) => {
     const { token } = req.query;
-    if (!token || !db.getByToken(token)) {
+    if (!token || !db.getByToken(token))
         return res.status(404).send(errorPage('이미 취소되었거나 존재하지 않는 참가 정보입니다.'));
-    }
     res.sendFile(path.join(__dirname, 'public', 'cancel.html'));
 });
 
-// POST /cancel
 app.post('/cancel', (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: '토큰이 없습니다.' });
@@ -78,8 +78,100 @@ app.post('/cancel', (req, res) => {
     res.json({ success: true });
 });
 
+// ── 관리자 ────────────────────────────────────
+// GET /admin?event=MSGID&token=ADMIN_TOKEN
+app.get('/admin', (req, res) => {
+    const { event, token } = req.query;
+    if (!event || !token || !db.verifyAdmin(event, token))
+        return res.status(403).send(errorPage('관리자 권한이 없거나 잘못된 링크입니다.'));
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// GET /api/admin/data?event=&token=
+app.get('/api/admin/data', (req, res) => {
+    const { event, token } = req.query;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const ev = db.getEvent(event);
+    const participants = db.getParticipants(event);
+    res.json({ event: ev, participants });
+});
+
+// POST /api/admin/shuffle
+app.post('/api/admin/shuffle', (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const ev = db.getEvent(event);
+    db.shuffleTeams(event, ev.teamCount || 2);
+    res.json({ success: true, participants: db.getParticipants(event) });
+});
+
+// POST /api/admin/assign  { event, token, cancel_token, team_num }
+app.post('/api/admin/assign', (req, res) => {
+    const { event, token, cancel_token, team_num } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    db.assignTeam(cancel_token, team_num === '' ? null : Number(team_num));
+    res.json({ success: true });
+});
+
+// POST /api/admin/remove  { event, token, cancel_token }
+app.post('/api/admin/remove', (req, res) => {
+    const { event, token, cancel_token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    db.deleteByToken(cancel_token);
+    res.json({ success: true });
+});
+
+// POST /api/admin/send-discord  — 팀 배정 결과를 Discord 채널에 전송
+app.post('/api/admin/send-discord', async (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!discordClient) return res.status(500).json({ error: '봇 클라이언트가 없습니다.' });
+
+    const ev = db.getEvent(event);
+    const participants = db.getParticipants(event);
+    const teamCount = ev.teamCount || 2;
+
+    const teams = {};
+    for (let i = 1; i <= teamCount; i++) teams[i] = [];
+    const unassigned = [];
+    for (const p of participants) {
+        if (p.team_num && teams[p.team_num]) teams[p.team_num].push(p);
+        else unassigned.push(p);
+    }
+
+    try {
+        const { EmbedBuilder } = require('discord.js');
+        const embed = new EmbedBuilder()
+            .setTitle('🎲 팀 배정 결과')
+            .setColor(0xFF0000)
+            .setFooter({ text: `총 ${participants.length}명` })
+            .setTimestamp();
+
+        for (let i = 1; i <= teamCount; i++) {
+            const team = teams[i];
+            if (!team.length) continue;
+            const lines = team.map(p => `${POS_EMOJI[p.position]||''}**${p.discord_nickname}** (${p.ingame_nickname})\n└ ${p.position}`);
+            embed.addFields({ name: `${TEAM_EMOJIS[i-1]} ${TEAM_NAMES[i-1]} (${team.length}명)`, value: lines.join('\n\n'), inline: true });
+        }
+        if (unassigned.length) {
+            embed.addFields({ name: '❓ 미배정', value: unassigned.map(p => p.discord_nickname).join(', '), inline: false });
+        }
+
+        const channel = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+        if (!channel) return res.status(404).json({ error: '채널을 찾을 수 없습니다.' });
+        await channel.send({ embeds: [embed] });
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: '전송 실패: ' + e.message });
+    }
+});
+
 module.exports = {
     start(port) {
         app.listen(port, () => console.log(`[웹] 포트 ${port} 에서 실행 중`));
+    },
+    setClient(client) {
+        discordClient = client;
     }
 };

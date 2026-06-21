@@ -15,15 +15,27 @@ function save(data) {
 }
 
 module.exports = {
-    createEvent(id, guildId, channelId, createdBy) {
+    // 이벤트 생성 — admin_token, team_count 포함
+    createEvent(id, guildId, channelId, createdBy, teamCount) {
         const data = load();
         if (!data.events[id]) {
-            data.events[id] = { id, guildId, channelId, createdBy, createdAt: Date.now() };
+            const adminToken = crypto.randomBytes(12).toString('hex');
+            data.events[id] = { id, guildId, channelId, createdBy, teamCount: teamCount || 2, adminToken, createdAt: Date.now() };
             save(data);
         }
+        return data.events[id].adminToken;
     },
 
-    // discord_id가 있으면 같은 이벤트에 중복 제출 시 업데이트
+    getEvent(id) {
+        return load().events[id] || null;
+    },
+
+    verifyAdmin(eventId, adminToken) {
+        const ev = load().events[eventId];
+        return ev?.adminToken === adminToken;
+    },
+
+    // discord_id 중복 시 업데이트
     addParticipant(eventId, discordId, discordNick, ingameNick, position) {
         const data = load();
         if (discordId) {
@@ -38,29 +50,21 @@ module.exports = {
         }
         const token = crypto.randomBytes(8).toString('hex');
         data.participants[token] = {
-            event_id:         eventId,
-            discord_id:       discordId || null,
-            discord_nickname: discordNick,
-            ingame_nickname:  ingameNick,
-            position,
-            cancel_token:     token,
-            submitted_at:     Date.now()
+            event_id: eventId, discord_id: discordId || null,
+            discord_nickname: discordNick, ingame_nickname: ingameNick,
+            position, team_num: null, cancel_token: token, submitted_at: Date.now()
         };
         save(data);
         return token;
     },
 
     getParticipants(eventId) {
-        const data = load();
-        return Object.values(data.participants)
+        return Object.values(load().participants)
             .filter(p => p.event_id === eventId)
             .sort((a, b) => a.submitted_at - b.submitted_at);
     },
 
-    getByToken(token) {
-        return load().participants[token] || null;
-    },
-
+    getByToken(token)        { return load().participants[token] || null; },
     getByDiscordId(eventId, discordId) {
         return Object.values(load().participants).find(
             p => p.event_id === eventId && p.discord_id === discordId
@@ -70,19 +74,26 @@ module.exports = {
     updateByToken(token, discordNick, ingameNick, position) {
         const data = load();
         if (data.participants[token]) {
-            Object.assign(data.participants[token], {
-                discord_nickname: discordNick,
-                ingame_nickname:  ingameNick,
-                position
-            });
+            Object.assign(data.participants[token], { discord_nickname: discordNick, ingame_nickname: ingameNick, position });
             save(data);
         }
     },
 
-    deleteByToken(token) {
+    assignTeam(token, teamNum) {
         const data = load();
-        delete data.participants[token];
+        if (data.participants[token]) { data.participants[token].team_num = teamNum; save(data); }
+    },
+
+    shuffleTeams(eventId, teamCount) {
+        const data = load();
+        const list = Object.values(data.participants).filter(p => p.event_id === eventId);
+        const shuffled = [...list].sort(() => Math.random() - 0.5);
+        shuffled.forEach((p, i) => { data.participants[p.cancel_token].team_num = (i % teamCount) + 1; });
         save(data);
+    },
+
+    deleteByToken(token) {
+        const data = load(); delete data.participants[token]; save(data);
     },
 
     deleteByDiscordId(eventId, discordId) {
@@ -94,7 +105,5 @@ module.exports = {
         return false;
     },
 
-    eventExists(id) {
-        return !!load().events[id];
-    }
+    eventExists(id) { return !!load().events[id]; }
 };
