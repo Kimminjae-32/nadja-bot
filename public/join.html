@@ -149,6 +149,12 @@
         </div>
     </div>
 
+    <div id="admin-banner" style="display:none;margin-bottom:1rem">
+        <a id="admin-link" href="#" class="manage-link" style="display:block;text-align:center;background:#0f3460;border-color:#e94560;color:#e0e0f0">
+            ⚙️ 내전 관리자 페이지 열기
+        </a>
+    </div>
+
     <div class="success" id="success">
         <h2 id="success-title">✅ 참가 신청 완료!</h2>
         <p id="success-msg">참가 신청이 성공적으로 접수되었습니다.</p>
@@ -162,6 +168,18 @@
     const editToken = params.get('token');
     const discordId = params.get('discord_id');
     let selectedPos = '';
+
+    // 방장 여부 확인 → 관리자 버튼 표시
+    if (eventId && discordId) {
+        fetch(`/api/is-admin?event=${eventId}&discord_id=${discordId}`)
+            .then(r => r.json())
+            .then(d => {
+                if (d.isAdmin) {
+                    document.getElementById('admin-link').href = d.adminUrl;
+                    document.getElementById('admin-banner').style.display = 'block';
+                }
+            }).catch(() => {});
+    }
 
     if (editToken) {
         document.getElementById('page-title').textContent = '✏️ 참가 정보 수정';

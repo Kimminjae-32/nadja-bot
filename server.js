@@ -152,6 +152,15 @@ app.post('/api/admin/random-chars', (req, res) => {
     res.json({ success: true, assignments });
 });
 
+// GET /api/is-admin?event=MSGID&discord_id=USER_ID
+app.get('/api/is-admin', (req, res) => {
+    const { event, discord_id } = req.query;
+    if (!event || !discord_id) return res.json({ isAdmin: false });
+    const ev = db.getEvent(event);
+    if (!ev || ev.createdBy !== discord_id) return res.json({ isAdmin: false });
+    res.json({ isAdmin: true, adminUrl: `/admin?event=${event}&token=${ev.adminToken}` });
+});
+
 // POST /api/admin/close  — 모집 종료 (Discord 메시지 삭제 + 데이터 정리)
 app.post('/api/admin/close', async (req, res) => {
     const { event, token } = req.body;
