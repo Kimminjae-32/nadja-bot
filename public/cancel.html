@@ -35,6 +35,7 @@
         .btn:disabled { opacity: .45; cursor: not-allowed; }
         .btn-edit  { background: var(--accent2); color: #fff; border: 1px solid var(--accent); }
         .btn-cancel { background: var(--accent); color: #fff; }
+        .btn-admin  { background: #0f3460; color: var(--text); border: 1px solid var(--accent); text-decoration: none; }
         .loading { text-align: center; padding: 3rem; color: var(--muted); }
         .center { text-align: center; }
         .big-icon { font-size: 2.5rem; margin-bottom: .75rem; display: block; }
@@ -49,6 +50,8 @@
 
     <div id="main" style="display:none">
         <div class="card" id="info-card"></div>
+
+        <a id="admin-banner" href="#" class="btn btn-admin" style="display:none">⚙️ 내전 관리자 페이지 열기</a>
 
         <div id="actions">
             <a href="#" id="edit-link" class="btn btn-edit">✏️ 정보 수정하기</a>
@@ -100,6 +103,19 @@
                 `;
                 document.getElementById('edit-link').href = `/join?event=${d.event_id}&token=${token}`;
                 show('main');
+
+                // 방장 여부 확인 → 관리자 버튼 표시
+                if (d.discord_id && d.event_id) {
+                    fetch(`/api/is-admin?event=${d.event_id}&discord_id=${d.discord_id}`)
+                        .then(r => r.json())
+                        .then(a => {
+                            if (a.isAdmin) {
+                                const banner = document.getElementById('admin-banner');
+                                banner.href = a.adminUrl;
+                                banner.style.display = 'block';
+                            }
+                        }).catch(() => {});
+                }
             })
             .catch(() => { hide('loading'); show('error'); });
     }

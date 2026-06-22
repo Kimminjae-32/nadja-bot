@@ -215,7 +215,6 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
         rows = [
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`shuffle_${msgId}`).setLabel('팀 섞기(자동)').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
             )
         ];
@@ -873,7 +872,6 @@ client.on(Events.InteractionCreate, async interaction => {
                 newRows = [
                     new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId(`join_${targetMsgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`shuffle_${targetMsgId}`).setLabel('팀 섞기(자동)').setStyle(ButtonStyle.Success),
                         new ButtonBuilder().setCustomId(`manage_${targetMsgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
                     )
                 ];

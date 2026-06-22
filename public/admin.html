@@ -297,7 +297,27 @@ document.getElementById('close-btn').addEventListener('click', async ()=>{
     }
 });
 
+// 실시간 폴링 (5초마다 참가자 데이터 갱신)
+async function silentRefresh(){
+    try {
+        const data = await api(`/api/admin/data?event=${EVENT}&token=${TOKEN}`);
+        if(data.error || !data.participants) return;
+        const newCount = data.participants.length;
+        const oldCount = participants.length;
+        participants = data.participants;
+        eventData = data.event;
+        render();
+        if(newCount !== oldCount){
+            toast(`참가자 업데이트: ${newCount}명`);
+        }
+        const now = new Date();
+        document.getElementById('subtitle').textContent =
+            `이벤트 ID: ${EVENT}　·　마지막 업데이트: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+    } catch(e){}
+}
+
 load();
+setInterval(silentRefresh, 5000);
 </script>
 </body>
 </html>
