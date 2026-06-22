@@ -20,6 +20,21 @@ const client = new Client({
     ]
 });
 webServer.setClient(client);
+webServer.setCloseCallback(async (msgId) => {
+    const data = allRecruits.get(msgId);
+    if (!data) return;
+    try {
+        for (const [, guild] of client.guilds.cache) {
+            for (const [, channel] of guild.channels.cache.filter(c => c.isTextBased())) {
+                const msg = await channel.messages.fetch(msgId).catch(() => null);
+                if (msg) { await msg.delete().catch(() => null); break; }
+            }
+        }
+    } catch (e) { /* 무시 */ }
+    allRecruits.delete(msgId);
+    activeUserRecruits.delete(data.creatorId);
+    saveData();
+});
 
 const DATA_PATH       = './recruits.json';
 
@@ -640,14 +655,12 @@ client.on(Events.InteractionCreate, async interaction => {
             if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
             const menuOptions = data.gameType === '내전'
                 ? [
-                    { label: '🌐 웹 관리자 페이지', value: 'adminPage',  description: '웹에서 팀 배정을 관리합니다 (방장 전용)' },
-                    { label: '팀 설정(수동)',        value: 'manual',     description: '방장이 직접 팀을 구성합니다' },
-                    { label: '참가자 킥',            value: 'kick',       description: '참가자를 제외합니다' },
-                    { label: '방장 양도',            value: 'transfer',   description: '방장 권한을 양도합니다' },
-                    { label: '방 이동',              value: 'move',       description: '팀별로 음성 채널을 이동합니다' },
-                    { label: '원래대로',             value: 'return',     description: '모든 참가자를 원래 채널로 복구합니다' },
-                    { label: '맵 변경',              value: 'changeMap',  description: '맵/모드를 변경합니다' },
-                    { label: '🗑️ 모집 종료',         value: 'closeRecruit', description: '모집을 종료하고 메시지를 삭제합니다' },
+                    { label: '팀 설정(수동)', value: 'manual',    description: '방장이 직접 팀을 구성합니다' },
+                    { label: '참가자 킥',    value: 'kick',      description: '참가자를 제외합니다' },
+                    { label: '방장 양도',    value: 'transfer',  description: '방장 권한을 양도합니다' },
+                    { label: '방 이동',      value: 'move',      description: '팀별로 음성 채널을 이동합니다' },
+                    { label: '원래대로',     value: 'return',    description: '모든 참가자를 원래 채널로 복구합니다' },
+                    { label: '맵 변경',      value: 'changeMap', description: '맵/모드를 변경합니다' },
                 ]
                 : [
                     { label: '참가자 킥',     value: 'kick',      description: '참가자를 제외합니다' },
@@ -666,12 +679,17 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // ── 내전: 참가/취소 통합 버튼 ──
             if (data.gameType === '내전') {
-                // 방장 클릭 → 모집 종료는 ⚙️ 관리 메뉴에서
+                // 방장 클릭 → 웹 관리자 페이지 링크 제공
                 if (interaction.user.id === data.creatorId) {
-                    return await interaction.reply({
-                        content: '⚙️ 방장은 **관리 버튼 → 모집 종료**로 모집을 끝낼 수 있어요.',
-                        ephemeral: true
-                    });
+                    const ev = db.getEvent(targetMsgId);
+                    if (ev) {
+                        const adminUrl = `${BASE}/admin?event=${targetMsgId}&token=${ev.adminToken}`;
+                        return await interaction.reply({
+                            content: `🛠️ **내전 관리자 페이지** (방장 전용):\n${adminUrl}`,
+                            ephemeral: true
+                        });
+                    }
+                    return await interaction.reply({ content: '관리자 페이지를 불러올 수 없어요.', ephemeral: true });
                 }
                 // 이미 신청한 경우 → 취소
                 const existing = db.getByDiscordId(targetMsgId, interaction.user.id);
@@ -728,14 +746,7 @@ client.on(Events.InteractionCreate, async interaction => {
             if (interaction.user.id !== data.creatorId) return await interaction.update({ content: '방장만 가능합니다.', components: [] });
             const selected = interaction.values[0];
 
-            if (selected === 'closeRecruit') {
-                allRecruits.delete(targetMsgId);
-                activeUserRecruits.delete(data.creatorId);
-                saveData();
-                await interaction.update({ content: '✅ 모집이 종료됐어요.', components: [] });
-                return await interaction.message.delete().catch(() => null);
-            }
-            else if (selected === 'adminPage') {
+            if (selected === 'adminPage') {
                 const ev = db.getEvent(targetMsgId);
                 if (!ev) return await interaction.update({ content: '⚠️ 관리자 페이지 정보를 찾을 수 없어요.', components: [] });
                 const BASE = process.env.WEB_URL || 'http://localhost:3000';

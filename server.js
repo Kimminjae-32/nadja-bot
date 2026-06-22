@@ -7,7 +7,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use('/icons', express.static(path.join(__dirname, 'public', 'icons')));
 
-let discordClient = null;
+let discordClient      = null;
+let closeRecruitCallback = null;
 
 const VALID_POSITIONS = ['탱커', '전사', '암살자', '스킬 딜러', '원거리 딜러', '지원가'];
 
@@ -151,6 +152,15 @@ app.post('/api/admin/random-chars', (req, res) => {
     res.json({ success: true, assignments });
 });
 
+// POST /api/admin/close  — 모집 종료 (Discord 메시지 삭제 + 데이터 정리)
+app.post('/api/admin/close', async (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!closeRecruitCallback) return res.status(500).json({ error: '봇 콜백이 없습니다.' });
+    await closeRecruitCallback(event);
+    res.json({ success: true });
+});
+
 // POST /api/admin/send-discord  — 팀 배정 결과를 Discord 채널에 전송
 app.post('/api/admin/send-discord', async (req, res) => {
     const { event, token } = req.body;
@@ -203,5 +213,8 @@ module.exports = {
     },
     setClient(client) {
         discordClient = client;
+    },
+    setCloseCallback(fn) {
+        closeRecruitCallback = fn;
     }
 };

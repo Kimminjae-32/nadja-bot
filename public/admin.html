@@ -64,6 +64,7 @@
         <button class="btn btn-primary" id="shuffle-btn">🎲 자동 배정</button>
         <button class="btn btn-secondary" id="char-btn">🃏 실험체 랜덤 배정</button>
         <button class="btn btn-success" id="send-btn">📤 디스코드에 결과 전송</button>
+        <button class="btn btn-danger" id="close-btn">🗑️ 모집 종료</button>
     </div>
 
     <div class="tabs">
@@ -281,6 +282,19 @@ document.querySelectorAll('.tab').forEach(tab=>{
         document.getElementById('view-list').style.display  = tab.dataset.tab==='list'  ?'block':'none';
         document.getElementById('view-teams').style.display = tab.dataset.tab==='teams' ?'block':'none';
     });
+});
+
+document.getElementById('close-btn').addEventListener('click', async ()=>{
+    if(!confirm('모집을 종료하면 디스코드 메시지가 삭제됩니다. 계속할까요?')) return;
+    const btn = document.getElementById('close-btn');
+    btn.disabled=true;
+    const data = await api('/api/admin/close', { event:EVENT, token:TOKEN });
+    if(data.success){
+        document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0f0f1a;color:#e0e0f0;font-family:sans-serif;font-size:1.2rem">✅ 모집이 종료됐어요.</div>';
+    } else {
+        toast('종료 실패: '+(data.error||'알 수 없는 오류'), true);
+        btn.disabled=false;
+    }
 });
 
 load();
