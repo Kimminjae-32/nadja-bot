@@ -677,20 +677,8 @@ client.on(Events.InteractionCreate, async interaction => {
         else if (action === 'join' || action === 'leave') {
             const BASE = process.env.WEB_URL || 'http://localhost:3000';
 
-            // ── 내전: 참가/취소 통합 버튼 ──
+            // ── 내전: 참가/취소 통합 버튼 (방장 포함 모두 동일) ──
             if (data.gameType === '내전') {
-                // 방장 클릭 → 웹 관리자 페이지 링크 제공
-                if (interaction.user.id === data.creatorId) {
-                    const ev = db.getEvent(targetMsgId);
-                    if (ev) {
-                        const adminUrl = `${BASE}/admin?event=${targetMsgId}&token=${ev.adminToken}`;
-                        return await interaction.reply({
-                            content: `🛠️ **내전 관리자 페이지** (방장 전용):\n${adminUrl}`,
-                            ephemeral: true
-                        });
-                    }
-                    return await interaction.reply({ content: '관리자 페이지를 불러올 수 없어요.', ephemeral: true });
-                }
                 // 이미 신청한 경우 → 취소
                 const existing = db.getByDiscordId(targetMsgId, interaction.user.id);
                 if (existing) {
