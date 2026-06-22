@@ -62,6 +62,7 @@
 
     <div class="actions">
         <button class="btn btn-primary" id="shuffle-btn">🎲 자동 배정</button>
+        <button class="btn btn-secondary" id="char-btn">🃏 실험체 랜덤 배정</button>
         <button class="btn btn-success" id="send-btn">📤 디스코드에 결과 전송</button>
     </div>
 
@@ -80,6 +81,11 @@
 
     <div id="view-teams" style="display:none">
         <div class="teams-grid" id="teams-grid"></div>
+    </div>
+
+    <div id="char-results" style="display:none;margin-top:1.5rem">
+        <h2 style="font-size:1.1rem;margin-bottom:.75rem">🃏 실험체 배정 결과</h2>
+        <div class="teams-grid" id="char-grid"></div>
     </div>
 </div>
 
@@ -220,6 +226,41 @@ document.getElementById('shuffle-btn').addEventListener('click', async ()=>{
     render();
     btn.disabled=false;
     toast('자동 배정 완료!');
+});
+
+document.getElementById('char-btn').addEventListener('click', async ()=>{
+    const assigned = participants.filter(p=>p.team_num);
+    if(!assigned.length){ toast('팀 배정 먼저 해주세요!', true); return; }
+    const btn = document.getElementById('char-btn');
+    btn.disabled=true;
+    const data = await api('/api/admin/random-chars', { event:EVENT, token:TOKEN });
+    btn.disabled=false;
+    if(data.error){ toast('오류: '+data.error, true); return; }
+
+    const tc = eventData?.teamCount || 2;
+    const teams = {};
+    for(let i=1;i<=tc;i++) teams[i]=[];
+    for(const a of data.assignments){
+        if(teams[a.team_num]) teams[a.team_num].push(a);
+    }
+    let html='';
+    for(let i=1;i<=tc;i++){
+        if(!teams[i].length) continue;
+        const color = TEAM_COLORS[(i-1)%TEAM_COLORS.length];
+        html+=`<div class="team-card"><h3 style="color:${color}">${i}팀</h3>`;
+        for(const a of teams[i]){
+            html+=`<div class="member-item">
+                <div class="member-name">${esc(a.discord_nickname)}</div>
+                <div class="member-sub">${esc(a.ingame_nickname)} → <strong style="color:#e0e0f0">${esc(a.character)}</strong></div>
+            </div>`;
+        }
+        html+='</div>';
+    }
+    const charResults = document.getElementById('char-results');
+    document.getElementById('char-grid').innerHTML = html;
+    charResults.style.display='block';
+    charResults.scrollIntoView({ behavior:'smooth' });
+    toast('실험체 배정 완료!');
 });
 
 document.getElementById('send-btn').addEventListener('click', async ()=>{

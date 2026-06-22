@@ -202,10 +202,8 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     if (gameType === '내전') {
         rows = [
             new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`leave_${msgId}`).setLabel('취소').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId(`shuffle_${msgId}`).setLabel('팀 섞기(자동)').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`charRandom_${msgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
             )
         ];
@@ -284,7 +282,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // /내전
         if (interaction.commandName === '내전') {
-            const 유형    = interaction.options.getString('유형');
+            const 유형    = interaction.options.getSubcommand();
             const timeStr  = interaction.options.getString('시간')      || '즉시';
             const duration = interaction.options.getInteger('종료시간') || 24;
 
@@ -661,36 +659,29 @@ client.on(Events.InteractionCreate, async interaction => {
                 .addOptions(menuOptions);
             return await interaction.reply({ content: '⚙️ 관리 기능을 선택하세요:', components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
         }
-        // 참가 / 취소
+        // 참가/취소 (통합 버튼) / 론울프·구인 참가·취소
         else if (action === 'join' || action === 'leave') {
             const BASE = process.env.WEB_URL || 'http://localhost:3000';
 
-            // ── 내전: 웹 폼 기반 참가/취소 ──
+            // ── 내전: 참가/취소 통합 버튼 ──
             if (data.gameType === '내전') {
-                if (action === 'join') {
-                    const existing = db.getByDiscordId(targetMsgId, interaction.user.id);
-                    if (existing) {
-                        return await interaction.reply({
-                            content: `이미 참가 신청이 되어 있어요!\n✏️ 수정/취소: ${BASE}/cancel?token=${existing.cancel_token}`,
-                            ephemeral: true
-                        });
-                    }
-                    const webUrl = `${BASE}/join?event=${targetMsgId}&discord_id=${interaction.user.id}`;
-                    return await interaction.reply({
-                        content: `아래 링크에서 참가 신청해주세요!\n${webUrl}`,
-                        ephemeral: true
-                    });
-                }
-                // leave
+                // 방장 클릭 → 모집 종료
                 if (interaction.user.id === data.creatorId) {
                     allRecruits.delete(targetMsgId);
                     activeUserRecruits.delete(data.creatorId);
                     saveData();
                     return await interaction.message.delete().catch(() => null);
                 }
-                const deleted = db.deleteByDiscordId(targetMsgId, interaction.user.id);
+                // 이미 신청한 경우 → 취소
+                const existing = db.getByDiscordId(targetMsgId, interaction.user.id);
+                if (existing) {
+                    db.deleteByDiscordId(targetMsgId, interaction.user.id);
+                    return await interaction.reply({ content: '✅ 참가가 취소됐어요.', ephemeral: true });
+                }
+                // 미신청 → 웹 폼 링크 제공
+                const webUrl = `${BASE}/join?event=${targetMsgId}&discord_id=${interaction.user.id}`;
                 return await interaction.reply({
-                    content: deleted ? '✅ 참가가 취소됐어요.' : '참가 내역이 없어요. 웹 폼으로 신청한 경우 신청 완료 시 받은 링크로 취소해주세요.',
+                    content: `아래 링크에서 참가 신청해주세요!\n${webUrl}`,
                     ephemeral: true
                 });
             }
@@ -874,10 +865,8 @@ client.on(Events.InteractionCreate, async interaction => {
             if (data.gameType === '내전') {
                 newRows = [
                     new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`join_${targetMsgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`leave_${targetMsgId}`).setLabel('취소').setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder().setCustomId(`join_${targetMsgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
                         new ButtonBuilder().setCustomId(`shuffle_${targetMsgId}`).setLabel('팀 섞기(자동)').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId(`charRandom_${targetMsgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
                         new ButtonBuilder().setCustomId(`manage_${targetMsgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
                     )
                 ];

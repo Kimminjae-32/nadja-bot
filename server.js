@@ -10,6 +10,19 @@ app.use('/icons', express.static(path.join(__dirname, 'public', 'icons')));
 let discordClient = null;
 
 const VALID_POSITIONS = ['탱커', '전사', '암살자', '스킬 딜러', '원거리 딜러', '지원가'];
+
+const CHARACTERS = [
+    'JP','가넷','나딘','나타폰','니아','니키','다니엘','다르코','데비','마를렌',
+    '띠아','라우라','레녹스','레니','레온','로지','루크','르노어','리 다이린',
+    '리오','마르티나','마이','마커스','매그너스','미르카','바냐','바바라',
+    '버니스','블레어','비앙카','비형','샬럿','셀린','쇼우','쇼이치','수아',
+    '스텔라','아디나','아비게일','아야','아이솔','아이린','아르다','알론소',
+    '에스텔','엘레나','요한','유민','이렘','이리','일레븐','재키','제이크',
+    '조이','준','카밀로','카셀','카티야','클로에','키아라','타지','테오도르',
+    '티나','펜리르','펠릭스','프리야','피오라','하비','헤이즈','현우','혜진',
+    '히스이','시셀라','야니코','알렉상드르','리베카','야도','에단','아드리안',
+    '권술사','미마'
+];
 const POS_EMOJI = { '탱커':'🛡️','전사':'⚔️','암살자':'🗡️','스킬 딜러':'✨','원거리 딜러':'🏹','지원가':'💚' };
 const TEAM_EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫'];
 const TEAM_NAMES  = ['1팀','2팀','3팀','4팀','5팀','6팀','7팀','8팀'];
@@ -120,6 +133,25 @@ app.post('/api/admin/remove', (req, res) => {
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
     db.deleteByToken(cancel_token);
     res.json({ success: true });
+});
+
+// POST /api/admin/random-chars  — 팀 배정된 참가자에게 실험체 랜덤 배정
+app.post('/api/admin/random-chars', (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const participants = db.getParticipants(event);
+    const assigned = participants.filter(p => p.team_num);
+    if (!assigned.length) return res.status(400).json({ error: '팀 배정이 되어있지 않아요.' });
+
+    const shuffled = [...CHARACTERS].sort(() => Math.random() - 0.5);
+    const assignments = assigned.map((p, i) => ({
+        cancel_token:     p.cancel_token,
+        discord_nickname: p.discord_nickname,
+        ingame_nickname:  p.ingame_nickname,
+        team_num:         p.team_num,
+        character:        shuffled[i % shuffled.length]
+    }));
+    res.json({ success: true, assignments });
 });
 
 // POST /api/admin/send-discord  — 팀 배정 결과를 Discord 채널에 전송
