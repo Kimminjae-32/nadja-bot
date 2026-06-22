@@ -5,13 +5,14 @@ const db      = require('./db');
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use('/icons', express.static(path.join(__dirname, 'public', 'icons')));
 
 let discordClient = null;
 
 const VALID_POSITIONS = ['탱커', '전사', '암살자', '스킬 딜러', '원거리 딜러', '지원가'];
 const POS_EMOJI = { '탱커':'🛡️','전사':'⚔️','암살자':'🗡️','스킬 딜러':'✨','원거리 딜러':'🏹','지원가':'💚' };
-const TEAM_EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫','🔵','🔴','🟢','🟡','🟠','⚪','🔶','🔷','🔸','🔹'];
-const TEAM_NAMES  = ['1팀','2팀','3팀','4팀','5팀','6팀','7팀','8팀','9팀','10팀','11팀','12팀','13팀','14팀','15팀','16팀','17팀','18팀'];
+const TEAM_EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫'];
+const TEAM_NAMES  = ['1팀','2팀','3팀','4팀','5팀','6팀','7팀','8팀'];
 
 function errorPage(msg) {
     return `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>오류</title>

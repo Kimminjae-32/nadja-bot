@@ -55,8 +55,8 @@ function saveData() {
 
 loadData();
 
-const TEAM_EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫','🔵','🔴','🟢','🟡','🟠','⚪','🔶','🔷','🔸','🔹'];
-const TEAM_NAMES  = ['1팀','2팀','3팀','4팀','5팀','6팀','7팀','8팀','9팀','10팀','11팀','12팀','13팀','14팀','15팀','16팀','17팀','18팀'];
+const TEAM_EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫'];
+const TEAM_NAMES  = ['1팀','2팀','3팀','4팀','5팀','6팀','7팀','8팀'];
 
 const CHARACTERS = [
     'JP','가넷','나딘','나타폰','니아','니키','다니엘','다르코','데비','마를렌',
@@ -195,9 +195,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     saveData();
 
     if (gameType === '내전') {
-        const adminToken = db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount);
-        const adminUrl   = `${process.env.WEB_URL || 'http://localhost:3000'}/admin?event=${msgId}&token=${adminToken}`;
-        client.users.fetch(user.id).then(u => u.send(`🛠️ 내전 관리자 페이지 (방장 전용):\n${adminUrl}`).catch(() => null));
+        db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount);
     }
 
     let rows;
@@ -312,7 +310,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 if (remainder === 0) {
                     const teamCount = maxPlayers / perTeam;
-                    if (teamCount > 18) return await interaction.reply({ content: '❌ 팀 수가 너무 많아요 (최대 18팀).', ephemeral: true });
+                    if (teamCount > 8) return await interaction.reply({ content: '❌ 팀 수가 너무 많아요 (최대 8팀).', ephemeral: true });
                     return await createRecruit(interaction, {
                         gameType: '내전', mapType: '루미아 섬',
                         maxPlayers, teamCount, timeStr, duration
@@ -324,7 +322,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const leftover      = maxPlayers - teamCountDown * perTeam;
                 const adjustedMax   = teamCountDown * perTeam;
 
-                if (teamCountUp > 18) return await interaction.reply({ content: '❌ 팀 수가 너무 많아요 (최대 18팀).', ephemeral: true });
+                if (teamCountUp > 8) return await interaction.reply({ content: '❌ 팀 수가 너무 많아요 (최대 8팀).', ephemeral: true });
 
                 pendingLumia.set(interaction.user.id, {
                     maxPlayers, perTeam, timeStr, duration,
@@ -644,12 +642,13 @@ client.on(Events.InteractionCreate, async interaction => {
             if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
             const menuOptions = data.gameType === '내전'
                 ? [
-                    { label: '팀 설정(수동)', value: 'manual',    description: '방장이 직접 팀을 구성합니다' },
-                    { label: '참가자 킥',     value: 'kick',      description: '참가자를 제외합니다' },
-                    { label: '방장 양도',     value: 'transfer',  description: '방장 권한을 양도합니다' },
-                    { label: '방 이동',       value: 'move',      description: '팀별로 음성 채널을 이동합니다' },
-                    { label: '원래대로',      value: 'return',    description: '모든 참가자를 원래 채널로 복구합니다' },
-                    { label: '맵 변경',       value: 'changeMap', description: '맵/모드를 변경합니다' },
+                    { label: '🌐 웹 관리자 페이지', value: 'adminPage',  description: '웹에서 팀 배정을 관리합니다 (방장 전용)' },
+                    { label: '팀 설정(수동)',        value: 'manual',     description: '방장이 직접 팀을 구성합니다' },
+                    { label: '참가자 킥',            value: 'kick',       description: '참가자를 제외합니다' },
+                    { label: '방장 양도',            value: 'transfer',   description: '방장 권한을 양도합니다' },
+                    { label: '방 이동',              value: 'move',       description: '팀별로 음성 채널을 이동합니다' },
+                    { label: '원래대로',             value: 'return',     description: '모든 참가자를 원래 채널로 복구합니다' },
+                    { label: '맵 변경',              value: 'changeMap',  description: '맵/모드를 변경합니다' },
                 ]
                 : [
                     { label: '참가자 킥',     value: 'kick',      description: '참가자를 제외합니다' },
@@ -737,7 +736,14 @@ client.on(Events.InteractionCreate, async interaction => {
             if (interaction.user.id !== data.creatorId) return await interaction.update({ content: '방장만 가능합니다.', components: [] });
             const selected = interaction.values[0];
 
-            if (selected === 'manual') {
+            if (selected === 'adminPage') {
+                const ev = db.getEvent(targetMsgId);
+                if (!ev) return await interaction.update({ content: '⚠️ 관리자 페이지 정보를 찾을 수 없어요.', components: [] });
+                const BASE = process.env.WEB_URL || 'http://localhost:3000';
+                const adminUrl = `${BASE}/admin?event=${targetMsgId}&token=${ev.adminToken}`;
+                return await interaction.update({ content: `🛠️ **웹 관리자 페이지** (방장 전용):\n${adminUrl}`, components: [] });
+            }
+            else if (selected === 'manual') {
                 const options = await Promise.all(data.participants.map(async id => {
                     const u = await client.users.fetch(id);
                     return { label: u.username, value: id };

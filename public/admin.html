@@ -89,8 +89,13 @@
 const params = new URLSearchParams(location.search);
 const EVENT  = params.get('event');
 const TOKEN  = params.get('token');
-const POS_EMOJI = { '탱커':'🛡️','전사':'⚔️','암살자':'🗡️','스킬 딜러':'✨','원거리 딜러':'🏹','지원가':'💚' };
+const POS_ICON = { '탱커':'tank','전사':'warrior','암살자':'assassin','스킬 딜러':'skill','원거리 딜러':'range','지원가':'support' };
 const TEAM_COLORS = ['#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22','#95a5a6','#1abc9c'];
+
+function posImg(position) {
+    const f = POS_ICON[position];
+    return f ? `<img src="/icons/${f}.png" style="width:18px;height:18px;vertical-align:middle;margin-right:3px;" onerror="this.style.display='none'">` : '';
+}
 
 let eventData = null;
 let participants = [];
@@ -147,7 +152,7 @@ function renderTable(){
         <tr data-token="${esc(p.cancel_token)}">
             <td><strong>${esc(p.discord_nickname)}</strong></td>
             <td>${esc(p.ingame_nickname)}</td>
-            <td><span class="pos-badge">${POS_EMOJI[p.position]||''} ${esc(p.position)}</span></td>
+            <td><span class="pos-badge">${posImg(p.position)}${esc(p.position)}</span></td>
             <td>
                 <select class="team-select" onchange="assignTeam('${esc(p.cancel_token)}', this.value)">
                     ${teamOptions(p.team_num, tc)}
@@ -178,7 +183,7 @@ function renderTeams(){
         for(const p of teams[i]) html+=`
             <div class="member-item">
                 <div class="member-name">${esc(p.discord_nickname)}</div>
-                <div class="member-sub">${esc(p.ingame_nickname)} · ${POS_EMOJI[p.position]||''} ${esc(p.position)}</div>
+                <div class="member-sub">${esc(p.ingame_nickname)} · ${posImg(p.position)}${esc(p.position)}</div>
             </div>`;
         html+='</div>';
     }

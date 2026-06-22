@@ -74,9 +74,13 @@
 <script>
     const params = new URLSearchParams(location.search);
     const token  = params.get('token');
-    const POS_EMOJI = { '탱커':'🛡️', '전사':'⚔️', '암살자':'🗡️', '스킬 딜러':'✨', '원거리 딜러':'🏹', '지원가':'💚' };
+    const POS_ICON = { '탱커':'tank', '전사':'warrior', '암살자':'assassin', '스킬 딜러':'skill', '원거리 딜러':'range', '지원가':'support' };
 
     function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function posImg(position) {
+        const f = POS_ICON[position];
+        return f ? `<img src="/icons/${f}.png" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;" onerror="this.style.display='none'">` : '';
+    }
 
     function show(id) { document.getElementById(id).style.display = 'block'; }
     function hide(id) { document.getElementById(id).style.display = 'none'; }
@@ -89,11 +93,10 @@
             .then(d => {
                 hide('loading');
                 if (d.error) { show('error'); return; }
-                const emoji = POS_EMOJI[d.position] || '';
                 document.getElementById('info-card').innerHTML = `
                     <div class="info-row"><span class="info-label">디스코드 닉네임</span><span class="info-value">${esc(d.discord_nickname)}</span></div>
                     <div class="info-row"><span class="info-label">인게임 닉네임</span><span class="info-value">${esc(d.ingame_nickname)}</span></div>
-                    <div class="info-row"><span class="info-label">선호 포지션</span><span class="badge">${emoji} ${esc(d.position)}</span></div>
+                    <div class="info-row"><span class="info-label">선호 포지션</span><span class="badge">${posImg(d.position)}${esc(d.position)}</span></div>
                 `;
                 document.getElementById('edit-link').href = `/join?event=${d.event_id}&token=${token}`;
                 show('main');
