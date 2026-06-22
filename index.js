@@ -647,6 +647,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     { label: '방 이동',              value: 'move',       description: '팀별로 음성 채널을 이동합니다' },
                     { label: '원래대로',             value: 'return',     description: '모든 참가자를 원래 채널로 복구합니다' },
                     { label: '맵 변경',              value: 'changeMap',  description: '맵/모드를 변경합니다' },
+                    { label: '🗑️ 모집 종료',         value: 'closeRecruit', description: '모집을 종료하고 메시지를 삭제합니다' },
                 ]
                 : [
                     { label: '참가자 킥',     value: 'kick',      description: '참가자를 제외합니다' },
@@ -665,12 +666,12 @@ client.on(Events.InteractionCreate, async interaction => {
 
             // ── 내전: 참가/취소 통합 버튼 ──
             if (data.gameType === '내전') {
-                // 방장 클릭 → 모집 종료
+                // 방장 클릭 → 모집 종료는 ⚙️ 관리 메뉴에서
                 if (interaction.user.id === data.creatorId) {
-                    allRecruits.delete(targetMsgId);
-                    activeUserRecruits.delete(data.creatorId);
-                    saveData();
-                    return await interaction.message.delete().catch(() => null);
+                    return await interaction.reply({
+                        content: '⚙️ 방장은 **관리 버튼 → 모집 종료**로 모집을 끝낼 수 있어요.',
+                        ephemeral: true
+                    });
                 }
                 // 이미 신청한 경우 → 취소
                 const existing = db.getByDiscordId(targetMsgId, interaction.user.id);
@@ -727,7 +728,14 @@ client.on(Events.InteractionCreate, async interaction => {
             if (interaction.user.id !== data.creatorId) return await interaction.update({ content: '방장만 가능합니다.', components: [] });
             const selected = interaction.values[0];
 
-            if (selected === 'adminPage') {
+            if (selected === 'closeRecruit') {
+                allRecruits.delete(targetMsgId);
+                activeUserRecruits.delete(data.creatorId);
+                saveData();
+                await interaction.update({ content: '✅ 모집이 종료됐어요.', components: [] });
+                return await interaction.message.delete().catch(() => null);
+            }
+            else if (selected === 'adminPage') {
                 const ev = db.getEvent(targetMsgId);
                 if (!ev) return await interaction.update({ content: '⚠️ 관리자 페이지 정보를 찾을 수 없어요.', components: [] });
                 const BASE = process.env.WEB_URL || 'http://localhost:3000';
