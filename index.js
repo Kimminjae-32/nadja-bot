@@ -279,7 +279,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // /내전
         if (interaction.commandName === '내전') {
-            const 유형    = interaction.options.getSubcommand();
+            let 유형;
+            try { 유형 = interaction.options.getSubcommand(); }
+            catch { 유형 = interaction.options.getString('유형') ?? ''; }
+            if (!유형) return;
             const timeStr  = interaction.options.getString('시간')      || '즉시';
             const duration = interaction.options.getInteger('종료시간') || 24;
 
