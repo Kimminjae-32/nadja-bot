@@ -29,7 +29,7 @@ webServer.setCloseCallback(async (msgId) => {
     } catch (e) { /* 무시 */ }
     db.deleteEvent(msgId);
     allRecruits.delete(msgId);
-    activeUserRecruits.delete(data.creatorId);
+    activeUserRecruits.delete(`${data.guildId ?? 'dm'}_${data.creatorId}`);
     saveData();
 });
 
@@ -161,16 +161,20 @@ async function createRecruitEmbed(data) {
 // 구인 생성 공통 함수
 // =====================================================
 async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamCount, timeStr, duration }) {
-    const user = interaction.user;
+    const user    = interaction.user;
+    const guildId = interaction.guildId ?? 'dm';
+    const rKey    = `${guildId}_${user.id}`;  // 서버별 유일 키
 
-    if (activeUserRecruits.has(user.id)) {
-        const oldMsgId = activeUserRecruits.get(user.id);
-        const oldMsg   = await interaction.channel.messages.fetch(oldMsgId).catch(() => null);
-        if (oldMsg) await oldMsg.delete().catch(() => null);
+    if (activeUserRecruits.has(rKey)) {
+        const oldMsgId = activeUserRecruits.get(rKey);
+        const oldData  = allRecruits.get(oldMsgId);
+        await deleteMessage(oldMsgId, oldData?.channelId).catch(() => null);
+        allRecruits.delete(oldMsgId);
     }
 
     const newRecruit = {
         creatorId: user.id,
+        guildId,
         channelId: interaction.channelId,
         participants: [user.id],
         gameType, mapType,
@@ -203,7 +207,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
 
     const msgId = msg.id;
     allRecruits.set(msgId, newRecruit);
-    activeUserRecruits.set(user.id, msgId);
+    activeUserRecruits.set(rKey, msgId);
     saveData();
 
     // 모든 모드: DB 이벤트 생성 (웹 폼 참가 + 관리자 페이지 공통)
@@ -235,7 +239,7 @@ cron.schedule('* * * * *', async () => {
             await deleteMessage(msgId, data.channelId).catch(() => null);
             db.deleteEvent(msgId);
             allRecruits.delete(msgId);
-            activeUserRecruits.delete(data.creatorId);
+            activeUserRecruits.delete(`${data.guildId ?? 'dm'}_${data.creatorId}`);
             saveData();
         }
     }
@@ -309,7 +313,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
                 if (teamCountUp > 8) return await interaction.reply({ content: '❌ 팀 수가 너무 많아요 (최대 8팀).', ephemeral: true });
 
-                pendingLumia.set(interaction.user.id, {
+                pendingLumia.set(`${interaction.guildId ?? 'dm'}_${interaction.user.id}`, {
                     maxPlayers, perTeam, timeStr, duration,
                     teamCountUp, teamCountDown, leftover, adjustedMax,
                     createdAt: Date.now()
@@ -435,16 +439,17 @@ client.on(Events.InteractionCreate, async interaction => {
         if (action === 'lumiaKeep' || action === 'lumiaKick') {
             const userId  = parts[1];
             if (interaction.user.id !== userId) return;
-            const pending = pendingLumia.get(userId);
+            const lumiaKey = `${interaction.guildId ?? 'dm'}_${userId}`;
+            const pending = pendingLumia.get(lumiaKey);
             if (!pending) return await interaction.update({ content: '⚠️ 시간이 초과됐어요 (5분). 다시 명령어를 입력해주세요.', components: [] });
 
             if (action === 'lumiaKeep') {
-                pendingLumia.delete(userId);
+                pendingLumia.delete(lumiaKey);
                 await interaction.update({ content: `✅ ${pending.teamCountUp}팀으로 구인을 시작합니다!`, components: [] });
                 return await createRecruit(interaction, { gameType: '내전', mapType: '루미아 섬', maxPlayers: pending.maxPlayers, teamCount: pending.teamCountUp, timeStr: pending.timeStr, duration: pending.duration });
             }
             if (action === 'lumiaKick') {
-                pendingLumia.delete(userId);
+                pendingLumia.delete(lumiaKey);
                 await interaction.update({ content: `✅ ${pending.teamCountDown}팀(${pending.adjustedMax}명)으로 구인을 시작합니다!\n${pending.leftover}명은 취소 버튼으로 제외해주세요.`, components: [] });
                 return await createRecruit(interaction, { gameType: '내전', mapType: '루미아 섬', maxPlayers: pending.adjustedMax, teamCount: pending.teamCountDown, timeStr: pending.timeStr, duration: pending.duration });
             }
@@ -735,9 +740,10 @@ client.on(Events.InteractionCreate, async interaction => {
         }
         // 방장 양도
         else if (action === 'selectTransfer') {
-            activeUserRecruits.delete(data.creatorId);
+            const tGuild = interaction.guildId ?? 'dm';
+            activeUserRecruits.delete(`${tGuild}_${data.creatorId}`);
             data.creatorId = interaction.values[0];
-            activeUserRecruits.set(data.creatorId, targetMsgId);
+            activeUserRecruits.set(`${tGuild}_${data.creatorId}`, targetMsgId);
             saveData();
             const targetMsg = await interaction.channel.messages.fetch(targetMsgId).catch(() => null);
             if (targetMsg) await targetMsg.edit({ embeds: [await createRecruitEmbed(data)] });
