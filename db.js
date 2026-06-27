@@ -15,15 +15,25 @@ function save(data) {
 }
 
 module.exports = {
-    // 이벤트 생성 — admin_token, team_count 포함
-    createEvent(id, guildId, channelId, createdBy, teamCount) {
+    // 이벤트 생성 — admin_token, team_count, gameType 포함
+    createEvent(id, guildId, channelId, createdBy, teamCount, gameType) {
         const data = load();
         if (!data.events[id]) {
             const adminToken = crypto.randomBytes(12).toString('hex');
-            data.events[id] = { id, guildId, channelId, createdBy, teamCount: teamCount || 2, adminToken, createdAt: Date.now() };
+            data.events[id] = { id, guildId, channelId, createdBy, teamCount: teamCount || 2, gameType: gameType || '내전', adminToken, createdAt: Date.now() };
             save(data);
         }
         return data.events[id].adminToken;
+    },
+
+    // 이벤트 + 해당 이벤트의 참가자 전체 삭제
+    deleteEvent(id) {
+        const data = load();
+        delete data.events[id];
+        Object.keys(data.participants).forEach(k => {
+            if (data.participants[k].event_id === id) delete data.participants[k];
+        });
+        save(data);
     },
 
     getEvent(id) {

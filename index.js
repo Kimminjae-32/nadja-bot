@@ -9,6 +9,7 @@ require('dotenv').config();
 
 const db        = require('./db');
 const webServer = require('./server');
+const { TEAM_EMOJIS, TEAM_NAMES, CHARACTERS } = require('./constants');
 webServer.start(Number(process.env.WEB_PORT) || 3000);
 
 const client = new Client({
@@ -24,19 +25,29 @@ webServer.setCloseCallback(async (msgId) => {
     const data = allRecruits.get(msgId);
     if (!data) return;
     try {
-        for (const [, guild] of client.guilds.cache) {
-            for (const [, channel] of guild.channels.cache.filter(c => c.isTextBased())) {
-                const msg = await channel.messages.fetch(msgId).catch(() => null);
-                if (msg) { await msg.delete().catch(() => null); break; }
-            }
-        }
+        await deleteMessage(msgId, data.channelId);
     } catch (e) { /* 무시 */ }
+    db.deleteEvent(msgId);
     allRecruits.delete(msgId);
     activeUserRecruits.delete(data.creatorId);
     saveData();
 });
 
-const DATA_PATH       = './recruits.json';
+const DATA_PATH = './recruits.json';
+
+// channelId를 알면 직접 접근, 모르면 전체 스캔 (하위 호환)
+async function deleteMessage(msgId, channelId) {
+    if (channelId) {
+        const ch = await client.channels.fetch(channelId).catch(() => null);
+        if (ch) { const m = await ch.messages.fetch(msgId).catch(() => null); if (m) await m.delete().catch(() => null); return; }
+    }
+    for (const [, guild] of client.guilds.cache) {
+        for (const [, ch] of guild.channels.cache.filter(c => c.isTextBased())) {
+            const m = await ch.messages.fetch(msgId).catch(() => null);
+            if (m) { await m.delete().catch(() => null); return; }
+        }
+    }
+}
 
 let allRecruits        = new Map();
 let activeUserRecruits = new Map();
@@ -70,18 +81,6 @@ function saveData() {
 
 loadData();
 
-const TEAM_EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫'];
-const TEAM_NAMES  = ['1팀','2팀','3팀','4팀','5팀','6팀','7팀','8팀'];
-
-const CHARACTERS = [
-    '재키','아야','현우','매그너스','피오라','나딘','자히르','하트','아이솔','리 다이린','유키','혜진','쇼우','시셀라',
-    '키아라','아드리아나','쇼이치','실비아','엘마','레녹스','로지','루크','캐시','아델라','버니스','바바라','알렉스','수아',
-    '레온','일레븐','리오','윌리엄','니키','나타폰','안','이바','다니엘','제니','카밀로','클로에','요한','비앙카',
-    '셀린','에키온','마이','에이든','라우라','띠아','펠릭스','엘레나','프리야','아디나','마커스','칼라','에스텔','피올로',
-    '마르티나','헤이즈','아이작','타지아','이렘','테오도르','이안','바냐','데비&마를렌','아르다','아비게일','알론소','레니','초바메',
-    '케네스','카티야','샬럿','다르코','르노어','가넷','유민','히스이','유스티나','아슈트반','니아','슈린','헨리','블레어',
-    '미르카','펜리르','코렐라인','비형'
-];
 
 // =====================================================
 // 실험체 코드 → 이름 매핑 (API characterCode 기준)
@@ -172,6 +171,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
 
     const newRecruit = {
         creatorId: user.id,
+        channelId: interaction.channelId,
         participants: [user.id],
         gameType, mapType,
         time: timeStr,
@@ -206,37 +206,16 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     activeUserRecruits.set(user.id, msgId);
     saveData();
 
-    if (gameType === '내전') {
-        db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount);
-    }
+    // 모든 모드: DB 이벤트 생성 (웹 폼 참가 + 관리자 페이지 공통)
+    db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount, gameType);
 
-    let rows;
-    if (gameType === '내전') {
-        rows = [
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
-            )
-        ];
-    } else if (gameType === '론울프') {
-        rows = [
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`leave_${msgId}`).setLabel('취소').setStyle(ButtonStyle.Danger),
-                new ButtonBuilder().setCustomId(`charRandom_${msgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
-            )
-        ];
-    } else {
-        rows = [
-            new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`leave_${msgId}`).setLabel('취소').setStyle(ButtonStyle.Danger)
-            )
-        ];
-    }
-
-    await msg.edit({ components: rows }).catch(() => null);
+    // 모든 모드: 참가/취소 통합 버튼 + ⚙️ 관리
+    await msg.edit({ components: [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
+        )
+    ]}).catch(() => null);
 }
 
 // pendingLumia 만료 (5분)
@@ -253,14 +232,8 @@ cron.schedule('* * * * *', async () => {
     for (const [msgId, data] of allRecruits) {
         const expireMs = (data.durationHours || 24) * 60 * 60 * 1000;
         if (data.createdAt && now - data.createdAt > expireMs) {
-            try {
-                for (const [, guild] of client.guilds.cache) {
-                    for (const [, channel] of guild.channels.cache.filter(c => c.isTextBased())) {
-                        const msg = await channel.messages.fetch(msgId).catch(() => null);
-                        if (msg) { await msg.delete().catch(() => null); break; }
-                    }
-                }
-            } catch (e) { /* 무시 */ }
+            await deleteMessage(msgId, data.channelId).catch(() => null);
+            db.deleteEvent(msgId);
             allRecruits.delete(msgId);
             activeUserRecruits.delete(data.creatorId);
             saveData();
@@ -481,46 +454,6 @@ client.on(Events.InteractionCreate, async interaction => {
         const data        = allRecruits.get(targetMsgId);
         if (!data) return;
 
-        // 팀 섞기
-        if (action === 'shuffle') {
-            if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
-            const teamCount = data.teamCount || 2;
-
-            const webParticipants = db.getParticipants(targetMsgId);
-            if (webParticipants.length >= 2) {
-                await interaction.deferReply();
-                const shuffled = [...webParticipants].sort(() => Math.random() - 0.5);
-                const teams = Array.from({ length: teamCount }, () => []);
-                shuffled.forEach((p, i) => teams[i % teamCount].push(p));
-
-                const POS_EMOJI = { '탱커': '🛡️', '전사': '⚔️', '암살자': '🗡️', '스킬 딜러': '✨', '원거리 딜러': '🏹', '지원가': '💚' };
-                const embed = new EmbedBuilder()
-                    .setTitle('🎲 팀 배정 결과')
-                    .setColor(0xFF0000)
-                    .setFooter({ text: `총 ${webParticipants.length}명 참가` })
-                    .setTimestamp();
-
-                for (let i = 0; i < teamCount; i++) {
-                    const team = teams[i];
-                    if (!team.length) continue;
-                    const lines = team.map(p =>
-                        `${POS_EMOJI[p.position] || ''}**${p.discord_nickname}** (${p.ingame_nickname})\n└ ${p.position}`
-                    );
-                    embed.addFields({ name: `${TEAM_EMOJIS[i]} ${TEAM_NAMES[i]} (${team.length}명)`, value: lines.join('\n\n'), inline: true });
-                }
-                return await interaction.editReply({ embeds: [embed] });
-            }
-
-            // 웹 폼 참가자 없으면 기존 Discord 참가자로 섞기
-            const shuffled = [...data.participants].sort(() => Math.random() - 0.5);
-            data.teams = Array.from({ length: teamCount }, () => []);
-            shuffled.forEach((id, i) => data.teams[i % teamCount].push(id));
-            data.team1 = data.teams[0] || [];
-            data.team2 = data.teams[1] || [];
-            saveData();
-            await interaction.deferUpdate();
-            await interaction.message.edit({ embeds: [await createRecruitEmbed(data)] }).catch(() => null);
-        }
         // 팀 설정 (수동)
         else if (action === 'manual') {
             if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
@@ -535,50 +468,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 .addOptions(options);
             return await interaction.reply({ content: '🟦 **1팀** 멤버를 골라주세요. 나머지는 자동으로 2팀에 배정됩니다.', components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
         }
-        // 실험체 랜덤
-        else if (action === 'charRandom') {
-            if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
-            const shuffled = [...CHARACTERS].sort(() => Math.random() - 0.5);
-            const embed = new EmbedBuilder().setTitle('🎲 실험체 랜덤 배정 결과').setColor(0x9B59B6).setTimestamp();
-
-            if (data.gameType === '론울프') {
-                const lines = await Promise.all(data.participants.map(async (id, i) => {
-                    const u = await client.users.fetch(id).catch(() => null);
-                    const name = u ? (u.globalName || u.username) : id;
-                    return `${name}  →  **${shuffled[i % shuffled.length]}**`;
-                }));
-                const chunkSize = 10;
-                for (let i = 0; i < lines.length; i += chunkSize) {
-                    embed.addFields({ name: i === 0 ? '🐺 참가자' : '\u200b', value: lines.slice(i, i + chunkSize).join('\n'), inline: false });
-                }
-            } else {
-                const teams = data.teams || [data.team1, data.team2];
-                const teamCount = data.teamCount || 2;
-                const hasTeamAssignment = teams.some(team => team && team.length > 0);
-                if (!hasTeamAssignment) return await interaction.reply({ content: '⚠️ 먼저 팀을 섞어주세요!', ephemeral: true });
-
-                let charIdx = 0;
-                const assignMap = new Map();
-                for (let i = 0; i < teamCount; i++) {
-                    for (const id of (teams[i] || [])) {
-                        assignMap.set(id, shuffled[charIdx % shuffled.length]);
-                        charIdx++;
-                    }
-                }
-                for (let i = 0; i < teamCount; i++) {
-                    const team = teams[i] || [];
-                    if (team.length === 0) continue;
-                    const lines = await Promise.all(team.map(async id => {
-                        const u = await client.users.fetch(id).catch(() => null);
-                        const name = u ? (u.globalName || u.username) : id;
-                        return `${name}  →  **${assignMap.get(id) || '?'}**`;
-                    }));
-                    embed.addFields({ name: `${TEAM_EMOJIS[i]} ${TEAM_NAMES[i]}`, value: lines.join('\n'), inline: false });
-                }
-            }
-            return await interaction.reply({ embeds: [embed] });
-        }
-        // 참가자 킥
+        
         else if (action === 'kick') {
             if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
             const others = data.participants.filter(id => id !== data.creatorId);
@@ -672,51 +562,16 @@ client.on(Events.InteractionCreate, async interaction => {
                 .addOptions(menuOptions);
             return await interaction.reply({ content: '⚙️ 관리 기능을 선택하세요:', components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
         }
-        // 참가/취소 (통합 버튼) / 론울프·구인 참가·취소
+        // 참가/취소 — 모든 모드 통일: 웹 폼 기반
         else if (action === 'join' || action === 'leave') {
             const BASE = process.env.WEB_URL || 'http://localhost:3000';
-
-            // ── 내전: 참가/취소 통합 버튼 (방장 포함 모두 동일) ──
-            if (data.gameType === '내전') {
-                // 이미 신청한 경우 → 취소
-                const existing = db.getByDiscordId(targetMsgId, interaction.user.id);
-                if (existing) {
-                    db.deleteByDiscordId(targetMsgId, interaction.user.id);
-                    return await interaction.reply({ content: '✅ 참가가 취소됐어요.', ephemeral: true });
-                }
-                // 미신청 → 웹 폼 링크 제공
-                const webUrl = `${BASE}/join?event=${targetMsgId}&discord_id=${interaction.user.id}`;
-                return await interaction.reply({
-                    content: `아래 링크에서 참가 신청해주세요!\n${webUrl}`,
-                    ephemeral: true
-                });
+            const existing = db.getByDiscordId(targetMsgId, interaction.user.id);
+            if (existing) {
+                db.deleteByDiscordId(targetMsgId, interaction.user.id);
+                return await interaction.reply({ content: '✅ 참가가 취소됐어요.', ephemeral: true });
             }
-
-            // ── 구인 / 론울프: 기존 Discord 방식 ──
-            await interaction.deferUpdate();
-            if (action === 'join') {
-                if (data.participants.length < data.maxPlayers && !data.participants.includes(interaction.user.id)) {
-                    data.participants.push(interaction.user.id);
-                    const creator = await client.users.fetch(data.creatorId);
-                    creator.send(`🔔 **${interaction.user.username}**님이 참가했습니다! (${data.participants.length}/${data.maxPlayers})`).catch(() => null);
-                    if (data.participants.length === data.maxPlayers) {
-                        creator.send(`✅ 인원이 모두 찼습니다! (${data.maxPlayers}/${data.maxPlayers})`).catch(() => null);
-                    }
-                }
-            } else {
-                if (interaction.user.id === data.creatorId) {
-                    allRecruits.delete(targetMsgId);
-                    activeUserRecruits.delete(data.creatorId);
-                    saveData();
-                    return await interaction.message.delete().catch(() => null);
-                }
-                data.participants = data.participants.filter(id => id !== interaction.user.id);
-                data.teams = (data.teams || []).map(team => team.filter(id => id !== interaction.user.id));
-                data.team1 = data.team1.filter(id => id !== interaction.user.id);
-                data.team2 = data.team2.filter(id => id !== interaction.user.id);
-            }
-            saveData();
-            await interaction.message.edit({ embeds: [await createRecruitEmbed(data)] });
+            const webUrl = `${BASE}/join?event=${targetMsgId}&discord_id=${interaction.user.id}`;
+            return await interaction.reply({ content: `아래 링크에서 참가 신청해주세요!\n${webUrl}`, ephemeral: true });
         }
     }
 
@@ -866,25 +721,13 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             saveData();
 
-            // 변경된 gameType에 맞게 버튼도 업데이트
-            let newRows;
-            if (data.gameType === '내전') {
-                newRows = [
-                    new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`join_${targetMsgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`manage_${targetMsgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
-                    )
-                ];
-            } else if (data.gameType === '론울프') {
-                newRows = [
-                    new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId(`join_${targetMsgId}`).setLabel('참가').setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder().setCustomId(`leave_${targetMsgId}`).setLabel('취소').setStyle(ButtonStyle.Danger),
-                        new ButtonBuilder().setCustomId(`charRandom_${targetMsgId}`).setLabel('실험체 랜덤').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId(`manage_${targetMsgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
-                    )
-                ];
-            }
+            // 모든 모드 통일 버튼
+            const newRows = [
+                new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId(`join_${targetMsgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder().setCustomId(`manage_${targetMsgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
+                )
+            ];
 
             const targetMsg = await interaction.channel.messages.fetch(targetMsgId).catch(() => null);
             if (targetMsg) await targetMsg.edit({ embeds: [await createRecruitEmbed(data)], components: newRows });

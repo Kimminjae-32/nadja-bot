@@ -131,6 +131,11 @@ async function load(){
     eventData = data.event;
     participants = data.participants;
     document.getElementById('subtitle').textContent = `이벤트 ID: ${EVENT}`;
+
+    // 팀 배정 기능은 팀 경기(내전)에서만 표시
+    const isTeamMode = eventData?.gameType === '내전';
+    document.getElementById('shuffle-btn').style.display = isTeamMode ? '' : 'none';
+
     render();
 }
 
