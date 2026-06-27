@@ -34,15 +34,29 @@ app.get('/join', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'join.html'));
 });
 
+// GET /api/event-info?event=MSGID — 공개 이벤트 기본 정보
+app.get('/api/event-info', (req, res) => {
+    const ev = db.getEvent(req.query.event || '');
+    if (!ev) return res.status(404).json({ error: '이벤트를 찾을 수 없습니다.' });
+    res.json({ gameType: ev.gameType, mapType: ev.mapType });
+});
+
 // POST /join
 app.post('/join', (req, res) => {
     const { event, token, discord_id, discord_nickname, ingame_nickname, position } = req.body;
-    if (!event || !discord_nickname?.trim() || !ingame_nickname?.trim() || !position)
+    if (!event || !discord_nickname?.trim() || !ingame_nickname?.trim())
         return res.status(400).json({ error: '모든 항목을 입력해주세요.' });
-    if (!VALID_POSITIONS.includes(position))
-        return res.status(400).json({ error: '올바른 포지션을 선택해주세요.' });
     if (!db.eventExists(event))
         return res.status(404).json({ error: '존재하지 않는 내전입니다.' });
+
+    const ev = db.getEvent(event);
+    const isLonewolf = ev?.gameType === '론울프';
+
+    if (!isLonewolf) {
+        if (!position) return res.status(400).json({ error: '포지션을 선택해주세요.' });
+        if (!VALID_POSITIONS.includes(position))
+            return res.status(400).json({ error: '올바른 포지션을 선택해주세요.' });
+    }
 
     if (token) {
         const existing = db.getByToken(token);

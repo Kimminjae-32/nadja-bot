@@ -133,7 +133,7 @@
                 <label for="in">인게임 닉네임</label>
                 <input type="text" id="in" placeholder="이터널 리턴 인게임 닉네임" autocomplete="off">
             </div>
-            <div class="field">
+            <div class="field" id="position-field">
                 <label>선호 포지션</label>
                 <div class="positions">
                     <button type="button" class="pos-btn" data-pos="탱커"><img src="/icons/tank.png" class="pos-icon" onerror="this.style.display='none'">탱커</button>
@@ -169,16 +169,23 @@
     const discordId = params.get('discord_id');
     let selectedPos = '';
 
-    // 방장 여부 확인 → 관리자 버튼 표시
-    if (eventId && discordId) {
-        fetch(`/api/is-admin?event=${eventId}&discord_id=${discordId}`)
-            .then(r => r.json())
-            .then(d => {
-                if (d.isAdmin) {
-                    document.getElementById('admin-link').href = d.adminUrl;
-                    document.getElementById('admin-banner').style.display = 'block';
-                }
-            }).catch(() => {});
+    let isLonewolf = false;
+
+    // 이벤트 정보 조회 → 론울프면 포지션 숨김, 방장이면 관리자 버튼 표시
+    if (eventId) {
+        Promise.all([
+            fetch(`/api/event-info?event=${eventId}`).then(r => r.json()).catch(() => ({})),
+            discordId ? fetch(`/api/is-admin?event=${eventId}&discord_id=${discordId}`).then(r => r.json()).catch(() => ({})) : Promise.resolve({})
+        ]).then(([info, adminInfo]) => {
+            if (info.gameType === '론울프') {
+                isLonewolf = true;
+                document.getElementById('position-field').style.display = 'none';
+            }
+            if (adminInfo.isAdmin) {
+                document.getElementById('admin-link').href = adminInfo.adminUrl;
+                document.getElementById('admin-banner').style.display = 'block';
+            }
+        });
     }
 
     if (editToken) {
@@ -207,8 +214,8 @@
         const inn = document.getElementById('in').value.trim();
         const err = document.getElementById('err');
 
-        if (!dn || !inn || !selectedPos) {
-            err.textContent = '모든 항목을 입력해주세요.';
+        if (!dn || !inn || (!isLonewolf && !selectedPos)) {
+            err.textContent = isLonewolf ? '닉네임을 입력해주세요.' : '모든 항목을 입력해주세요.';
             err.style.display = 'block';
             return;
         }
