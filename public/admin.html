@@ -52,11 +52,11 @@
         .section-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;margin-top:1.5rem;}
         .section-title{font-size:1.05rem;font-weight:700;margin-bottom:.3rem;}
         .section-sub{color:var(--muted);font-size:.82rem;margin-bottom:.85rem;}
-        .ban-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:.35rem;}
-        .ban-char{background:var(--bg);border:2px solid var(--border);border-radius:6px;padding:.3rem .35rem;font-size:.78rem;cursor:pointer;text-align:center;transition:all .15s;user-select:none;}
-        .ban-char:hover{border-color:var(--accent);}
-        .ban-char.banned{background:#2a0a0a;border-color:var(--accent);color:var(--accent);text-decoration:line-through;}
-        #ban-count{color:var(--accent);font-size:.82rem;margin-bottom:.6rem;}
+        .ban-chip{display:inline-flex;align-items:center;gap:.3rem;background:#2a0a0a;border:1px solid var(--accent);border-radius:20px;padding:.25rem .65rem;font-size:.82rem;color:var(--accent);}
+        .ban-chip-x{cursor:pointer;opacity:.7;line-height:1;font-size:.9rem;}
+        .ban-chip-x:hover{opacity:1;}
+        .ban-pick-char{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:.3rem .4rem;font-size:.78rem;cursor:pointer;text-align:center;transition:border-color .1s;user-select:none;}
+        .ban-pick-char:hover{border-color:var(--accent);}
 
         /* ── 드래프트 ── */
         .captain-row{display:flex;align-items:center;gap:.6rem;margin-bottom:.45rem;}
@@ -110,12 +110,17 @@
         <div class="teams-grid" id="char-grid"></div>
     </div>
 
-    <!-- 캐릭터 밴픽 섹션 -->
+    <!-- 캐릭터 밴 섹션 -->
     <div id="ban-section" class="section-card" style="display:none">
         <div class="section-title">🚫 캐릭터 밴</div>
-        <div class="section-sub">클릭하여 밴/언밴 · 밴된 캐릭터는 실험체 랜덤 배정에서 제외돼요</div>
-        <div id="ban-count"></div>
-        <div class="ban-grid" id="ban-grid"></div>
+        <div class="section-sub">밴된 캐릭터는 실험체 랜덤 배정에서 제외돼요 · 선택 사항</div>
+        <div id="ban-chips" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem;min-height:1.8rem;align-items:center"></div>
+        <button class="btn btn-secondary btn-sm" id="ban-add-btn" onclick="toggleBanPicker()">+ 캐릭터 밴 추가</button>
+        <div id="ban-picker" style="display:none;margin-top:.6rem">
+            <input type="text" id="ban-search" placeholder="캐릭터 이름 검색..." oninput="renderBanCharList(this.value)"
+                   style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:.5rem .75rem;font-size:.85rem;outline:none;margin-bottom:.5rem;box-sizing:border-box">
+            <div id="ban-char-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:.3rem;max-height:200px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.5rem"></div>
+        </div>
     </div>
 
     <!-- 드래프트 섹션 -->
@@ -198,7 +203,7 @@ async function load(){
     document.getElementById('draft-section').style.display = isTeamMode ? '' : 'none';
 
     if(isTeamMode){
-        renderBanGrid();
+        renderBanChips();
         renderCaptainRows();
 
         // 드래프트 이미 진행 중이면 바로 상태 패널 표시
@@ -308,23 +313,57 @@ async function removeMember(cancelToken){
 }
 
 // ── 캐릭터 밴 ────────────────────────────────────────────
-function renderBanGrid(){
-    const grid = document.getElementById('ban-grid');
-    grid.innerHTML = CHARACTERS.map(c=>`
-        <div class="ban-char${bannedCharacters.includes(c)?' banned':''}" onclick="toggleBan(this,'${esc(c)}')">${esc(c)}</div>
+function renderBanChips(){
+    const el = document.getElementById('ban-chips');
+    if(!bannedCharacters.length){
+        el.innerHTML = '<span style="color:var(--muted);font-size:.85rem">밴 없음 · 모든 캐릭터 사용됨</span>';
+        return;
+    }
+    el.innerHTML = bannedCharacters.map(c=>`
+        <span class="ban-chip">${esc(c)}<span class="ban-chip-x" onclick="removeBan('${esc(c)}')" title="밴 취소">✕</span></span>
     `).join('');
-    const cnt = document.getElementById('ban-count');
-    cnt.textContent = bannedCharacters.length ? `밴 ${bannedCharacters.length}개` : '';
 }
 
-async function toggleBan(el, character){
-    const action = bannedCharacters.includes(character) ? 'unban' : 'ban';
-    const data = await api('/api/admin/char-ban', { event:EVENT, token:TOKEN, character, action });
+function toggleBanPicker(){
+    const picker = document.getElementById('ban-picker');
+    const shown = picker.style.display !== 'none';
+    picker.style.display = shown ? 'none' : 'block';
+    if(!shown){
+        const inp = document.getElementById('ban-search');
+        inp.value = '';
+        renderBanCharList('');
+        inp.focus();
+    }
+}
+
+function renderBanCharList(query){
+    const filtered = CHARACTERS.filter(c => !bannedCharacters.includes(c) && c.includes(query));
+    const el = document.getElementById('ban-char-list');
+    if(!filtered.length){
+        el.innerHTML = '<div style="color:var(--muted);font-size:.82rem;grid-column:1/-1;text-align:center;padding:.5rem">검색 결과 없음</div>';
+        return;
+    }
+    el.innerHTML = filtered.map(c=>`
+        <div class="ban-pick-char" onclick="addBan('${esc(c)}')">${esc(c)}</div>
+    `).join('');
+}
+
+async function addBan(character){
+    const data = await api('/api/admin/char-ban', { event:EVENT, token:TOKEN, character, action:'ban' });
     if(data.success){
         bannedCharacters = data.bannedCharacters;
-        el.classList.toggle('banned', bannedCharacters.includes(character));
-        const cnt = document.getElementById('ban-count');
-        cnt.textContent = bannedCharacters.length ? `밴 ${bannedCharacters.length}개` : '';
+        renderBanChips();
+        renderBanCharList(document.getElementById('ban-search').value);
+    }
+}
+
+async function removeBan(character){
+    const data = await api('/api/admin/char-ban', { event:EVENT, token:TOKEN, character, action:'unban' });
+    if(data.success){
+        bannedCharacters = data.bannedCharacters;
+        renderBanChips();
+        const s = document.getElementById('ban-search');
+        if(s) renderBanCharList(s.value);
     }
 }
 
