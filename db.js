@@ -115,5 +115,89 @@ module.exports = {
         return false;
     },
 
-    eventExists(id) { return !!load().events[id]; }
+    eventExists(id) { return !!load().events[id]; },
+
+    // ── 드래프트 ──────────────────────────────────
+    startDraft(eventId, captainAssignments) {
+        // captainAssignments: [{ teamNum, participantToken }, ...]
+        const data = load();
+        const ev = data.events[eventId];
+        if (!ev) return null;
+
+        const all = Object.values(data.participants).filter(p => p.event_id === eventId);
+        const captainSet = new Set(captainAssignments.map(c => c.participantToken));
+
+        const captains = captainAssignments.map(({ teamNum, participantToken }) => ({
+            teamNum,
+            participantToken,
+            captainToken: crypto.randomBytes(10).toString('hex'),
+            discordNickname: data.participants[participantToken]?.discord_nickname || '',
+        }));
+
+        // 팀장은 즉시 해당 팀으로 배정
+        for (const { teamNum, participantToken } of captainAssignments) {
+            if (data.participants[participantToken]) data.participants[participantToken].team_num = teamNum;
+        }
+
+        // 남은 참가자 (팀장 제외)
+        const remaining = all.filter(p => !captainSet.has(p.cancel_token)).map(p => p.cancel_token);
+        const teamNums  = captains.map(c => c.teamNum).sort((a, b) => a - b);
+        const turnOrder = Array.from({ length: remaining.length }, (_, i) => teamNums[i % teamNums.length]);
+
+        ev.draftState = {
+            status: 'in_progress',
+            captains,
+            turnOrder,
+            currentTurnIndex: 0,
+            remainingTokens: remaining,
+            picks: [],
+        };
+        save(data);
+        return ev.draftState;
+    },
+
+    getDraftState(eventId) {
+        return load().events[eventId]?.draftState || null;
+    },
+
+    recordDraftPick(eventId, captainToken, participantToken) {
+        const data = load();
+        const ev = data.events[eventId];
+        if (!ev?.draftState || ev.draftState.status !== 'in_progress') return { error: 'Not in progress' };
+        const draft = ev.draftState;
+
+        const captain = draft.captains.find(c => c.captainToken === captainToken);
+        if (!captain) return { error: 'Invalid token' };
+        if (captain.teamNum !== draft.turnOrder[draft.currentTurnIndex]) return { error: 'Not your turn' };
+        if (!draft.remainingTokens.includes(participantToken)) return { error: 'Invalid participant' };
+
+        const p = data.participants[participantToken];
+        if (!p) return { error: 'Participant not found' };
+
+        p.team_num = captain.teamNum;
+        draft.remainingTokens = draft.remainingTokens.filter(t => t !== participantToken);
+        draft.picks.push({ teamNum: captain.teamNum, participantToken, discordNickname: p.discord_nickname, ingameNickname: p.ingame_nickname });
+        draft.currentTurnIndex++;
+
+        if (draft.currentTurnIndex >= draft.turnOrder.length || draft.remainingTokens.length === 0) {
+            draft.status = 'completed';
+        }
+        save(data);
+        return { success: true, done: draft.status === 'completed' };
+    },
+
+    getCaptainByToken(eventId, captainToken) {
+        const ev = load().events[eventId];
+        return ev?.draftState?.captains.find(c => c.captainToken === captainToken) || null;
+    },
+
+    // ── 밴픽 ──────────────────────────────────────
+    setBannedCharacters(eventId, bannedList) {
+        const data = load();
+        if (data.events[eventId]) { data.events[eventId].bannedCharacters = bannedList; save(data); }
+    },
+
+    getBannedCharacters(eventId) {
+        return load().events[eventId]?.bannedCharacters || [];
+    },
 };

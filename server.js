@@ -143,7 +143,9 @@ app.post('/api/admin/random-chars', (req, res) => {
     const assigned = participants.filter(p => p.team_num);
     if (!assigned.length) return res.status(400).json({ error: '팀 배정이 되어있지 않아요.' });
 
-    const shuffled = [...CHARACTERS].sort(() => Math.random() - 0.5);
+    const banned  = db.getBannedCharacters(event);
+    const pool    = CHARACTERS.filter(c => !banned.includes(c));
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
     const assignments = assigned.map((p, i) => ({
         cancel_token:     p.cancel_token,
         discord_nickname: p.discord_nickname,
@@ -151,7 +153,94 @@ app.post('/api/admin/random-chars', (req, res) => {
         team_num:         p.team_num,
         character:        shuffled[i % shuffled.length]
     }));
-    res.json({ success: true, assignments });
+    res.json({ success: true, assignments, bannedCount: banned.length });
+});
+
+// POST /api/admin/char-ban — 캐릭터 밴/밴취소
+app.post('/api/admin/char-ban', (req, res) => {
+    const { event, token, character, action } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const banned = db.getBannedCharacters(event);
+    const newBanned = action === 'ban'
+        ? [...new Set([...banned, character])]
+        : banned.filter(c => c !== character);
+    db.setBannedCharacters(event, newBanned);
+    res.json({ success: true, bannedCharacters: newBanned });
+});
+
+// ── 드래프트 ───────────────────────────────────────────
+// POST /api/admin/draft/start
+app.post('/api/admin/draft/start', (req, res) => {
+    const { event, token, captains } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const state = db.startDraft(event, captains);
+    if (!state) return res.status(404).json({ error: '이벤트 없음' });
+    const BASE = process.env.WEB_URL || 'http://localhost:3000';
+    const captainLinks = state.captains.map(c => ({
+        teamNum: c.teamNum,
+        discordNickname: c.discordNickname,
+        draftUrl: `${BASE}/draft/${event}/${c.captainToken}`,
+    }));
+    res.json({ success: true, captainLinks });
+});
+
+// GET /api/admin/draft/status
+app.get('/api/admin/draft/status', (req, res) => {
+    const { event, token } = req.query;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const draft = db.getDraftState(event);
+    if (!draft) return res.json({ status: 'idle' });
+    const all = db.getParticipants(event);
+    const remaining = all.filter(p => draft.remainingTokens.includes(p.cancel_token));
+    const BASE = process.env.WEB_URL || 'http://localhost:3000';
+    const captainLinks = draft.captains.map(c => ({
+        teamNum: c.teamNum, discordNickname: c.discordNickname,
+        draftUrl: `${BASE}/draft/${event}/${c.captainToken}`,
+    }));
+    res.json({
+        status: draft.status,
+        currentTeam: draft.turnOrder[draft.currentTurnIndex] ?? null,
+        totalPicks: draft.turnOrder.length,
+        donePicks: draft.currentTurnIndex,
+        remaining, picks: draft.picks, captainLinks,
+    });
+});
+
+// GET /draft/:eventId/:captainToken — 팀장 픽 페이지
+app.get('/draft/:eventId/:captainToken', (req, res) => {
+    const captain = db.getCaptainByToken(req.params.eventId, req.params.captainToken);
+    if (!captain) return res.status(403).send(errorPage('유효하지 않은 링크입니다.'));
+    res.sendFile(path.join(__dirname, 'public', 'draft.html'));
+});
+
+// GET /api/draft/:eventId/:captainToken — 팀장 픽 상태 조회
+app.get('/api/draft/:eventId/:captainToken', (req, res) => {
+    const { eventId, captainToken } = req.params;
+    const captain = db.getCaptainByToken(eventId, captainToken);
+    if (!captain) return res.status(403).json({ error: 'Invalid token' });
+    const draft = db.getDraftState(eventId);
+    if (!draft) return res.status(404).json({ error: 'No draft' });
+    const all = db.getParticipants(eventId);
+    const remaining = all.filter(p => draft.remainingTokens.includes(p.cancel_token));
+    const currentTeam = draft.turnOrder[draft.currentTurnIndex] ?? null;
+    res.json({
+        myTeam: captain.teamNum,
+        currentTeam,
+        isMyTurn: captain.teamNum === currentTeam && draft.status === 'in_progress',
+        status: draft.status,
+        remaining,
+        picks: draft.picks,
+        captainName: captain.discordNickname,
+    });
+});
+
+// POST /api/draft/:eventId/:captainToken/pick
+app.post('/api/draft/:eventId/:captainToken/pick', (req, res) => {
+    const { eventId, captainToken } = req.params;
+    const { participantToken } = req.body;
+    const result = db.recordDraftPick(eventId, captainToken, participantToken);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json(result);
 });
 
 // GET /api/is-admin?event=MSGID&discord_id=USER_ID

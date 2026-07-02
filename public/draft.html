@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>팀경매 픽</title>
+<style>
+:root{--bg:#0f0f1a;--card:#1a1a2e;--border:#2a2a4a;--accent:#e94560;--accent2:#0f3460;--text:#e0e0f0;--muted:#8888aa;--green:#2ecc71;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem;}
+.container{width:100%;max-width:540px;}
+h1{font-size:1.4rem;margin-bottom:.4rem;}
+.sub{color:var(--muted);font-size:.85rem;margin-bottom:1.5rem;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;margin-bottom:1rem;}
+.badge{display:inline-block;background:var(--accent2);border:1px solid var(--accent);border-radius:6px;padding:.2rem .6rem;font-size:.8rem;margin-bottom:.8rem;}
+.waiting-icon{font-size:3rem;text-align:center;margin:1rem 0;}
+.pick-list{display:grid;gap:.5rem;}
+.pick-item{background:var(--bg);border:2px solid var(--border);border-radius:8px;padding:.75rem 1rem;cursor:pointer;transition:border-color .15s;}
+.pick-item:hover{border-color:var(--accent);}
+.pick-item .name{font-weight:700;}
+.pick-item .sub{font-size:.8rem;color:var(--muted);margin-top:.1rem;}
+.picked{border-color:var(--green)!important;opacity:.5;cursor:default;pointer-events:none;}
+.progress{color:var(--muted);font-size:.85rem;margin-bottom:.75rem;}
+.log{margin-top:.5rem;}
+.log-item{padding:.35rem 0;border-bottom:1px solid var(--border);font-size:.85rem;}
+.log-item:last-child{border-bottom:none;}
+.done-msg{text-align:center;padding:2rem;}
+.done-msg h1{color:var(--green);margin-bottom:.5rem;}
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#27ae60;color:#fff;padding:.7rem 1.1rem;border-radius:8px;font-size:.9rem;opacity:0;transition:opacity .3s;pointer-events:none;}
+.toast.show{opacity:1;}
+.toast.error{background:var(--accent);}
+</style>
+</head>
+<body>
+<div class="container">
+  <div id="loading" style="text-align:center;color:var(--muted)">⏳ 로딩 중...</div>
+
+  <div id="my-turn" style="display:none">
+    <h1>🎯 내 차례입니다!</h1>
+    <p class="sub" id="my-team-label"></p>
+    <p class="progress" id="pick-progress"></p>
+    <div class="pick-list" id="pick-list"></div>
+  </div>
+
+  <div id="waiting" style="display:none">
+    <div class="waiting-icon">⏳</div>
+    <h1 style="text-align:center">대기 중</h1>
+    <p class="sub" style="text-align:center" id="waiting-msg"></p>
+    <div class="card log" id="pick-log"></div>
+  </div>
+
+  <div id="done" style="display:none">
+    <div class="done-msg">
+      <h1>✅ 드래프트 완료!</h1>
+      <p style="color:var(--muted);margin-top:.5rem">모든 팀원이 배정됐어요.</p>
+    </div>
+    <div class="card log" id="done-log"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const [,,, eventId, captainToken] = location.pathname.split('/');
+const apiUrl = `/api/draft/${eventId}/${captainToken}`;
+let polling;
+
+function toast(msg, err=false){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='toast show'+(err?' error':'');
+  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),2500);
+}
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function renderLog(picks, containerId){
+  const el = document.getElementById(containerId);
+  if(!picks.length){el.innerHTML='<div style="color:var(--muted);font-size:.85rem">아직 픽이 없어요</div>';return;}
+  const EMOJIS=['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫'];
+  el.innerHTML = picks.map(p=>`
+    <div class="log-item">
+      ${EMOJIS[(p.teamNum-1)%EMOJIS.length]} <strong>${p.teamNum}팀</strong>
+      &nbsp;→&nbsp; ${esc(p.discordNickname)} (${esc(p.ingameNickname)})
+    </div>`).join('');
+}
+
+async function pick(participantToken, btn){
+  btn.disabled=true;
+  try{
+    const res = await fetch(`/api/draft/${eventId}/${captainToken}/pick`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({participantToken})
+    });
+    const data = await res.json();
+    if(data.error){toast(data.error,true);btn.disabled=false;return;}
+    toast('픽 완료!');
+    poll();
+  }catch(e){toast('오류 발생',true);btn.disabled=false;}
+}
+
+async function poll(){
+  try{
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    if(data.error){document.getElementById('loading').textContent='오류: '+data.error;return;}
+
+    document.getElementById('loading').style.display='none';
+
+    if(data.status==='completed'){
+      clearInterval(polling);
+      document.getElementById('my-turn').style.display='none';
+      document.getElementById('waiting').style.display='none';
+      document.getElementById('done').style.display='block';
+      renderLog(data.picks,'done-log');
+      return;
+    }
+
+    if(data.isMyTurn){
+      document.getElementById('waiting').style.display='none';
+      document.getElementById('my-turn').style.display='block';
+      document.getElementById('my-team-label').textContent=`${data.myTeam}팀 팀장`;
+      const pickedTokens=new Set(data.picks.map(p=>p.participantToken));
+      document.getElementById('pick-progress').textContent=`남은 참가자: ${data.remaining.length}명`;
+      document.getElementById('pick-list').innerHTML = data.remaining.map(p=>`
+        <div class="pick-item${pickedTokens.has(p.cancel_token)?'picked':''}" onclick="pick('${p.cancel_token}',this)">
+          <div class="name">${esc(p.discord_nickname)}</div>
+          <div class="sub">${esc(p.ingame_nickname)}${p.position?` · ${esc(p.position)}`:''}  </div>
+        </div>`).join('') || '<div style="color:var(--muted)">남은 참가자가 없어요</div>';
+    }else{
+      document.getElementById('my-turn').style.display='none';
+      document.getElementById('waiting').style.display='block';
+      document.getElementById('waiting-msg').textContent=
+        data.currentTeam ? `현재 ${data.currentTeam}팀 차례 · 내 팀: ${data.myTeam}팀` : '대기 중...';
+      renderLog(data.picks,'pick-log');
+    }
+  }catch(e){}
+}
+
+poll();
+polling = setInterval(poll, 3000);
+</script>
+</body>
+</html>
