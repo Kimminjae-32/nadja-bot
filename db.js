@@ -215,4 +215,8 @@ module.exports = {
         const data = load();
         if (data.events[eventId]) { data.events[eventId].createdBy = newCreatorId; save(data); }
     },
+
+    getAllEvents() {
+        return Object.values(load().events);
+    },
 };

@@ -428,9 +428,9 @@ app.post('/api/admin/move-voices', async (req, res) => {
     const ev = db.getEvent(event);
     if (!ev?.guildId) return res.status(404).json({ error: '서버 정보가 없어요.' });
 
-    const guild = discordClient.guilds.cache.get(ev.guildId)
-        || await discordClient.guilds.fetch(ev.guildId).catch(() => null);
-    if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없어요.' });
+    // 반드시 캐시에서만 — fetch()로 받은 guild는 voiceStates가 비어 있음
+    const guild = discordClient.guilds.cache.get(ev.guildId);
+    if (!guild) return res.status(404).json({ error: '봇 캐시에 서버가 없어요. 봇을 재시작해보세요.' });
 
     const assignMap = {};
     for (const a of assignments) assignMap[a.teamNum] = a.channelId;
@@ -453,12 +453,14 @@ app.post('/api/admin/move-voices', async (req, res) => {
     const participants = db.getParticipants(event);
     let moved = 0;
     const errors = [];
+    let inVoice = 0;
     for (const p of participants) {
         if (!p.discord_id || !p.team_num) continue;
         const channelId = assignMap[p.team_num];
         if (!channelId) continue;
         const vs = guild.voiceStates.cache.get(p.discord_id);
         if (vs?.channelId) {
+            inVoice++;
             try {
                 await vs.setChannel(channelId);
                 moved++;
@@ -469,7 +471,16 @@ app.post('/api/admin/move-voices', async (req, res) => {
         }
     }
     if (errors.length) console.error('[move-voices] 일부 실패:', errors);
-    res.json({ success: true, moved, failed: errors.length });
+    res.json({
+        success: true, moved, failed: errors.length, errors,
+        debug: {
+            voiceStateCacheSize: guild.voiceStates.cache.size,
+            participantCount: participants.length,
+            participantsWithDiscordId: participants.filter(p => p.discord_id).length,
+            participantsWithTeam: participants.filter(p => p.team_num).length,
+            participantsInVoice: inVoice,
+        }
+    });
 });
 
 // POST /api/admin/return-voices — 원래 채널로 복구
@@ -485,23 +496,26 @@ app.post('/api/admin/return-voices', async (req, res) => {
     const ev = db.getEvent(event);
     if (!ev?.guildId) return res.status(404).json({ error: '서버 정보가 없어요.' });
 
-    const guild = discordClient.guilds.cache.get(ev.guildId)
-        || await discordClient.guilds.fetch(ev.guildId).catch(() => null);
-    if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없어요.' });
+    const guild = discordClient.guilds.cache.get(ev.guildId);
+    if (!guild) return res.status(404).json({ error: '봇 캐시에 서버가 없어요. 봇을 재시작해보세요.' });
 
     const participants = db.getParticipants(event);
     let moved = 0;
+    const errors = [];
     for (const p of participants) {
         if (!p.discord_id) continue;
         const vs = guild.voiceStates.cache.get(p.discord_id);
         if (vs?.channelId) {
-            await vs.setChannel(recruit.originalVoiceChannelId).catch(e =>
-                console.error(`[return-voices] ${p.discord_nickname} 복구 실패:`, e.message)
-            );
-            moved++;
+            try {
+                await vs.setChannel(recruit.originalVoiceChannelId);
+                moved++;
+            } catch (e) {
+                errors.push(`${p.discord_nickname}: ${e.message}`);
+                console.error(`[return-voices] ${p.discord_nickname} 복구 실패:`, e.message);
+            }
         }
     }
-    res.json({ success: true, moved });
+    res.json({ success: true, moved, failed: errors.length, errors });
 });
 
 // POST /api/admin/transfer-host — 방장 양도
@@ -544,6 +558,85 @@ app.post('/api/admin/transfer-host', async (req, res) => {
     }
 
     res.json({ success: true, dmSent });
+});
+
+// ── 개발자 관리 ─────────────────────────────────────────
+const DEV_TOKEN = process.env.DEV_TOKEN || '';
+function verifyDev(token) { return DEV_TOKEN && token === DEV_TOKEN; }
+
+app.get('/dev', (req, res) => {
+    if (!verifyDev(req.query.token)) return res.status(403).send(errorPage('개발자 전용 페이지입니다.'));
+    res.sendFile(path.join(__dirname, 'public', 'dev-admin.html'));
+});
+
+app.get('/api/dev/events', async (req, res) => {
+    if (!verifyDev(req.query.devToken)) return res.status(403).json({ error: 'Forbidden' });
+    const events = db.getAllEvents();
+    const result = [];
+    for (const ev of events) {
+        const participants = db.getParticipants(ev.id);
+        let channelName = null;
+        let guildName = null;
+        if (discordClient) {
+            const ch = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+            channelName = ch?.name || null;
+            guildName = ch?.guild?.name || null;
+        }
+        result.push({ ...ev, participantCount: participants.length, channelName, guildName });
+    }
+    res.json({ events: result.sort((a, b) => b.createdAt - a.createdAt) });
+});
+
+app.get('/api/dev/event-detail', (req, res) => {
+    const { devToken, eventId } = req.query;
+    if (!verifyDev(devToken)) return res.status(403).json({ error: 'Forbidden' });
+    const ev = db.getEvent(eventId);
+    if (!ev) return res.status(404).json({ error: '이벤트 없음' });
+    res.json({ event: ev, participants: db.getParticipants(eventId), banned: db.getBannedCharacters(eventId) });
+});
+
+app.post('/api/dev/close-event', async (req, res) => {
+    const { devToken, eventId, notify } = req.body;
+    if (!verifyDev(devToken)) return res.status(403).json({ error: 'Forbidden' });
+    if (!db.eventExists(eventId)) return res.status(404).json({ error: '이벤트 없음' });
+    if (notify && discordClient) {
+        const ev = db.getEvent(eventId);
+        if (ev?.channelId) {
+            const ch = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+            if (ch) await ch.send('⚠️ **관리자에 의해 내전이 종료됐습니다.**').catch(() => null);
+        }
+    }
+    if (closeRecruitCallback) await closeRecruitCallback(eventId).catch(() => null);
+    else db.deleteEvent(eventId);
+    res.json({ success: true });
+});
+
+app.post('/api/dev/kick-participant', (req, res) => {
+    const { devToken, cancelToken } = req.body;
+    if (!verifyDev(devToken)) return res.status(403).json({ error: 'Forbidden' });
+    if (!db.getByToken(cancelToken)) return res.status(404).json({ error: '참가자 없음' });
+    db.deleteByToken(cancelToken);
+    res.json({ success: true });
+});
+
+app.post('/api/dev/announce', async (req, res) => {
+    const { devToken, eventId, message } = req.body;
+    if (!verifyDev(devToken)) return res.status(403).json({ error: 'Forbidden' });
+    if (!discordClient) return res.status(500).json({ error: '봇 없음' });
+    const ev = db.getEvent(eventId);
+    if (!ev?.channelId) return res.status(404).json({ error: '채널 정보 없음' });
+    const ch = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+    if (!ch) return res.status(404).json({ error: '채널을 찾을 수 없어요.' });
+    await ch.send(`📢 **[관리자 공지]** ${message}`);
+    res.json({ success: true });
+});
+
+app.post('/api/dev/reset-teams', (req, res) => {
+    const { devToken, eventId } = req.body;
+    if (!verifyDev(devToken)) return res.status(403).json({ error: 'Forbidden' });
+    const participants = db.getParticipants(eventId);
+    for (const p of participants) db.assignTeam(p.cancel_token, null);
+    res.json({ success: true });
 });
 
 module.exports = {

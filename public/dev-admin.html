@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>개발자 관리 패널</title>
+    <style>
+        :root {
+            --bg: #0a0a14; --card: #13131f; --card2: #1a1a2e;
+            --border: #252540; --accent: #e94560; --accent2: #0f3460;
+            --text: #e0e0f0; --muted: #7070a0; --green: #2ecc71; --yellow: #f39c12;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; min-height: 100vh; padding: 1.5rem 1rem; }
+        h1 { font-size: 1.4rem; margin-bottom: .2rem; }
+        .subtitle { color: var(--muted); font-size: .82rem; margin-bottom: 1.5rem; }
+        .section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; margin-bottom: 1rem; }
+        .section-title { font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .8rem; }
+        table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+        th { color: var(--muted); font-weight: 600; text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--border); }
+        td { padding: .55rem .4rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255,255,255,.02); }
+        .badge { display: inline-block; padding: .15rem .5rem; border-radius: 4px; font-size: .74rem; font-weight: 600; }
+        .badge-blue { background: var(--accent2); border: 1px solid #1a4a8a; }
+        .badge-green { background: #1a3a2a; border: 1px solid var(--green); color: var(--green); }
+        .badge-red { background: #3a1a1a; border: 1px solid var(--accent); color: var(--accent); }
+        .badge-gray { background: #2a2a3a; border: 1px solid #444; color: var(--muted); }
+        .btn { border: none; border-radius: 6px; padding: .35rem .75rem; font-size: .78rem; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+        .btn:hover { opacity: .8; }
+        .btn:disabled { opacity: .4; cursor: not-allowed; }
+        .btn-danger { background: var(--accent); color: #fff; }
+        .btn-blue  { background: var(--accent2); color: #fff; border: 1px solid #1a5a9a; }
+        .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+        .btn-green { background: #1a4a2a; color: var(--green); border: 1px solid var(--green); }
+        .detail-panel { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-top: .5rem; }
+        .detail-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .8rem; }
+        .participant-list { display: flex; flex-direction: column; gap: .3rem; max-height: 280px; overflow-y: auto; }
+        .p-row { display: flex; align-items: center; gap: .5rem; padding: .4rem .5rem; background: var(--card2); border-radius: 6px; font-size: .8rem; }
+        .p-team { width: 2rem; text-align: center; font-weight: 700; font-size: .75rem; }
+        .p-name { flex: 1; }
+        .p-ingame { color: var(--muted); font-size: .75rem; flex: 1; }
+        .announce-bar { display: flex; gap: .4rem; margin-top: .6rem; }
+        .announce-bar input { flex: 1; background: var(--card2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: .4rem .6rem; font-size: .82rem; outline: none; }
+        .announce-bar input:focus { border-color: var(--accent2); }
+        .id-short { font-family: monospace; font-size: .72rem; color: var(--muted); }
+        .toast { position: fixed; bottom: 1.2rem; left: 50%; transform: translateX(-50%); background: #222; color: #fff; padding: .6rem 1.2rem; border-radius: 8px; font-size: .85rem; z-index: 999; pointer-events: none; opacity: 0; transition: opacity .2s; }
+        .toast.show { opacity: 1; }
+        .toast.err { background: var(--accent); }
+        .loading { text-align: center; color: var(--muted); padding: 2rem; }
+        .empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 1.5rem; }
+        .stat-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+        .stat { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: .6rem 1rem; min-width: 100px; }
+        .stat-val { font-size: 1.5rem; font-weight: 700; }
+        .stat-label { font-size: .72rem; color: var(--muted); margin-top: .1rem; }
+    </style>
+</head>
+<body>
+<h1>🔧 개발자 관리 패널</h1>
+<p class="subtitle">진행 중인 모든 내전을 조회하고 관리합니다.</p>
+
+<div id="loading" class="loading">불러오는 중...</div>
+<div id="content" style="display:none">
+    <div class="stat-row" id="stats"></div>
+    <div class="section">
+        <div class="section-title">진행 중인 내전</div>
+        <div id="event-list"><div class="empty">내전이 없어요.</div></div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const DEV = params.get('token') || '';
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function ts(t) { return t ? new Date(t).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '-'; }
+function shortId(id) { return id ? id.slice(-6) : '?'; }
+
+let toastTimer;
+function toast(msg, isErr=false) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.className = 'toast show' + (isErr ? ' err' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.className = 'toast', isErr ? 4000 : 2500);
+}
+
+async function devApi(path, body=null) {
+    const opts = body
+        ? { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({devToken:DEV, ...body}) }
+        : {};
+    const r = await fetch(path + (body ? '' : (path.includes('?')?'&':'?') + 'devToken=' + encodeURIComponent(DEV)), opts);
+    return r.json();
+}
+
+let allEvents = [];
+let openDetail = null;
+
+async function load() {
+    const data = await devApi('/api/dev/events').catch(() => ({ error: '서버 오류' }));
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+    if (data.error) { document.getElementById('event-list').innerHTML = `<div class="empty">${esc(data.error)}</div>`; return; }
+    allEvents = data.events || [];
+    renderStats();
+    renderEvents();
+}
+
+function renderStats() {
+    const total = allEvents.length;
+    const players = allEvents.reduce((s,e) => s + (e.participantCount||0), 0);
+    const servers = new Set(allEvents.map(e=>e.guildId)).size;
+    document.getElementById('stats').innerHTML = `
+        <div class="stat"><div class="stat-val">${total}</div><div class="stat-label">진행 중 내전</div></div>
+        <div class="stat"><div class="stat-val">${players}</div><div class="stat-label">총 참가자</div></div>
+        <div class="stat"><div class="stat-val">${servers}</div><div class="stat-label">서버 수</div></div>
+    `;
+}
+
+function gameTypeBadge(ev) {
+    if (ev.gameType === '론울프') return `<span class="badge badge-gray">론울프</span>`;
+    return `<span class="badge badge-blue">${esc(ev.mapType||'내전')}</span>`;
+}
+
+function renderEvents() {
+    const el = document.getElementById('event-list');
+    if (!allEvents.length) { el.innerHTML = '<div class="empty">진행 중인 내전이 없어요.</div>'; return; }
+    el.innerHTML = `<table>
+        <thead><tr>
+            <th>ID</th><th>서버/채널</th><th>타입</th><th>팀수</th><th>참가자</th><th>생성</th><th>관리</th>
+        </tr></thead>
+        <tbody>
+        ${allEvents.map(ev => `
+        <tr>
+            <td><span class="id-short">#${shortId(ev.id)}</span></td>
+            <td>
+                <div style="font-size:.8rem">${esc(ev.guildName||'알 수 없음')}</div>
+                <div style="color:var(--muted);font-size:.72rem">#${esc(ev.channelName||ev.channelId||'-')}</div>
+            </td>
+            <td>${gameTypeBadge(ev)}</td>
+            <td>${ev.teamCount||2}팀</td>
+            <td><span class="badge badge-${ev.participantCount>0?'green':'gray'}">${ev.participantCount}명</span></td>
+            <td style="font-size:.72rem;color:var(--muted)">${ts(ev.createdAt)}</td>
+            <td>
+                <button class="btn btn-ghost" onclick="toggleDetail('${esc(ev.id)}')">상세</button>
+            </td>
+        </tr>
+        <tr id="detail-row-${esc(ev.id)}" style="display:none">
+            <td colspan="7" style="padding:.5rem 0">
+                <div class="detail-panel" id="detail-${esc(ev.id)}">
+                    <div class="loading">불러오는 중...</div>
+                </div>
+            </td>
+        </tr>
+        `).join('')}
+        </tbody>
+    </table>`;
+}
+
+async function toggleDetail(eventId) {
+    const row = document.getElementById(`detail-row-${eventId}`);
+    const panel = document.getElementById(`detail-${eventId}`);
+    if (openDetail === eventId) {
+        row.style.display = 'none';
+        openDetail = null;
+        return;
+    }
+    if (openDetail) {
+        document.getElementById(`detail-row-${openDetail}`).style.display = 'none';
+    }
+    openDetail = eventId;
+    row.style.display = '';
+    panel.innerHTML = '<div class="loading">불러오는 중...</div>';
+    const data = await devApi(`/api/dev/event-detail?eventId=${encodeURIComponent(eventId)}`).catch(() => ({ error: '오류' }));
+    if (data.error) { panel.innerHTML = `<div class="empty">${esc(data.error)}</div>`; return; }
+    renderDetail(eventId, data, panel);
+}
+
+function renderDetail(eventId, data, panel) {
+    const ev = data.event;
+    const parts = data.participants || [];
+    const banned = data.banned || [];
+    const teams = {};
+    for (const p of parts) {
+        const t = p.team_num || 0;
+        if (!teams[t]) teams[t] = [];
+        teams[t].push(p);
+    }
+
+    const teamColors = ['#888','#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22','#95a5a6','#1abc9c'];
+
+    panel.innerHTML = `
+        <div class="detail-actions">
+            <button class="btn btn-danger" onclick="closeEvent('${esc(eventId)}', true)">⚠️ 강제 종료</button>
+            <button class="btn btn-blue" onclick="resetTeams('${esc(eventId)}')">🔄 팀 초기화</button>
+            <a class="btn btn-ghost" href="/admin?event=${esc(eventId)}&token=${esc(ev.adminToken)}" target="_blank">🔗 관리자 페이지</a>
+        </div>
+        <div class="announce-bar">
+            <input type="text" id="ann-${esc(eventId)}" placeholder="채널에 공지 보내기..." maxlength="200">
+            <button class="btn btn-green" onclick="announce('${esc(eventId)}')">📢 전송</button>
+        </div>
+        ${banned.length ? `<div style="margin-top:.6rem;font-size:.75rem;color:var(--muted)">🚫 밴: ${banned.map(c=>esc(c)).join(', ')}</div>` : ''}
+        <div style="margin-top:.8rem;font-size:.78rem;color:var(--muted);margin-bottom:.4rem">
+            참가자 ${parts.length}명 · 방장 ID: <span class="id-short">${esc(ev.createdBy)}</span>
+        </div>
+        <div class="participant-list">
+            ${parts.length === 0 ? '<div class="empty">참가자 없음</div>' : parts.map(p => `
+            <div class="p-row">
+                <div class="p-team" style="color:${teamColors[p.team_num||0]}">${p.team_num ? p.team_num+'팀' : '-'}</div>
+                <div class="p-name">${esc(p.discord_nickname)}</div>
+                <div class="p-ingame">${esc(p.ingame_nickname)}</div>
+                ${p.tier ? `<span class="badge badge-gray" style="font-size:.68rem">${esc(p.tier)}</span>` : ''}
+                <button class="btn btn-danger" style="font-size:.7rem;padding:.2rem .5rem" onclick="kickParticipant('${esc(p.cancel_token)}','${esc(eventId)}','${esc(p.discord_nickname)}')">강퇴</button>
+            </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+async function closeEvent(eventId, notify) {
+    if (!confirm(`정말 이 내전을 강제 종료할까요?${notify ? '\n공지 메시지가 채널에 전송됩니다.' : ''}`)) return;
+    const data = await devApi('/api/dev/close-event', { eventId, notify });
+    if (data.error) { toast(data.error, true); return; }
+    toast('내전이 종료됐어요.');
+    allEvents = allEvents.filter(e => e.id !== eventId);
+    openDetail = null;
+    renderStats();
+    renderEvents();
+}
+
+async function resetTeams(eventId) {
+    if (!confirm('모든 팀 배정을 초기화할까요?')) return;
+    const data = await devApi('/api/dev/reset-teams', { eventId });
+    if (data.error) { toast(data.error, true); return; }
+    toast('팀 배정이 초기화됐어요.');
+    toggleDetail(eventId); // close
+    toggleDetail(eventId); // reopen refresh
+}
+
+async function kickParticipant(cancelToken, eventId, name) {
+    if (!confirm(`"${name}"을(를) 강퇴할까요?`)) return;
+    const data = await devApi('/api/dev/kick-participant', { cancelToken });
+    if (data.error) { toast(data.error, true); return; }
+    toast(`${name} 강퇴 완료.`);
+    const ev = allEvents.find(e => e.id === eventId);
+    if (ev) ev.participantCount = Math.max(0, (ev.participantCount||1) - 1);
+    renderStats();
+    // refresh detail
+    openDetail = null;
+    document.getElementById(`detail-row-${eventId}`).style.display = 'none';
+    toggleDetail(eventId);
+}
+
+async function announce(eventId) {
+    const inp = document.getElementById(`ann-${eventId}`);
+    const message = inp?.value?.trim();
+    if (!message) { toast('메시지를 입력해주세요.', true); return; }
+    const data = await devApi('/api/dev/announce', { eventId, message });
+    if (data.error) { toast(data.error, true); return; }
+    toast('공지가 전송됐어요!');
+    if (inp) inp.value = '';
+}
+
+load();
+</script>
+</body>
+</html>

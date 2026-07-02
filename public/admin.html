@@ -207,26 +207,33 @@ function posImg(position) {
     return f ? `<img src="/icons/${f}.png" style="width:18px;height:18px;vertical-align:middle;margin-right:3px;" onerror="this.style.display='none'">` : '';
 }
 
-// 캐릭터 코드 → dak.gg CDN 이미지 (게임 내 코드 기준)
-const CHAR_CODE = {
-    '재키':1,'아야':2,'요한':3,'혜진':4,'다니엘':5,
-    '피오라':6,'리오':7,'현우':8,'자히르':9,
-    '에스텔':10,'마이':11,'니아':12,'레니':14,'루크':16,
-    '로지':18,'나딘':19,'블레어':20,'알론소':21,'수아':22,
-    '마커스':23,'셀린':25,'클로에':27,'쇼우':28,'카밀로':29,
-    '키아라':31,'바냐':32,'이렘':33,'레녹스':36,'매그너스':37,
-    '가넷':38,'쇼이치':39,'프리야':40,'유민':41,'아이솔':42,
-    '니키':43,'버니스':44,'타지아':45,'바바라':47,'펠릭스':50,
-    '아비게일':51,'데비&마를렌':52,'아디나':53,'리 다이린':55,
-    '마르티나':56,'테오도르':57,'비앙카':58,'카티야':59,
-    '히스이':61,'일레븐':62,'나타폰':63,'펜리르':64,'레온':65,
-    '라우라':66,'알렉스':67,'르노어':69,'띠아':70,'헤이즈':72,
-    '시셀라':73,'아르다':74,'아드리아나':78,'샬럿':81,'미르카':82,'비형':83,
+// 한국어 이름 → dak.gg 영문 파일명 (게임 패치 시 DAK_VER 업데이트 필요)
+const DAK_VER = '11.5.0';
+const CHAR_EN = {
+    '재키':'Jackie','아야':'Aya','현우':'Hyunwoo','매그너스':'Magnus','피오라':'Fiora',
+    '나딘':'Nadine','자히르':'Zahir','하트':'Hart','아이솔':'Isol','리 다이린':'LiDailin',
+    '유키':'Yuki','혜진':'Hyejin','쇼우':'Xiukai','시셀라':'Sissela','키아라':'Chiara',
+    '아드리아나':'Adriana','쇼이치':'Shoichi','실비아':'Silvia','엘마':'Emma','레녹스':'Lenox',
+    '로지':'Rozzi','루크':'Luke','캐시':'Cathy','아델라':'Adela','버니스':'Bernice',
+    '바바라':'Barbara','알렉스':'Alex','수아':'Sua','레온':'Leon','일레븐':'Eleven',
+    '리오':'Rio','윌리엄':'William','니키':'Nicky','나타폰':'Nathapon','안':'Jan','얀':'Jan',
+    '이바':'Eva','다니엘':'Daniel','제니':'Jenny','카밀로':'Camilo','클로에':'Chloe',
+    '요한':'Johann','비앙카':'Bianca','셀린':'Celine','에키온':'Echion','마이':'Mai',
+    '에이든':'Aiden','라우라':'Laura','띠아':'Tia','펠릭스':'Felix','엘레나':'Elena',
+    '프리야':'Priya','아디나':'Adina','마커스':'Markus','칼라':'Karla','에스텔':'Estelle',
+    '피올로':'Piolo','마르티나':'Martina','헤이즈':'Haze','아이작':'Isaac','타지아':'Tazia',
+    '이렘':'Irem','테오도르':'Theodore','이안':'Lyanh','바냐':'Vanya',
+    '데비&마를렌':'DebiMarlene','아르다':'Arda','아비게일':'Abigail','알론소':'Alonso',
+    '레니':'Leni','초바메':'Tsubame','츠바메':'Tsubame','케네스':'Kenneth','카티야':'Katja',
+    '샬럿':'Charlotte','다르코':'Darko','르노어':'Lenore','가넷':'Garnet','유민':'YuMin',
+    '히스이':'Hisui','유스티나':'Justyna','아슈트반':'Istvan','이슈트반':'Istvan',
+    '니아':'Niah','슈린':'Xuelin','헨리':'Henry','블레어':'Blair','미르카':'Mirka',
+    '펜리르':'Fenrir','코렐라인':'Coraline','비형':'Bihyung','크레이버':'Craver',
 };
 function charImg(name, size=32) {
-    const code = CHAR_CODE[name];
-    if(!code) return '';
-    return `<img src="https://cdn.dak.gg/er/images/character/${code}.png" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block;margin:0 auto .12rem" onerror="this.remove()">`;
+    const en = CHAR_EN[name];
+    if(!en) return '';
+    return `<img src="https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharCommunity_${en}_S000.png" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block;margin:0 auto .12rem" onerror="this.remove()">`;
 }
 
 let eventData = null;
@@ -388,7 +395,7 @@ function renderBanChips(){
     }
     el.innerHTML = bannedCharacters.map(c=>`
         <span class="ban-chip">
-            <img src="https://cdn.dak.gg/er/images/character/${CHAR_CODE[c]||0}.png" style="width:18px;height:18px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:.2rem" onerror="this.remove()">
+            ${CHAR_EN[c] ? `<img src="https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharCommunity_${CHAR_EN[c]}_S000.png" style="width:18px;height:18px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:.2rem" onerror="this.remove()">` : ''}
             ${esc(c)}<span class="ban-chip-x" onclick="removeBan('${esc(c)}')" title="밴 취소">✕</span>
         </span>
     `).join('');
@@ -531,7 +538,13 @@ async function executeVoiceMove() {
     const data = await api('/api/admin/move-voices', { event: EVENT, token: TOKEN, assignments });
     btn.disabled = false;
     if (data.error) { toast(data.error, true); return; }
-    const failMsg = data.failed ? ` (${data.failed}명 실패 — 음성채널 미접속 또는 권한 부족)` : '';
+    if (data.moved === 0 && data.failed === 0) {
+        const d = data.debug || {};
+        toast(`이동 대상 없음 — 음성채널 접속자: ${d.participantsInVoice ?? '?'}명, 팀배정: ${d.participantsWithTeam ?? '?'}명, 캐시: ${d.voiceStateCacheSize ?? '?'}개`, true);
+        return;
+    }
+    const errDetail = data.errors?.length ? ` (${data.errors[0]})` : '';
+    const failMsg = data.failed ? ` · ${data.failed}명 실패${errDetail}` : '';
     toast(`🚀 ${data.moved}명 이동 완료!${failMsg}`, !!data.failed);
 }
 
