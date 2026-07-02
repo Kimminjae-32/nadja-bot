@@ -1,7 +1,7 @@
 const {
     Client, GatewayIntentBits, EmbedBuilder,
     ActionRowBuilder, ButtonBuilder, ButtonStyle,
-    Events, StringSelectMenuBuilder, ChannelType
+    Events
 } = require('discord.js');
 const fs   = require('fs');
 const cron = require('node-cron');
@@ -51,7 +51,6 @@ async function deleteMessage(msgId, channelId) {
 
 let allRecruits        = new Map();
 let activeUserRecruits = new Map();
-let moveProgress       = new Map();
 let pendingLumia       = new Map();
 
 function loadData() {
@@ -80,6 +79,10 @@ function saveData() {
 
 
 loadData();
+webServer.setRecruitMap(allRecruits);
+webServer.setActiveUserMap(activeUserRecruits);
+webServer.setSaveDataFn(saveData);
+webServer.setCreateEmbedFn(createRecruitEmbed);
 
 
 // =====================================================
@@ -213,11 +216,10 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     // 모든 모드: DB 이벤트 생성 (웹 폼 참가 + 관리자 페이지 공통)
     db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount, gameType);
 
-    // 모든 모드: 참가/취소 통합 버튼 + ⚙️ 관리
+    // 참가/취소 버튼 (관리는 웹 어드민 페이지에서)
     await msg.edit({ components: [
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId(`manage_${msgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary)
         )
     ]}).catch(() => null);
 }
@@ -347,11 +349,8 @@ client.on(Events.InteractionCreate, async interaction => {
                         { name: '🏝️ /내전 루미아 섬', value: '팀당인원·최대인원 자유 설정 (최대 8팀)' },
                         { name: '🐺 /내전 론울프',     value: '1인 1팀 개인전 · 최대 18명 · 포지션 불필요' },
                         { name: '🌊 /내전 코발트',     value: '4vs4 고정' },
-                        { name: '✅ 참가/취소 버튼',   value: '웹 폼 링크로 참가 신청\n닉네임·티어·포지션 입력 (론울프는 포지션 제외)\n이미 신청했으면 버튼 클릭 시 즉시 취소' },
-                        { name: '⚙️ 관리 버튼',        value: '방장 전용 웹 관리 페이지 열기\n• 자동/수동 팀 배정\n• 팀경매(드래프트) — 팀장이 순서대로 픽\n• 캐릭터 밴 — 실험체 배정에서 제외\n• 실험체 랜덤 배정\n• 디스코드 결과 전송\n• 모집 종료' },
-                        { name: '✍️ 팀 설정(수동)',     value: '방장이 직접 1팀 멤버를 선택 (나머지 자동 배정)' },
-                        { name: '🗺️ 맵 변경',           value: '현재 내전 유형 변경 (인원 유지)' },
-                        { name: '🔊 방 이동',           value: '팀별로 음성 채널을 순서대로 배정·이동' },
+                        { name: '✅ 참가/취소 버튼',   value: '웹 폼 링크로 참가 신청\n닉네임·티어·포지션 입력 (론울프는 포지션 제외)\n이미 신청 시 취소 링크 안내' },
+                        { name: '⚙️ 웹 관리 페이지',   value: '참가 신청 후 수정 페이지에서 접근 (방장 전용)\n• 자동/수동 팀 배정\n• 팀경매(드래프트)\n• 캐릭터 밴 · 실험체 랜덤 배정\n• 맵/모드 변경 (디스코드 메시지 자동 업데이트)\n• 음성 채널 이동 · 원래대로\n• 방장 양도\n• 디스코드 결과 전송 · 모집 종료' },
                         { name: '🗓️ /시즌',             value: '현재 시즌 정보 및 종료까지 남은 기간' },
                         { name: '🆓 /무료실험체',       value: '이번 주 무료 실험체 목록 (모드별)' }
                     )],
@@ -454,322 +453,20 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         }
 
-        const targetMsgId = parts[1];
-        const data        = allRecruits.get(targetMsgId);
-        if (!data) return;
-
-        // 팀 설정 (수동)
-        else if (action === 'manual') {
-            if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
-            const options = await Promise.all(data.participants.map(async id => {
-                const u = await client.users.fetch(id);
-                return { label: u.username, value: id };
-            }));
-            const menu = new StringSelectMenuBuilder()
-                .setCustomId(`setTeamManual_${targetMsgId}`)
-                .setPlaceholder('1팀에 넣을 멤버를 선택하세요')
-                .setMinValues(1).setMaxValues(Math.min(options.length, 25))
-                .addOptions(options);
-            return await interaction.reply({ content: '🟦 **1팀** 멤버를 골라주세요. 나머지는 자동으로 2팀에 배정됩니다.', components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
-        }
-        
-        else if (action === 'kick') {
-            if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
-            const others = data.participants.filter(id => id !== data.creatorId);
-            if (others.length === 0) return await interaction.reply({ content: '킥할 참가자가 없습니다.', ephemeral: true });
-            const options = await Promise.all(others.map(async id => {
-                const u = await client.users.fetch(id);
-                return { label: u.username, value: id };
-            }));
-            const menu = new StringSelectMenuBuilder()
-                .setCustomId(`selectKick_${targetMsgId}`)
-                .setPlaceholder('제외할 참가자를 선택하세요')
-                .setMinValues(1).setMaxValues(Math.min(options.length, 25))
-                .addOptions(options);
-            return await interaction.reply({ content: '👢 제외할 참가자를 선택하세요.', components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
-        }
-        // 맵 변경
-        else if (action === 'changeMap') {
-            if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
-            const choices = [
-                { label: '🏝️ 루미아 섬 (내전)', value: '루미아 섬' },
-                { label: '🌊 코발트 (내전 4vs4)', value: '코발트' },
-                { label: '🐺 론울프 (개인전)', value: '론울프' },
-            ].filter(c => !(data.gameType === '론울프' && c.value === '론울프')
-                       && !(data.gameType === '내전' && data.mapType === '루미아 섬' && c.value === '루미아 섬')
-                       && !(data.gameType === '내전' && data.mapType === '코발트' && c.value === '코발트'));
-            const menu = new StringSelectMenuBuilder()
-                .setCustomId(`selectChangeMap_${targetMsgId}`)
-                .setPlaceholder('변경할 맵을 선택하세요')
-                .addOptions(choices);
-            return await interaction.reply({
-                content: `현재: **${data.gameType} / ${data.mapType}**\n변경할 맵을 선택해주세요. 인원은 그대로 유지됩니다.`,
-                components: [new ActionRowBuilder().addComponents(menu)],
-                ephemeral: true
-            });
-        }
-        // 방장 양도
-        else if (action === 'transfer') {
-            if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
-            const others = data.participants.filter(id => id !== data.creatorId);
-            if (others.length === 0) return await interaction.reply({ content: '양도할 사람이 없습니다.', ephemeral: true });
-            const menu = new StringSelectMenuBuilder()
-                .setCustomId(`selectTransfer_${targetMsgId}`)
-                .setPlaceholder('새 방장 선택')
-                .addOptions(await Promise.all(others.map(async id => {
-                    const u = await client.users.fetch(id);
-                    return { label: u.username, value: id };
-                })));
-            return await interaction.reply({ content: '누구에게 양도할까요?', components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
-        }
-        // 방 이동
-        else if (action === 'move') {
-            const member = await interaction.guild.members.fetch(interaction.user.id);
-            if (!member.voice.channel) return await interaction.reply({ content: '음성 채널에 먼저 접속해주세요.', ephemeral: true });
-            data.originalVoiceChannelId = member.voice.channelId;
-            const teamCount = data.teamCount || 2;
-            moveProgress.set(targetMsgId, { step: 0, teamChannels: [], teamCount });
-            const voiceChannels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).map(c => ({ label: c.name, value: c.id })).slice(0, 25);
-            const menu = new StringSelectMenuBuilder().setCustomId(`selectMoveTeam_${targetMsgId}`).setPlaceholder(`${TEAM_EMOJIS[0]} ${TEAM_NAMES[0]} 이동 채널 선택`).addOptions(voiceChannels);
-            return await interaction.reply({ content: `${TEAM_EMOJIS[0]} **${TEAM_NAMES[0]}**이 갈 채널을 골라주세요. (1/${teamCount})`, components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
-        }
-        // 원래대로 (방장 전용)
-        else if (action === 'return') {
-            if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
-            if (!data.originalVoiceChannelId) return await interaction.reply({ content: '기록이 없습니다.', ephemeral: true });
-            for (const id of data.participants) {
-                const m = await interaction.guild.members.fetch(id).catch(() => null);
-                if (m?.voice.channel) await m.voice.setChannel(data.originalVoiceChannelId).catch(() => null);
-            }
-            return await interaction.reply({ content: '✅ 모두 원래 채널로 복구했어요!', ephemeral: true });
-        }
-        // 관리 메뉴
-        else if (action === 'manage') {
-            if (interaction.user.id !== data.creatorId) return await interaction.reply({ content: '방장만 가능합니다.', ephemeral: true });
-            const menuOptions = data.gameType === '내전'
-                ? [
-                    { label: '팀 설정(수동)', value: 'manual',    description: '방장이 직접 팀을 구성합니다' },
-                    { label: '참가자 킥',    value: 'kick',      description: '참가자를 제외합니다' },
-                    { label: '방장 양도',    value: 'transfer',  description: '방장 권한을 양도합니다' },
-                    { label: '방 이동',      value: 'move',      description: '팀별로 음성 채널을 이동합니다' },
-                    { label: '원래대로',     value: 'return',    description: '모든 참가자를 원래 채널로 복구합니다' },
-                    { label: '맵 변경',      value: 'changeMap', description: '맵/모드를 변경합니다' },
-                ]
-                : [
-                    { label: '참가자 킥',     value: 'kick',      description: '참가자를 제외합니다' },
-                    { label: '방장 양도',     value: 'transfer',  description: '방장 권한을 양도합니다' },
-                    { label: '맵 변경',       value: 'changeMap', description: '맵/모드를 변경합니다' },
-                ];
-            const menu = new StringSelectMenuBuilder()
-                .setCustomId(`selectManage_${targetMsgId}`)
-                .setPlaceholder('관리 기능 선택')
-                .addOptions(menuOptions);
-            return await interaction.reply({ content: '⚙️ 관리 기능을 선택하세요:', components: [new ActionRowBuilder().addComponents(menu)], ephemeral: true });
-        }
-        // 참가/취소 — 모든 모드 통일: 웹 폼 기반
-        else if (action === 'join' || action === 'leave') {
+        // 참가/취소 — 웹 폼 기반
+        if (action === 'join' || action === 'leave') {
+            const targetMsgId = parts[1];
+            if (!allRecruits.get(targetMsgId)) return;
             const BASE = process.env.WEB_URL || 'http://localhost:3000';
             const existing = db.getByDiscordId(targetMsgId, interaction.user.id);
             if (existing) {
-                db.deleteByDiscordId(targetMsgId, interaction.user.id);
-                return await interaction.reply({ content: '✅ 참가가 취소됐어요.', ephemeral: true });
+                return await interaction.reply({ content: `✅ 이미 참가 신청됐어요.\n수정/취소는 여기서: ${BASE}/cancel?token=${existing.cancel_token}`, ephemeral: true });
             }
             const webUrl = `${BASE}/join?event=${targetMsgId}&discord_id=${interaction.user.id}`;
             return await interaction.reply({ content: `아래 링크에서 참가 신청해주세요!\n${webUrl}`, ephemeral: true });
         }
     }
 
-    // ──────────────────────────────────────────────
-    // 셀렉트 메뉴 인터랙션
-    // ──────────────────────────────────────────────
-    if (interaction.isStringSelectMenu()) {
-        const [action, targetMsgId] = interaction.customId.split('_');
-        const data = allRecruits.get(targetMsgId);
-        if (!data) return;
-
-        // 관리 메뉴 라우터
-        if (action === 'selectManage') {
-            if (interaction.user.id !== data.creatorId) return await interaction.update({ content: '방장만 가능합니다.', components: [] });
-            const selected = interaction.values[0];
-
-            if (selected === 'adminPage') {
-                const ev = db.getEvent(targetMsgId);
-                if (!ev) return await interaction.update({ content: '⚠️ 관리자 페이지 정보를 찾을 수 없어요.', components: [] });
-                const BASE = process.env.WEB_URL || 'http://localhost:3000';
-                const adminUrl = `${BASE}/admin?event=${targetMsgId}&token=${ev.adminToken}`;
-                return await interaction.update({ content: `🛠️ **웹 관리자 페이지** (방장 전용):\n${adminUrl}`, components: [] });
-            }
-            else if (selected === 'manual') {
-                const options = await Promise.all(data.participants.map(async id => {
-                    const u = await client.users.fetch(id);
-                    return { label: u.username, value: id };
-                }));
-                const menu = new StringSelectMenuBuilder()
-                    .setCustomId(`setTeamManual_${targetMsgId}`)
-                    .setPlaceholder('1팀에 넣을 멤버를 선택하세요')
-                    .setMinValues(1).setMaxValues(Math.min(options.length, 25))
-                    .addOptions(options);
-                return await interaction.update({ content: '🟦 **1팀** 멤버를 골라주세요. 나머지는 자동으로 2팀에 배정됩니다.', components: [new ActionRowBuilder().addComponents(menu)] });
-            }
-            else if (selected === 'kick') {
-                const others = data.participants.filter(id => id !== data.creatorId);
-                if (others.length === 0) return await interaction.update({ content: '킥할 참가자가 없습니다.', components: [] });
-                const options = await Promise.all(others.map(async id => {
-                    const u = await client.users.fetch(id);
-                    return { label: u.username, value: id };
-                }));
-                const menu = new StringSelectMenuBuilder()
-                    .setCustomId(`selectKick_${targetMsgId}`)
-                    .setPlaceholder('제외할 참가자를 선택하세요')
-                    .setMinValues(1).setMaxValues(Math.min(options.length, 25))
-                    .addOptions(options);
-                return await interaction.update({ content: '👢 제외할 참가자를 선택하세요.', components: [new ActionRowBuilder().addComponents(menu)] });
-            }
-            else if (selected === 'transfer') {
-                const others = data.participants.filter(id => id !== data.creatorId);
-                if (others.length === 0) return await interaction.update({ content: '양도할 사람이 없습니다.', components: [] });
-                const menu = new StringSelectMenuBuilder()
-                    .setCustomId(`selectTransfer_${targetMsgId}`)
-                    .setPlaceholder('새 방장 선택')
-                    .addOptions(await Promise.all(others.map(async id => {
-                        const u = await client.users.fetch(id);
-                        return { label: u.username, value: id };
-                    })));
-                return await interaction.update({ content: '누구에게 양도할까요?', components: [new ActionRowBuilder().addComponents(menu)] });
-            }
-            else if (selected === 'move') {
-                const member = await interaction.guild.members.fetch(interaction.user.id);
-                if (!member.voice.channel) return await interaction.update({ content: '음성 채널에 먼저 접속해주세요.', components: [] });
-                data.originalVoiceChannelId = member.voice.channelId;
-                const teamCount = data.teamCount || 2;
-                moveProgress.set(targetMsgId, { step: 0, teamChannels: [], teamCount });
-                const voiceChannels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).map(c => ({ label: c.name, value: c.id })).slice(0, 25);
-                const menu = new StringSelectMenuBuilder().setCustomId(`selectMoveTeam_${targetMsgId}`).setPlaceholder(`${TEAM_EMOJIS[0]} ${TEAM_NAMES[0]} 이동 채널 선택`).addOptions(voiceChannels);
-                return await interaction.update({ content: `${TEAM_EMOJIS[0]} **${TEAM_NAMES[0]}**이 갈 채널을 골라주세요. (1/${teamCount})`, components: [new ActionRowBuilder().addComponents(menu)] });
-            }
-            else if (selected === 'return') {
-                if (!data.originalVoiceChannelId) return await interaction.update({ content: '기록이 없습니다.', components: [] });
-                for (const id of data.participants) {
-                    const m = await interaction.guild.members.fetch(id).catch(() => null);
-                    if (m?.voice.channel) await m.voice.setChannel(data.originalVoiceChannelId).catch(() => null);
-                }
-                return await interaction.update({ content: '✅ 모두 원래 채널로 복구했어요!', components: [] });
-            }
-            else if (selected === 'changeMap') {
-                const choices = [
-                    { label: '🏝️ 루미아 섬 (내전)', value: '루미아 섬' },
-                    { label: '🌊 코발트 (내전 4vs4)', value: '코발트' },
-                    { label: '🐺 론울프 (개인전)', value: '론울프' },
-                ].filter(c => !(data.gameType === '론울프' && c.value === '론울프')
-                           && !(data.gameType === '내전' && data.mapType === '루미아 섬' && c.value === '루미아 섬')
-                           && !(data.gameType === '내전' && data.mapType === '코발트' && c.value === '코발트'));
-                const menu = new StringSelectMenuBuilder()
-                    .setCustomId(`selectChangeMap_${targetMsgId}`)
-                    .setPlaceholder('변경할 맵을 선택하세요')
-                    .addOptions(choices);
-                return await interaction.update({ content: `현재: **${data.gameType} / ${data.mapType}**\n변경할 맵을 선택해주세요. 인원은 그대로 유지됩니다.`, components: [new ActionRowBuilder().addComponents(menu)] });
-            }
-            return;
-        }
-        // 수동 팀 배정
-        if (action === 'setTeamManual') {
-            const teamCount = data.teamCount || 2;
-            data.teams    = Array.from({ length: teamCount }, () => []);
-            data.teams[0] = interaction.values;
-            data.teams[1] = data.participants.filter(id => !data.teams[0].includes(id));
-            data.team1    = data.teams[0];
-            data.team2    = data.teams[1];
-            saveData();
-            const targetMsg = await interaction.channel.messages.fetch(targetMsgId).catch(() => null);
-            if (targetMsg) await targetMsg.edit({ embeds: [await createRecruitEmbed(data)] });
-            return await interaction.update({ content: '✅ 팀 설정 완료!', components: [] });
-        }
-        // 킥 확정
-        else if (action === 'selectKick') {
-            const kickIds = interaction.values;
-            data.participants = data.participants.filter(id => !kickIds.includes(id));
-            data.teams = (data.teams || []).map(team => team.filter(id => !kickIds.includes(id)));
-            data.team1 = data.team1.filter(id => !kickIds.includes(id));
-            data.team2 = data.team2.filter(id => !kickIds.includes(id));
-            saveData();
-            for (const id of kickIds) {
-                const u = await client.users.fetch(id).catch(() => null);
-                if (u) u.send('👢 방장에 의해 구인에서 제외됐어요.').catch(() => null);
-            }
-            const targetMsg = await interaction.channel.messages.fetch(targetMsgId).catch(() => null);
-            if (targetMsg) await targetMsg.edit({ embeds: [await createRecruitEmbed(data)] });
-            const kickNames = await Promise.all(kickIds.map(async id => {
-                const u = await client.users.fetch(id).catch(() => null);
-                return u?.username || id;
-            }));
-            return await interaction.update({ content: `✅ ${kickNames.join(', ')}님을 제외했어요.`, components: [] });
-        }
-        // 맵 변경 확정
-        else if (action === 'selectChangeMap') {
-            const selected = interaction.values[0];
-            if (selected === '루미아 섬') {
-                data.gameType  = '내전';
-                data.mapType   = '루미아 섬';
-            } else if (selected === '코발트') {
-                data.gameType  = '내전';
-                data.mapType   = '코발트';
-                if (data.maxPlayers > 8) data.maxPlayers = 8;
-                data.teamCount = 2;
-                data.teams     = [[], []];
-            } else if (selected === '론울프') {
-                data.gameType  = '론울프';
-                data.mapType   = '루미아 섬';
-                if (data.maxPlayers > 18) data.maxPlayers = 18;
-                data.teamCount = data.maxPlayers;
-                data.teams     = Array.from({ length: data.teamCount }, () => []);
-            }
-            saveData();
-
-            // 모든 모드 통일 버튼
-            const newRows = [
-                new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId(`join_${targetMsgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder().setCustomId(`manage_${targetMsgId}`).setLabel('⚙️ 관리').setStyle(ButtonStyle.Secondary)
-                )
-            ];
-
-            const targetMsg = await interaction.channel.messages.fetch(targetMsgId).catch(() => null);
-            if (targetMsg) await targetMsg.edit({ embeds: [await createRecruitEmbed(data)], components: newRows });
-            return await interaction.update({ content: `✅ **${data.gameType} / ${data.mapType}**으로 변경됐어요!`, components: [] });
-        }
-        // 방장 양도
-        else if (action === 'selectTransfer') {
-            const tGuild = interaction.guildId ?? 'dm';
-            activeUserRecruits.delete(`${tGuild}_${data.creatorId}`);
-            data.creatorId = interaction.values[0];
-            activeUserRecruits.set(`${tGuild}_${data.creatorId}`, targetMsgId);
-            saveData();
-            const targetMsg = await interaction.channel.messages.fetch(targetMsgId).catch(() => null);
-            if (targetMsg) await targetMsg.edit({ embeds: [await createRecruitEmbed(data)] });
-            return await interaction.update({ content: '👑 방장이 양도되었습니다.', components: [] });
-        }
-        // 팀별 방 이동
-        else if (action === 'selectMoveTeam') {
-            const progress = moveProgress.get(targetMsgId);
-            if (!progress) return await interaction.update({ content: '⚠️ 다시 시도해주세요.', components: [] });
-            progress.teamChannels.push(interaction.values[0]);
-            progress.step++;
-            if (progress.step < progress.teamCount) {
-                const voiceChannels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).map(c => ({ label: c.name, value: c.id })).slice(0, 25);
-                const menu = new StringSelectMenuBuilder().setCustomId(`selectMoveTeam_${targetMsgId}`).setPlaceholder(`${TEAM_EMOJIS[progress.step]} ${TEAM_NAMES[progress.step]} 이동 채널 선택`).addOptions(voiceChannels);
-                return await interaction.update({ content: `${TEAM_EMOJIS[progress.step]} **${TEAM_NAMES[progress.step]}**이 갈 채널을 골라주세요. (${progress.step + 1}/${progress.teamCount})`, components: [new ActionRowBuilder().addComponents(menu)] });
-            }
-            const teams = data.teams || [data.team1, data.team2];
-            for (let i = 0; i < progress.teamCount; i++) {
-                for (const id of (teams[i] || [])) {
-                    const m = await interaction.guild.members.fetch(id).catch(() => null);
-                    if (m?.voice.channel) await m.voice.setChannel(progress.teamChannels[i]).catch(() => null);
-                }
-            }
-            moveProgress.delete(targetMsgId);
-            return await interaction.update({ content: '🚀 모든 팀 이동 완료!', components: [] });
-        }
-    }
 });
 
 client.login(process.env.TOKEN);

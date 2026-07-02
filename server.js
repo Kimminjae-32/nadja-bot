@@ -9,8 +9,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use('/icons', express.static(path.join(__dirname, 'public', 'icons')));
 
-let discordClient      = null;
+let discordClient        = null;
 let closeRecruitCallback = null;
+let recruitMap           = null;
+let activeUserMap        = null;
+let saveDataFn           = null;
+let createEmbedFn        = null;
 
 const VALID_POSITIONS = ['탱커', '전사', '암살자', '스킬 딜러', '원거리 딜러', '지원가'];
 
@@ -332,14 +336,180 @@ app.post('/api/admin/send-discord', async (req, res) => {
     }
 });
 
+// POST /api/admin/change-map — 맵 변경 + Discord embed 업데이트
+app.post('/api/admin/change-map', async (req, res) => {
+    const { event, token, newMap } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+
+    const recruit = recruitMap?.get(event);
+    if (!recruit) return res.json({ error: '봇 재시작 후에는 맵 변경이 불가해요. 봇이 실행 중인지 확인해주세요.' });
+
+    if (newMap === '루미아 섬') {
+        recruit.gameType = '내전'; recruit.mapType = '루미아 섬';
+        db.updateEventGameType(event, '내전');
+    } else if (newMap === '코발트') {
+        recruit.gameType = '내전'; recruit.mapType = '코발트';
+        if (recruit.maxPlayers > 8) recruit.maxPlayers = 8;
+        recruit.teamCount = 2; recruit.teams = [[], []]; recruit.team1 = []; recruit.team2 = [];
+        db.updateEventGameType(event, '내전');
+    } else if (newMap === '론울프') {
+        recruit.gameType = '론울프'; recruit.mapType = '루미아 섬';
+        if (recruit.maxPlayers > 18) recruit.maxPlayers = 18;
+        recruit.teamCount = recruit.maxPlayers;
+        recruit.teams = Array.from({ length: recruit.teamCount }, () => []);
+        db.updateEventGameType(event, '론울프');
+    } else {
+        return res.json({ error: '알 수 없는 맵 타입.' });
+    }
+
+    saveDataFn?.();
+
+    if (discordClient && recruit.channelId && createEmbedFn) {
+        try {
+            const ch = await discordClient.channels.fetch(recruit.channelId).catch(() => null);
+            const msg = ch ? await ch.messages.fetch(event).catch(() => null) : null;
+            if (msg) await msg.edit({ embeds: [await createEmbedFn(recruit)] });
+        } catch (e) { console.error('맵 변경 embed 업데이트 실패:', e); }
+    }
+
+    res.json({ success: true, gameType: recruit.gameType, mapType: recruit.mapType });
+});
+
+// GET /api/admin/voice-channels?event=&token= — 서버 음성 채널 목록
+app.get('/api/admin/voice-channels', async (req, res) => {
+    const { event, token } = req.query;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!discordClient) return res.json({ channels: [] });
+
+    const ev = db.getEvent(event);
+    if (!ev?.guildId) return res.json({ channels: [] });
+
+    try {
+        const guild = discordClient.guilds.cache.get(ev.guildId)
+            || await discordClient.guilds.fetch(ev.guildId).catch(() => null);
+        if (!guild) return res.json({ channels: [] });
+        const channels = guild.channels.cache
+            .filter(c => c.type === 2)  // GuildVoice = 2
+            .map(c => ({ id: c.id, name: c.name }))
+            .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+        res.json({ channels });
+    } catch (e) {
+        res.json({ channels: [] });
+    }
+});
+
+// POST /api/admin/move-voices — 팀별 음성 채널 이동
+app.post('/api/admin/move-voices', async (req, res) => {
+    const { event, token, assignments } = req.body;
+    // assignments: [{ teamNum: 1, channelId: 'xxx' }, ...]
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!discordClient) return res.status(500).json({ error: '봇이 연결되지 않았어요.' });
+
+    const ev = db.getEvent(event);
+    if (!ev?.guildId) return res.status(404).json({ error: '서버 정보가 없어요.' });
+
+    const guild = discordClient.guilds.cache.get(ev.guildId)
+        || await discordClient.guilds.fetch(ev.guildId).catch(() => null);
+    if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없어요.' });
+
+    const assignMap = {};
+    for (const a of assignments) assignMap[a.teamNum] = a.channelId;
+
+    // 원래 채널 기록 (아직 없으면 첫 번째 참가자 채널로 저장)
+    const recruit = recruitMap?.get(event);
+    if (recruit && !recruit.originalVoiceChannelId) {
+        const allP = db.getParticipants(event);
+        for (const p of allP) {
+            if (!p.discord_id) continue;
+            const m = await guild.members.fetch(p.discord_id).catch(() => null);
+            if (m?.voice.channel) {
+                recruit.originalVoiceChannelId = m.voice.channelId;
+                saveDataFn?.();
+                break;
+            }
+        }
+    }
+
+    const participants = db.getParticipants(event);
+    let moved = 0;
+    for (const p of participants) {
+        if (!p.discord_id || !p.team_num) continue;
+        const channelId = assignMap[p.team_num];
+        if (!channelId) continue;
+        const member = await guild.members.fetch(p.discord_id).catch(() => null);
+        if (member?.voice.channel) {
+            await member.voice.setChannel(channelId).catch(() => null);
+            moved++;
+        }
+    }
+    res.json({ success: true, moved });
+});
+
+// POST /api/admin/return-voices — 원래 채널로 복구
+app.post('/api/admin/return-voices', async (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!discordClient) return res.status(500).json({ error: '봇이 연결되지 않았어요.' });
+
+    const recruit = recruitMap?.get(event);
+    if (!recruit?.originalVoiceChannelId)
+        return res.status(400).json({ error: '이동 기록이 없어요. 먼저 방 이동을 실행해주세요.' });
+
+    const ev = db.getEvent(event);
+    if (!ev?.guildId) return res.status(404).json({ error: '서버 정보가 없어요.' });
+
+    const guild = discordClient.guilds.cache.get(ev.guildId)
+        || await discordClient.guilds.fetch(ev.guildId).catch(() => null);
+    if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없어요.' });
+
+    const participants = db.getParticipants(event);
+    let moved = 0;
+    for (const p of participants) {
+        if (!p.discord_id) continue;
+        const member = await guild.members.fetch(p.discord_id).catch(() => null);
+        if (member?.voice.channel) {
+            await member.voice.setChannel(recruit.originalVoiceChannelId).catch(() => null);
+            moved++;
+        }
+    }
+    res.json({ success: true, moved });
+});
+
+// POST /api/admin/transfer-host — 방장 양도
+app.post('/api/admin/transfer-host', async (req, res) => {
+    const { event, token, newHostDiscordId } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+
+    db.updateEventCreator(event, newHostDiscordId);
+
+    const recruit = recruitMap?.get(event);
+    if (recruit && activeUserMap) {
+        const guildId = recruit.guildId ?? 'dm';
+        activeUserMap.delete(`${guildId}_${recruit.creatorId}`);
+        recruit.creatorId = newHostDiscordId;
+        activeUserMap.set(`${guildId}_${newHostDiscordId}`, event);
+        saveDataFn?.();
+    }
+
+    if (discordClient && recruit?.channelId && createEmbedFn) {
+        try {
+            const ch = await discordClient.channels.fetch(recruit.channelId).catch(() => null);
+            const msg = ch ? await ch.messages.fetch(event).catch(() => null) : null;
+            if (msg) await msg.edit({ embeds: [await createEmbedFn(recruit)] });
+        } catch (e) { console.error('방장 양도 embed 업데이트 실패:', e); }
+    }
+
+    res.json({ success: true });
+});
+
 module.exports = {
     start(port) {
         app.listen(port, () => console.log(`[웹] 포트 ${port} 에서 실행 중`));
     },
-    setClient(client) {
-        discordClient = client;
-    },
-    setCloseCallback(fn) {
-        closeRecruitCallback = fn;
-    }
+    setClient(client)          { discordClient = client; },
+    setCloseCallback(fn)       { closeRecruitCallback = fn; },
+    setRecruitMap(map)         { recruitMap = map; },
+    setActiveUserMap(map)      { activeUserMap = map; },
+    setSaveDataFn(fn)          { saveDataFn = fn; },
+    setCreateEmbedFn(fn)       { createEmbedFn = fn; },
 };

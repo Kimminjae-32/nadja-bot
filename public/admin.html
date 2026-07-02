@@ -58,6 +58,11 @@
         .ban-pick-char{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:.3rem .4rem;font-size:.78rem;cursor:pointer;text-align:center;transition:border-color .1s;user-select:none;}
         .ban-pick-char:hover{border-color:var(--accent);}
 
+        /* ── 추가 관리 ── */
+        .mgmt-group{margin-bottom:1.1rem;padding-bottom:1.1rem;border-bottom:1px solid var(--border);}
+        .mgmt-group:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none;}
+        .mgmt-label{font-size:.9rem;font-weight:600;margin-bottom:.5rem;}
+
         /* ── 드래프트 ── */
         .captain-row{display:flex;align-items:center;gap:.6rem;margin-bottom:.45rem;}
         .captain-label{min-width:36px;font-size:.85rem;color:var(--muted);}
@@ -120,6 +125,41 @@
             <input type="text" id="ban-search" placeholder="캐릭터 이름 검색..." oninput="renderBanCharList(this.value)"
                    style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:.5rem .75rem;font-size:.85rem;outline:none;margin-bottom:.5rem;box-sizing:border-box">
             <div id="ban-char-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:.3rem;max-height:200px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.5rem"></div>
+        </div>
+    </div>
+
+    <!-- 추가 관리 섹션 -->
+    <div id="extra-section" class="section-card" style="display:none">
+        <div class="section-title">⚙️ 추가 관리</div>
+
+        <div class="mgmt-group">
+            <div class="mgmt-label">🗺️ 맵/모드 변경</div>
+            <div id="current-map-badge" style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem"></div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('루미아 섬')">🏝️ 루미아 섬</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('코발트')">🌊 코발트</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('론울프')">🐺 론울프</button>
+            </div>
+        </div>
+
+        <div class="mgmt-group">
+            <div class="mgmt-label">👑 방장 양도</div>
+            <div style="display:flex;gap:.5rem;align-items:center">
+                <select id="transfer-select" class="team-select" style="flex:1">
+                    <option value="">-- 새 방장 선택 --</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="transferHost()">양도</button>
+            </div>
+        </div>
+
+        <div class="mgmt-group" id="voice-group">
+            <div class="mgmt-label">🔊 음성 채널 이동</div>
+            <div style="font-size:.82rem;color:var(--muted);margin-bottom:.5rem">팀별로 이동할 채널 지정 · 음성 채널에 있는 참가자만 이동됩니다</div>
+            <div id="voice-rows" style="margin-bottom:.6rem"></div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" id="move-exec-btn" onclick="executeVoiceMove()">🚀 이동 실행</button>
+                <button class="btn btn-secondary btn-sm" onclick="returnVoices()">↩️ 원래 채널로</button>
+            </div>
         </div>
     </div>
 
@@ -201,6 +241,11 @@ async function load(){
     document.getElementById('shuffle-btn').style.display = isTeamMode ? '' : 'none';
     document.getElementById('ban-section').style.display = isTeamMode ? '' : 'none';
     document.getElementById('draft-section').style.display = isTeamMode ? '' : 'none';
+    document.getElementById('extra-section').style.display = '';
+    document.getElementById('voice-group').style.display = isTeamMode ? '' : 'none';
+    updateMapBadge();
+    populateTransferSelect();
+    loadVoiceChannels();
 
     if(isTeamMode){
         renderBanChips();
@@ -365,6 +410,88 @@ async function removeBan(character){
         const s = document.getElementById('ban-search');
         if(s) renderBanCharList(s.value);
     }
+}
+
+// ── 추가 관리 ────────────────────────────────────────────
+let voiceChannels = [];
+
+function updateMapBadge() {
+    const gt = eventData?.gameType || '';
+    const mt = eventData?.mapType  || '';
+    document.getElementById('current-map-badge').textContent = `현재: ${gt} / ${mt}`;
+}
+
+function populateTransferSelect() {
+    const sel = document.getElementById('transfer-select');
+    const withId = participants.filter(p => p.discord_id);
+    sel.innerHTML = '<option value="">-- 새 방장 선택 --</option>' +
+        withId.map(p => `<option value="${esc(p.discord_id)}">${esc(p.discord_nickname)} (${esc(p.ingame_nickname)})</option>`).join('');
+}
+
+async function changeMap(newMap) {
+    if (!confirm(`맵을 "${newMap}"(으)로 변경할까요? 디스코드 메시지도 업데이트됩니다.`)) return;
+    const data = await api('/api/admin/change-map', { event: EVENT, token: TOKEN, newMap });
+    if (data.error) { toast(data.error, true); return; }
+    toast(`✅ ${data.gameType} / ${data.mapType}으로 변경!`);
+    document.getElementById('current-map-badge').textContent = `현재: ${data.gameType} / ${data.mapType}`;
+    if (eventData) { eventData.gameType = data.gameType; eventData.mapType = data.mapType; }
+}
+
+async function transferHost() {
+    const sel = document.getElementById('transfer-select');
+    if (!sel.value) { toast('새 방장을 선택해주세요.', true); return; }
+    const name = sel.options[sel.selectedIndex].text;
+    if (!confirm(`"${name}"에게 방장을 양도할까요?`)) return;
+    const data = await api('/api/admin/transfer-host', { event: EVENT, token: TOKEN, newHostDiscordId: sel.value });
+    if (data.error) { toast(data.error, true); return; }
+    toast('👑 방장이 양도됐어요!');
+}
+
+async function loadVoiceChannels() {
+    const data = await api(`/api/admin/voice-channels?event=${EVENT}&token=${TOKEN}`);
+    voiceChannels = data.channels || [];
+    renderVoiceRows();
+}
+
+function renderVoiceRows() {
+    const tc = eventData?.teamCount || 2;
+    const el = document.getElementById('voice-rows');
+    if (!voiceChannels.length) {
+        el.innerHTML = '<div style="color:var(--muted);font-size:.82rem">음성 채널 정보를 불러올 수 없어요</div>';
+        return;
+    }
+    const opts = voiceChannels.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    el.innerHTML = Array.from({ length: tc }, (_, i) => `
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
+            <span style="min-width:38px;font-size:.85rem;color:var(--muted)">${EMOJIS[i%EMOJIS.length]} ${i+1}팀</span>
+            <select class="team-select" id="voice-ch-${i+1}" style="flex:1">
+                <option value="">-- 채널 선택 --</option>
+                ${opts}
+            </select>
+        </div>`).join('');
+}
+
+async function executeVoiceMove() {
+    const tc = eventData?.teamCount || 2;
+    const assignments = [];
+    for (let i = 1; i <= tc; i++) {
+        const sel = document.getElementById(`voice-ch-${i}`);
+        if (!sel?.value) { toast(`${i}팀 채널을 선택해주세요.`, true); return; }
+        assignments.push({ teamNum: i, channelId: sel.value });
+    }
+    const btn = document.getElementById('move-exec-btn');
+    btn.disabled = true;
+    const data = await api('/api/admin/move-voices', { event: EVENT, token: TOKEN, assignments });
+    btn.disabled = false;
+    if (data.error) { toast(data.error, true); return; }
+    toast(`🚀 ${data.moved}명 이동 완료!`);
+}
+
+async function returnVoices() {
+    if (!confirm('모든 참가자를 원래 채널로 복구할까요?')) return;
+    const data = await api('/api/admin/return-voices', { event: EVENT, token: TOKEN });
+    if (data.error) { toast(data.error, true); return; }
+    toast(`↩️ ${data.moved}명 복구 완료!`);
 }
 
 // ── 드래프트 ─────────────────────────────────────────────
@@ -547,6 +674,7 @@ async function silentRefresh(){
         eventData = data.event;
         bannedCharacters = eventData?.bannedCharacters || [];
         render();
+        populateTransferSelect();
         if(newCount !== oldCount) toast(`참가자 업데이트: ${newCount}명`);
         const now = new Date();
         document.getElementById('subtitle').textContent =

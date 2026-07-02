@@ -200,4 +200,14 @@ module.exports = {
     getBannedCharacters(eventId) {
         return load().events[eventId]?.bannedCharacters || [];
     },
+
+    updateEventGameType(eventId, gameType) {
+        const data = load();
+        if (data.events[eventId]) { data.events[eventId].gameType = gameType; save(data); }
+    },
+
+    updateEventCreator(eventId, newCreatorId) {
+        const data = load();
+        if (data.events[eventId]) { data.events[eventId].createdBy = newCreatorId; save(data); }
+    },
 };
