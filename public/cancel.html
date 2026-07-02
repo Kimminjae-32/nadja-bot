@@ -96,11 +96,14 @@
             .then(d => {
                 hide('loading');
                 if (d.error) { show('error'); return; }
-                const TIER_EMOJI = {'언랭크':'⬜','아이언':'🔩','브론즈':'🥉','실버':'🥈','골드':'🥇','플래티넘':'💎','다이아몬드':'💠','메테오라이트':'☄️','미스릴':'✨','데미갓':'⚔️','이터니티':'👑'};
+                const TIER_IMG = {'아이언':'https://cdn.dak.gg/er/images/tier/full/1.png','브론즈':'https://cdn.dak.gg/er/images/tier/full/2.png','실버':'https://cdn.dak.gg/er/images/tier/full/3.png','골드':'https://cdn.dak.gg/er/images/tier/full/4.png','플래티넘':'https://cdn.dak.gg/er/images/tier/full/5.png','다이아몬드':'https://cdn.dak.gg/er/images/tier/full/6.png','메테오라이트':'https://cdn.dak.gg/er/images/tier/full/63.png','미스릴':'https://cdn.dak.gg/er/images/tier/full/66.png','데미갓':'https://cdn.dak.gg/er/images/tier/full/7.png','이터니티':'https://cdn.dak.gg/er/images/tier/full/8.png'};
+                function tierImg(tier) {
+                    return TIER_IMG[tier] ? `<img src="${TIER_IMG[tier]}" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;" onerror="this.style.display='none'">` : '⬜ ';
+                }
                 document.getElementById('info-card').innerHTML = `
                     <div class="info-row"><span class="info-label">디스코드 닉네임</span><span class="info-value">${esc(d.discord_nickname)}</span></div>
                     <div class="info-row"><span class="info-label">인게임 닉네임</span><span class="info-value">${esc(d.ingame_nickname)}</span></div>
-                    ${d.tier ? `<div class="info-row"><span class="info-label">티어</span><span class="badge">${TIER_EMOJI[d.tier]||''} ${esc(d.tier)}</span></div>` : ''}
+                    ${d.tier ? `<div class="info-row"><span class="info-label">티어</span><span class="badge">${tierImg(d.tier)}${esc(d.tier)}</span></div>` : ''}
                     ${d.position ? `<div class="info-row"><span class="info-label">선호 포지션</span><span class="badge">${posImg(d.position)}${esc(d.position)}</span></div>` : ''}
                 `;
                 document.getElementById('edit-link').href = `/join?event=${d.event_id}&token=${token}`;

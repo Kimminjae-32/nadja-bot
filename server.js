@@ -307,10 +307,15 @@ app.post('/api/admin/send-discord', async (req, res) => {
             .setFooter({ text: `총 ${participants.length}명` })
             .setTimestamp();
 
+        const TIER_EMOJI_MAP = {'언랭크':'⬜','아이언':'🔩','브론즈':'🥉','실버':'🥈','골드':'🥇','플래티넘':'💎','다이아몬드':'💠','메테오라이트':'☄️','미스릴':'✨','데미갓':'⚔️','이터니티':'👑'};
         for (let i = 1; i <= teamCount; i++) {
             const team = teams[i];
             if (!team.length) continue;
-            const lines = team.map(p => `${POS_EMOJI[p.position]||''}**${p.discord_nickname}** (${p.ingame_nickname})\n└ ${p.position}`);
+            const lines = team.map(p => {
+                const tier = p.tier ? ` ${TIER_EMOJI_MAP[p.tier]||''}${p.tier}` : '';
+                const pos  = p.position ? `\n└ ${POS_EMOJI[p.position]||''}${p.position}` : '';
+                return `**${p.discord_nickname}**${tier} (${p.ingame_nickname})${pos}`;
+            });
             embed.addFields({ name: `${TEAM_EMOJIS[i-1]} ${TEAM_NAMES[i-1]} (${team.length}명)`, value: lines.join('\n\n'), inline: true });
         }
         if (unassigned.length) {
