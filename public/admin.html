@@ -207,6 +207,28 @@ function posImg(position) {
     return f ? `<img src="/icons/${f}.png" style="width:18px;height:18px;vertical-align:middle;margin-right:3px;" onerror="this.style.display='none'">` : '';
 }
 
+// 캐릭터 코드 → dak.gg CDN 이미지 (게임 내 코드 기준)
+const CHAR_CODE = {
+    '재키':1,'아야':2,'요한':3,'혜진':4,'다니엘':5,
+    '피오라':6,'리오':7,'현우':8,'자히르':9,
+    '에스텔':10,'마이':11,'니아':12,'레니':14,'루크':16,
+    '로지':18,'나딘':19,'블레어':20,'알론소':21,'수아':22,
+    '마커스':23,'셀린':25,'클로에':27,'쇼우':28,'카밀로':29,
+    '키아라':31,'바냐':32,'이렘':33,'레녹스':36,'매그너스':37,
+    '가넷':38,'쇼이치':39,'프리야':40,'유민':41,'아이솔':42,
+    '니키':43,'버니스':44,'타지아':45,'바바라':47,'펠릭스':50,
+    '아비게일':51,'데비&마를렌':52,'아디나':53,'리 다이린':55,
+    '마르티나':56,'테오도르':57,'비앙카':58,'카티야':59,
+    '히스이':61,'일레븐':62,'나타폰':63,'펜리르':64,'레온':65,
+    '라우라':66,'알렉스':67,'르노어':69,'띠아':70,'헤이즈':72,
+    '시셀라':73,'아르다':74,'아드리아나':78,'샬럿':81,'미르카':82,'비형':83,
+};
+function charImg(name, size=32) {
+    const code = CHAR_CODE[name];
+    if(!code) return '';
+    return `<img src="https://cdn.dak.gg/er/images/character/${code}.png" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;display:block;margin:0 auto .12rem" onerror="this.remove()">`;
+}
+
 let eventData = null;
 let participants = [];
 let bannedCharacters = [];
@@ -365,7 +387,10 @@ function renderBanChips(){
         return;
     }
     el.innerHTML = bannedCharacters.map(c=>`
-        <span class="ban-chip">${esc(c)}<span class="ban-chip-x" onclick="removeBan('${esc(c)}')" title="밴 취소">✕</span></span>
+        <span class="ban-chip">
+            <img src="https://cdn.dak.gg/er/images/character/${CHAR_CODE[c]||0}.png" style="width:18px;height:18px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:.2rem" onerror="this.remove()">
+            ${esc(c)}<span class="ban-chip-x" onclick="removeBan('${esc(c)}')" title="밴 취소">✕</span>
+        </span>
     `).join('');
 }
 
@@ -389,7 +414,7 @@ function renderBanCharList(query){
         return;
     }
     el.innerHTML = filtered.map(c=>`
-        <div class="ban-pick-char" onclick="addBan('${esc(c)}')">${esc(c)}</div>
+        <div class="ban-pick-char" onclick="addBan('${esc(c)}')">${charImg(c)}${esc(c)}</div>
     `).join('');
 }
 
@@ -466,7 +491,7 @@ async function transferHost() {
     if (!confirm(`"${name}"에게 방장을 양도할까요?`)) return;
     const data = await api('/api/admin/transfer-host', { event: EVENT, token: TOKEN, newHostDiscordId: sel.value });
     if (data.error) { toast(data.error, true); return; }
-    toast('👑 방장이 양도됐어요!');
+    toast(data.dmSent ? '👑 방장이 양도됐어요! 관리자 링크를 DM으로 전송했어요.' : '👑 방장이 양도됐어요! (DM 전송 실패 — 상대방이 DM을 차단했을 수 있어요)');
 }
 
 async function loadVoiceChannels() {

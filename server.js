@@ -509,6 +509,7 @@ app.post('/api/admin/transfer-host', async (req, res) => {
     const { event, token, newHostDiscordId } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
 
+    const ev = db.getEvent(event);
     db.updateEventCreator(event, newHostDiscordId);
 
     const recruit = recruitMap?.get(event);
@@ -528,7 +529,21 @@ app.post('/api/admin/transfer-host', async (req, res) => {
         } catch (e) { console.error('방장 양도 embed 업데이트 실패:', e); }
     }
 
-    res.json({ success: true });
+    // 새 방장에게 관리자 링크 DM 전송
+    let dmSent = false;
+    if (discordClient && ev?.adminToken) {
+        try {
+            const BASE = process.env.WEB_URL || 'http://localhost:3000';
+            const adminUrl = `${BASE}/admin?event=${event}&token=${ev.adminToken}`;
+            const user = await discordClient.users.fetch(newHostDiscordId).catch(() => null);
+            if (user) {
+                await user.send(`👑 **내전 방장으로 지정됐어요!**\n관리자 페이지: ${adminUrl}`);
+                dmSent = true;
+            }
+        } catch (_) { /* DM 차단 무시 */ }
+    }
+
+    res.json({ success: true, dmSent });
 });
 
 module.exports = {
