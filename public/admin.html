@@ -429,12 +429,34 @@ function populateTransferSelect() {
 }
 
 async function changeMap(newMap) {
-    if (!confirm(`맵을 "${newMap}"(으)로 변경할까요? 디스코드 메시지도 업데이트됩니다.`)) return;
-    const data = await api('/api/admin/change-map', { event: EVENT, token: TOKEN, newMap });
+    let perTeam, maxPlayers;
+
+    if (newMap === '루미아 섬') {
+        const pt = prompt('팀당 인원을 입력하세요', '3');
+        if (pt === null) return;
+        perTeam = parseInt(pt);
+        if (!perTeam || perTeam < 1) { toast('팀당 인원을 올바르게 입력해주세요.', true); return; }
+        const mp = prompt(`최대 인원을 입력하세요 (팀당 ${perTeam}명 기준, 2~8팀)`, String(perTeam * 8));
+        if (mp === null) return;
+        maxPlayers = parseInt(mp);
+        if (!maxPlayers || maxPlayers < perTeam * 2) { toast('최대 인원을 올바르게 입력해주세요.', true); return; }
+        const tc = Math.floor(maxPlayers / perTeam);
+        if (tc < 2 || tc > 8) { toast(`팀 수가 ${tc}팀이에요. 2~8팀이 되도록 인원을 조정해주세요.`, true); return; }
+        if (!confirm(`루미아 섬 ${tc}팀 × ${perTeam}명 = 최대 ${tc * perTeam}명\n기존 팀 배정이 초기화됩니다. 계속할까요?`)) return;
+    } else if (newMap === '코발트') {
+        if (!confirm('코발트 2팀 4vs4 (최대 8명) 고정으로 변경할까요?\n기존 팀 배정이 초기화됩니다.')) return;
+    } else if (newMap === '론울프') {
+        const mp = prompt('최대 인원을 입력하세요 (2~18명)', '18');
+        if (mp === null) return;
+        maxPlayers = parseInt(mp);
+        if (!maxPlayers || maxPlayers < 2 || maxPlayers > 18) { toast('2~18 사이로 입력해주세요.', true); return; }
+        if (!confirm(`론울프 최대 ${maxPlayers}명 (1인 1팀)으로 변경할까요?\n기존 팀 배정이 초기화됩니다.`)) return;
+    }
+
+    const data = await api('/api/admin/change-map', { event: EVENT, token: TOKEN, newMap, perTeam, maxPlayers });
     if (data.error) { toast(data.error, true); return; }
-    toast(`✅ ${data.gameType} / ${data.mapType}으로 변경!`);
-    document.getElementById('current-map-badge').textContent = `현재: ${data.gameType} / ${data.mapType}`;
-    if (eventData) { eventData.gameType = data.gameType; eventData.mapType = data.mapType; }
+    toast(`✅ ${data.gameType} / ${data.mapType} (${data.teamCount}팀)으로 변경!`);
+    setTimeout(() => location.reload(), 1000);
 }
 
 async function transferHost() {
@@ -484,7 +506,8 @@ async function executeVoiceMove() {
     const data = await api('/api/admin/move-voices', { event: EVENT, token: TOKEN, assignments });
     btn.disabled = false;
     if (data.error) { toast(data.error, true); return; }
-    toast(`🚀 ${data.moved}명 이동 완료!`);
+    const failMsg = data.failed ? ` (${data.failed}명 실패 — 음성채널 미접속 또는 권한 부족)` : '';
+    toast(`🚀 ${data.moved}명 이동 완료!${failMsg}`, !!data.failed);
 }
 
 async function returnVoices() {

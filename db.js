@@ -206,6 +206,11 @@ module.exports = {
         if (data.events[eventId]) { data.events[eventId].gameType = gameType; save(data); }
     },
 
+    updateEventTeamCount(eventId, teamCount) {
+        const data = load();
+        if (data.events[eventId]) { data.events[eventId].teamCount = teamCount; save(data); }
+    },
+
     updateEventCreator(eventId, newCreatorId) {
         const data = load();
         if (data.events[eventId]) { data.events[eventId].createdBy = newCreatorId; save(data); }

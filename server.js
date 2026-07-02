@@ -338,26 +338,46 @@ app.post('/api/admin/send-discord', async (req, res) => {
 
 // POST /api/admin/change-map — 맵 변경 + Discord embed 업데이트
 app.post('/api/admin/change-map', async (req, res) => {
-    const { event, token, newMap } = req.body;
+    const { event, token, newMap, perTeam, maxPlayers: newMax } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
 
     const recruit = recruitMap?.get(event);
     if (!recruit) return res.json({ error: '봇 재시작 후에는 맵 변경이 불가해요. 봇이 실행 중인지 확인해주세요.' });
 
+    let newTeamCount;
     if (newMap === '루미아 섬') {
-        recruit.gameType = '내전'; recruit.mapType = '루미아 섬';
+        const pt = Math.max(1, parseInt(perTeam) || 3);
+        const mp = Math.max(pt, parseInt(newMax) || 24);
+        newTeamCount = Math.floor(mp / pt);
+        if (newTeamCount < 2 || newTeamCount > 8)
+            return res.json({ error: `팀 수는 2~8이어야 해요. (현재 ${newTeamCount}팀)` });
+        recruit.gameType  = '내전';
+        recruit.mapType   = '루미아 섬';
+        recruit.maxPlayers = newTeamCount * pt;
+        recruit.teamCount  = newTeamCount;
+        recruit.teams      = Array.from({ length: newTeamCount }, () => []);
+        recruit.team1 = []; recruit.team2 = [];
         db.updateEventGameType(event, '내전');
+        db.updateEventTeamCount(event, newTeamCount);
     } else if (newMap === '코발트') {
-        recruit.gameType = '내전'; recruit.mapType = '코발트';
-        if (recruit.maxPlayers > 8) recruit.maxPlayers = 8;
-        recruit.teamCount = 2; recruit.teams = [[], []]; recruit.team1 = []; recruit.team2 = [];
+        newTeamCount = 2;
+        recruit.gameType  = '내전';
+        recruit.mapType   = '코발트';
+        recruit.maxPlayers = 8;
+        recruit.teamCount  = 2;
+        recruit.teams      = [[], []]; recruit.team1 = []; recruit.team2 = [];
         db.updateEventGameType(event, '내전');
+        db.updateEventTeamCount(event, 2);
     } else if (newMap === '론울프') {
-        recruit.gameType = '론울프'; recruit.mapType = '루미아 섬';
-        if (recruit.maxPlayers > 18) recruit.maxPlayers = 18;
-        recruit.teamCount = recruit.maxPlayers;
-        recruit.teams = Array.from({ length: recruit.teamCount }, () => []);
+        const mp = Math.min(18, Math.max(2, parseInt(newMax) || 18));
+        newTeamCount = mp;
+        recruit.gameType  = '론울프';
+        recruit.mapType   = '루미아 섬';
+        recruit.maxPlayers = mp;
+        recruit.teamCount  = mp;
+        recruit.teams      = Array.from({ length: mp }, () => []);
         db.updateEventGameType(event, '론울프');
+        db.updateEventTeamCount(event, mp);
     } else {
         return res.json({ error: '알 수 없는 맵 타입.' });
     }
@@ -372,7 +392,7 @@ app.post('/api/admin/change-map', async (req, res) => {
         } catch (e) { console.error('맵 변경 embed 업데이트 실패:', e); }
     }
 
-    res.json({ success: true, gameType: recruit.gameType, mapType: recruit.mapType });
+    res.json({ success: true, gameType: recruit.gameType, mapType: recruit.mapType, teamCount: newTeamCount });
 });
 
 // GET /api/admin/voice-channels?event=&token= — 서버 음성 채널 목록
@@ -421,9 +441,9 @@ app.post('/api/admin/move-voices', async (req, res) => {
         const allP = db.getParticipants(event);
         for (const p of allP) {
             if (!p.discord_id) continue;
-            const m = await guild.members.fetch(p.discord_id).catch(() => null);
-            if (m?.voice.channel) {
-                recruit.originalVoiceChannelId = m.voice.channelId;
+            const vs = guild.voiceStates.cache.get(p.discord_id);
+            if (vs?.channelId) {
+                recruit.originalVoiceChannelId = vs.channelId;
                 saveDataFn?.();
                 break;
             }
@@ -432,17 +452,24 @@ app.post('/api/admin/move-voices', async (req, res) => {
 
     const participants = db.getParticipants(event);
     let moved = 0;
+    const errors = [];
     for (const p of participants) {
         if (!p.discord_id || !p.team_num) continue;
         const channelId = assignMap[p.team_num];
         if (!channelId) continue;
-        const member = await guild.members.fetch(p.discord_id).catch(() => null);
-        if (member?.voice.channel) {
-            await member.voice.setChannel(channelId).catch(() => null);
-            moved++;
+        const vs = guild.voiceStates.cache.get(p.discord_id);
+        if (vs?.channelId) {
+            try {
+                await vs.setChannel(channelId);
+                moved++;
+            } catch (e) {
+                errors.push(`${p.discord_nickname}: ${e.message}`);
+                console.error(`[move-voices] ${p.discord_nickname} 이동 실패:`, e.message);
+            }
         }
     }
-    res.json({ success: true, moved });
+    if (errors.length) console.error('[move-voices] 일부 실패:', errors);
+    res.json({ success: true, moved, failed: errors.length });
 });
 
 // POST /api/admin/return-voices — 원래 채널로 복구
@@ -466,9 +493,11 @@ app.post('/api/admin/return-voices', async (req, res) => {
     let moved = 0;
     for (const p of participants) {
         if (!p.discord_id) continue;
-        const member = await guild.members.fetch(p.discord_id).catch(() => null);
-        if (member?.voice.channel) {
-            await member.voice.setChannel(recruit.originalVoiceChannelId).catch(() => null);
+        const vs = guild.voiceStates.cache.get(p.discord_id);
+        if (vs?.channelId) {
+            await vs.setChannel(recruit.originalVoiceChannelId).catch(e =>
+                console.error(`[return-voices] ${p.discord_nickname} 복구 실패:`, e.message)
+            );
             moved++;
         }
     }
