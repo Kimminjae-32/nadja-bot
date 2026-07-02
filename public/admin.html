@@ -149,6 +149,7 @@ const TOKEN  = params.get('token');
 const POS_ICON = { '탱커':'tank','전사':'warrior','암살자':'assassin','스킬 딜러':'skill','원거리 딜러':'range','지원가':'support' };
 const TEAM_COLORS = ['#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22','#95a5a6','#1abc9c'];
 const EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫'];
+const TIER_EMOJI = {'언랭크':'⬜','아이언':'🔩','브론즈':'🥉','실버':'🥈','골드':'🥇','플래티넘':'💎','다이아몬드':'💠','메테오라이트':'☄️','미스릴':'✨','데미갓':'⚔️','이터니티':'👑'};
 const CHARACTERS = ['재키','아야','현우','매그너스','피오라','나딘','자히르','하트','아이솔','리 다이린','유키','혜진','쇼우','시셀라','키아라','아드리아나','쇼이치','실비아','엘마','레녹스','로지','루크','캐시','아델라','버니스','바바라','알렉스','수아','레온','일레븐','리오','윌리엄','니키','나타폰','안','이바','다니엘','제니','카밀로','클로에','요한','비앙카','셀린','에키온','마이','에이든','라우라','띠아','펠릭스','엘레나','프리야','아디나','마커스','칼라','에스텔','피올로','마르티나','헤이즈','아이작','타지아','이렘','테오도르','이안','바냐','데비&마를렌','아르다','아비게일','알론소','레니','초바메','케네스','카티야','샬럿','다르코','르노어','가넷','유민','히스이','유스티나','아슈트반','니아','슈린','헨리','블레어','미르카','펜리르','코렐라인','비형'];
 
 function posImg(position) {
@@ -238,7 +239,10 @@ function renderTable(){
         <tr data-token="${esc(p.cancel_token)}">
             <td><strong>${esc(p.discord_nickname)}</strong></td>
             <td>${esc(p.ingame_nickname)}</td>
-            <td>${p.position?`<span class="pos-badge">${posImg(p.position)}${esc(p.position)}</span>`:''}</td>
+            <td>
+                ${p.tier?`<span class="pos-badge" style="margin-bottom:.2rem">${TIER_EMOJI[p.tier]||''} ${esc(p.tier)}</span><br>`:''}
+                ${p.position?`<span class="pos-badge">${posImg(p.position)}${esc(p.position)}</span>`:''}
+            </td>
             <td>
                 ${isTeamMode
                     ? `<select class="team-select" onchange="assignTeam('${esc(p.cancel_token)}', this.value)">${teamOptions(p.team_num, tc)}</select>`
@@ -270,7 +274,7 @@ function renderTeams(){
         for(const p of teams[i]) html+=`
             <div class="member-item">
                 <div class="member-name">${esc(p.discord_nickname)}</div>
-                <div class="member-sub">${esc(p.ingame_nickname)}${p.position?` · ${posImg(p.position)}${esc(p.position)}`:''}  </div>
+                <div class="member-sub">${esc(p.ingame_nickname)}${p.tier?` · ${TIER_EMOJI[p.tier]||''}${esc(p.tier)}`:''}${p.position?` · ${posImg(p.position)}${esc(p.position)}`:''}</div>
             </div>`;
         html+='</div>';
     }

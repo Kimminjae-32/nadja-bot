@@ -1,7 +1,8 @@
 const express = require('express');
 const path    = require('path');
 const db      = require('./db');
-const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES } = require('./constants');
+const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES, TIERS } = require('./constants');
+const VALID_TIERS = TIERS.map(t => t.name);
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -43,7 +44,7 @@ app.get('/api/event-info', (req, res) => {
 
 // POST /join
 app.post('/join', (req, res) => {
-    const { event, token, discord_id, discord_nickname, ingame_nickname, position } = req.body;
+    const { event, token, discord_id, discord_nickname, ingame_nickname, position, tier } = req.body;
     if (!event || !discord_nickname?.trim() || !ingame_nickname?.trim())
         return res.status(400).json({ error: '모든 항목을 입력해주세요.' });
     if (!db.eventExists(event))
@@ -58,14 +59,16 @@ app.post('/join', (req, res) => {
             return res.status(400).json({ error: '올바른 포지션을 선택해주세요.' });
     }
 
+    const validTier = tier && VALID_TIERS.includes(tier) ? tier : null;
+
     if (token) {
         const existing = db.getByToken(token);
         if (!existing || existing.event_id !== event)
             return res.status(403).json({ error: '유효하지 않은 수정 토큰입니다.' });
-        db.updateByToken(token, discord_nickname.trim(), ingame_nickname.trim(), position);
+        db.updateByToken(token, discord_nickname.trim(), ingame_nickname.trim(), position, validTier);
         return res.json({ success: true, cancel_token: token, updated: true });
     }
-    const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position);
+    const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position, validTier);
     res.json({ success: true, cancel_token, updated: false });
 });
 
@@ -170,7 +173,7 @@ app.post('/api/admin/char-ban', (req, res) => {
 
 // ── 드래프트 ───────────────────────────────────────────
 // POST /api/admin/draft/start
-app.post('/api/admin/draft/start', (req, res) => {
+app.post('/api/admin/draft/start', async (req, res) => {
     const { event, token, captains } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
     const state = db.startDraft(event, captains);
@@ -181,6 +184,23 @@ app.post('/api/admin/draft/start', (req, res) => {
         discordNickname: c.discordNickname,
         draftUrl: `${BASE}/draft/${event}/${c.captainToken}`,
     }));
+
+    // 팀장에게 픽 링크 DM 자동 전송
+    if (discordClient) {
+        for (const captain of state.captains) {
+            const participant = db.getByToken(captain.participantToken);
+            if (!participant?.discord_id) continue;
+            const link = captainLinks.find(l => l.teamNum === captain.teamNum);
+            try {
+                const user = await discordClient.users.fetch(participant.discord_id);
+                await user.send(
+                    `🎯 **[팀경매] ${captain.teamNum}팀 팀장으로 지정됐어요!**\n` +
+                    `아래 링크에서 팀원을 픽해주세요:\n${link.draftUrl}`
+                );
+            } catch (_) { /* DM 차단 등 — 무시 */ }
+        }
+    }
+
     res.json({ success: true, captainLinks });
 });
 

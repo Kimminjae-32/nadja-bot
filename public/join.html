@@ -63,6 +63,11 @@
             grid-template-columns: 1fr 1fr;
             gap: .5rem;
         }
+        .tiers {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: .4rem;
+        }
         .pos-btn {
             background: var(--bg);
             border: 2px solid var(--border);
@@ -75,6 +80,7 @@
             font-size: .9rem;
             line-height: 1.3;
         }
+        .tier-btn { font-size: .82rem; padding: .55rem .3rem; }
         .pos-icon { width: 36px; height: 36px; display: block; margin: 0 auto .2rem; object-fit: contain; }
         .pos-btn:hover { border-color: var(--accent); }
         .pos-btn.on { background: var(--accent2); border-color: var(--accent); color: #fff; }
@@ -133,6 +139,22 @@
                 <label for="in">인게임 닉네임</label>
                 <input type="text" id="in" placeholder="이터널 리턴 인게임 닉네임" autocomplete="off">
             </div>
+            <div class="field" id="tier-field">
+                <label>현재 티어 <span style="color:var(--muted);font-weight:400;text-transform:none">(선택)</span></label>
+                <div class="tiers">
+                    <button type="button" class="pos-btn tier-btn" data-tier="언랭크">⬜ 언랭크</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="아이언">🔩 아이언</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="브론즈">🥉 브론즈</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="실버">🥈 실버</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="골드">🥇 골드</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="플래티넘">💎 플래티넘</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="다이아몬드">💠 다이아몬드</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="메테오라이트">☄️ 메테오라이트</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="미스릴">✨ 미스릴</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="데미갓">⚔️ 데미갓</button>
+                    <button type="button" class="pos-btn tier-btn" data-tier="이터니티">👑 이터니티</button>
+                </div>
+            </div>
             <div class="field" id="position-field">
                 <label>선호 포지션</label>
                 <div class="positions">
@@ -167,9 +189,9 @@
     const eventId   = params.get('event');
     const editToken = params.get('token');
     const discordId = params.get('discord_id');
-    let selectedPos = '';
-
-    let isLonewolf = false;
+    let selectedPos  = '';
+    let selectedTier = '';
+    let isLonewolf   = false;
 
     // 이벤트 정보 조회 → 론울프면 포지션 숨김, 방장이면 관리자 버튼 표시
     if (eventId) {
@@ -197,16 +219,24 @@
                 if (d.discord_nickname) document.getElementById('dn').value = d.discord_nickname;
                 if (d.ingame_nickname)  document.getElementById('in').value = d.ingame_nickname;
                 if (d.position) selectPos(d.position);
+                if (d.tier)     selectTier(d.tier);
             }).catch(() => {});
     }
 
-    document.querySelectorAll('.pos-btn').forEach(btn => {
+    document.querySelectorAll('.pos-btn:not(.tier-btn)').forEach(btn => {
         btn.addEventListener('click', () => selectPos(btn.dataset.pos));
+    });
+    document.querySelectorAll('.tier-btn').forEach(btn => {
+        btn.addEventListener('click', () => selectTier(btn.dataset.tier));
     });
 
     function selectPos(pos) {
         selectedPos = pos;
-        document.querySelectorAll('.pos-btn').forEach(b => b.classList.toggle('on', b.dataset.pos === pos));
+        document.querySelectorAll('.pos-btn:not(.tier-btn)').forEach(b => b.classList.toggle('on', b.dataset.pos === pos));
+    }
+    function selectTier(tier) {
+        selectedTier = (selectedTier === tier) ? '' : tier; // 재클릭 시 선택 해제
+        document.querySelectorAll('.tier-btn').forEach(b => b.classList.toggle('on', b.dataset.tier === selectedTier));
     }
 
     document.getElementById('submit-btn').addEventListener('click', async () => {
@@ -226,8 +256,9 @@
         btn.textContent = '처리 중...';
 
         const body = new URLSearchParams({ event: eventId, discord_nickname: dn, ingame_nickname: inn, position: selectedPos });
-        if (editToken) body.append('token', editToken);
-        if (discordId) body.append('discord_id', discordId);
+        if (selectedTier) body.append('tier', selectedTier);
+        if (editToken)    body.append('token', editToken);
+        if (discordId)    body.append('discord_id', discordId);
 
         try {
             const res  = await fetch('/join', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
