@@ -46,6 +46,19 @@ app.get('/api/event-info', (req, res) => {
     res.json({ gameType: ev.gameType, mapType: ev.mapType });
 });
 
+// DB 참가자 기준으로 인메모리 participants 동기화 후 Discord 임베드 갱신
+async function syncEmbedParticipants(eventId) {
+    const recruit = recruitMap?.get(eventId);
+    if (!recruit || !discordClient || !createEmbedFn) return;
+    const allP = db.getParticipants(eventId);
+    recruit.participants = allP.filter(p => p.discord_id).map(p => p.discord_id);
+    try {
+        const ch = await discordClient.channels.fetch(recruit.channelId).catch(() => null);
+        const msg = ch ? await ch.messages.fetch(eventId).catch(() => null) : null;
+        if (msg) await msg.edit({ embeds: [await createEmbedFn(recruit)] });
+    } catch (e) { console.error('[embed sync]', e.message); }
+}
+
 // POST /join
 app.post('/join', (req, res) => {
     const { event, token, discord_id, discord_nickname, ingame_nickname, position, tier } = req.body;
@@ -70,9 +83,11 @@ app.post('/join', (req, res) => {
         if (!existing || existing.event_id !== event)
             return res.status(403).json({ error: '유효하지 않은 수정 토큰입니다.' });
         db.updateByToken(token, discord_nickname.trim(), ingame_nickname.trim(), position, validTier);
+        syncEmbedParticipants(event);
         return res.json({ success: true, cancel_token: token, updated: true });
     }
     const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position, validTier);
+    syncEmbedParticipants(event);
     res.json({ success: true, cancel_token, updated: false });
 });
 
@@ -96,6 +111,7 @@ app.post('/cancel', (req, res) => {
     const p = db.getByToken(token);
     if (!p) return res.status(404).json({ error: '이미 취소된 참가 정보입니다.' });
     db.deleteByToken(token);
+    syncEmbedParticipants(p.event_id);
     res.json({ success: true });
 });
 
