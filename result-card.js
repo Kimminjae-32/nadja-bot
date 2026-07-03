@@ -162,7 +162,7 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
 
     ctx.font      = `bold 26px ${F}`;
     ctx.fillStyle = '#e0e0f0';
-    ctx.fillText(`팟 배정 결과 · 총 ${totalCount}명`, PAD, TITLE_H - 14);
+    ctx.fillText(`팀 배정 결과 · 총 ${totalCount}명`, PAD, TITLE_H - 14);
 
     for (let t = 1; t <= teamCount; t++) {
         const col     = (t - 1) % COLS;
