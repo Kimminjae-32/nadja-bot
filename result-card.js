@@ -9,11 +9,12 @@ function tryLoad(fp) {
     if (!fs.existsSync(fp)) return false;
     try {
         const buf = fs.readFileSync(fp);
-        if (GlobalFonts.register(buf, 'CardFont')) return true;
-    } catch {}
-    try {
-        if (GlobalFonts.loadFontFromPath(fp, 'CardFont')) return true;
-    } catch {}
+        const ok = GlobalFonts.register(buf, 'CardFont');
+        if (ok) return true;
+        console.warn('[result-card] register 반환 false:', fp);
+    } catch (e) {
+        console.warn('[result-card] register 예외:', fp, e.message);
+    }
     return false;
 }
 
