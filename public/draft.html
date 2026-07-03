@@ -60,7 +60,7 @@ h1{font-size:1.4rem;margin-bottom:.4rem;}
 <div class="toast" id="toast"></div>
 
 <script>
-const [,,, eventId, captainToken] = location.pathname.split('/');
+const [,, eventId, captainToken] = location.pathname.split('/');
 const apiUrl = `/api/draft/${eventId}/${captainToken}`;
 let polling;
 
