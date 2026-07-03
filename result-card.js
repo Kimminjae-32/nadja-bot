@@ -2,20 +2,37 @@ const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 const fs   = require('fs');
 
-// 시스템 한글 폰트 로드 시도
 GlobalFonts.loadSystemFonts();
+
+const FONT_PATH = path.join(__dirname, 'NanumGothic.ttf');
 const FONT_CANDIDATES = [
     '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
     '/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf',
     '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    FONT_PATH,
 ];
-for (const fp of FONT_CANDIDATES) {
-    if (fs.existsSync(fp)) {
-        try { GlobalFonts.loadFontFromPath(fp, 'CardFont'); break; } catch {}
+
+// 모듈 로드 시 폰트 준비 (비동기)
+const fontReadyP = (async () => {
+    for (const fp of FONT_CANDIDATES) {
+        if (fs.existsSync(fp)) {
+            try { GlobalFonts.loadFontFromPath(fp, 'CardFont'); return; } catch {}
+        }
     }
-}
-const FONT = '"CardFont","Nanum Gothic","Noto Sans KR","Apple SD Gothic Neo",sans-serif';
+    // 시스템에 한글 폰트 없으면 자동 다운로드
+    try {
+        console.log('[result-card] NanumGothic 폰트 다운로드 중...');
+        const res = await fetch('https://raw.githubusercontent.com/google/fonts/main/ofl/nanumgothic/NanumGothic-Regular.ttf');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        fs.writeFileSync(FONT_PATH, Buffer.from(await res.arrayBuffer()));
+        GlobalFonts.loadFontFromPath(FONT_PATH, 'CardFont');
+        console.log('[result-card] 폰트 다운로드 완료');
+    } catch (e) {
+        console.warn('[result-card] 폰트 준비 실패:', e.message);
+    }
+})();
+
+const FONT = '"CardFont","Nanum Gothic","Noto Sans KR",sans-serif';
 
 const TIER_URLS = {
     '아이언':       'https://cdn.dak.gg/er/images/tier/full/1.png',
@@ -85,6 +102,8 @@ function roundedRect(ctx, x, y, w, h, r, topOnly = false) {
 }
 
 async function generateResultCard(teamMap, teamCount, totalCount) {
+    await fontReadyP; // 폰트 준비 대기
+
     const CARD_W  = 260;
     const ROW_H   = 46;
     const HDR_H   = 38;
@@ -104,11 +123,9 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
     const canvas = createCanvas(W, H);
     const ctx    = canvas.getContext('2d');
 
-    // 배경
     ctx.fillStyle = '#0f0f1a';
     ctx.fillRect(0, 0, W, H);
 
-    // 제목
     ctx.font      = `bold 16px ${FONT}`;
     ctx.fillStyle = '#e0e0f0';
     ctx.fillText(`팀 배정 결과 · 총 ${totalCount}명`, PAD, TITLE_H - 10);
@@ -121,12 +138,10 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
         const color   = TEAM_COLORS[(t - 1) % TEAM_COLORS.length];
         const players = teamMap[t] || [];
 
-        // 카드 배경
         ctx.fillStyle = '#1a1a2e';
         roundedRect(ctx, cx, cy, CARD_W, CARD_H, 10);
         ctx.fill();
 
-        // 헤더
         ctx.fillStyle = color;
         roundedRect(ctx, cx, cy, CARD_W, HDR_H, 10, true);
         ctx.fill();
@@ -140,7 +155,6 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
             const ry  = cy + HDR_H + i * ROW_H;
             const mid = ry + ROW_H / 2;
 
-            // 홀/짝 행 배경
             if (i % 2 === 1) {
                 ctx.fillStyle = 'rgba(255,255,255,0.04)';
                 ctx.fillRect(cx, ry, CARD_W, ROW_H);
@@ -148,7 +162,6 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
 
             let lx = cx + 8;
 
-            // 포지션 아이콘
             if (p.position && POS_FILES[p.position]) {
                 const fp = path.join(__dirname, 'public', 'icons', `${POS_FILES[p.position]}.png`);
                 const posImg = await cachedImg(`pos_${p.position}`, fp);
@@ -158,13 +171,11 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
                 lx += 6;
             }
 
-            // 닉네임 (티어 아이콘 공간 확보)
             ctx.fillStyle = '#e0e0f0';
             ctx.font      = `13px ${FONT}`;
             const nickMaxW = CARD_W - (lx - cx) - ICON_SZ - 18;
             ctx.fillText(fitText(ctx, p.discord_nickname, nickMaxW), lx, mid + 5);
 
-            // 티어 아이콘
             if (p.tier && TIER_URLS[p.tier]) {
                 const tierImg = await cachedImg(`tier_${p.tier}`, TIER_URLS[p.tier]);
                 if (tierImg) ctx.drawImage(tierImg, cx + CARD_W - ICON_SZ - 8, mid - ICON_SZ / 2, ICON_SZ, ICON_SZ);
