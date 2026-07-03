@@ -126,17 +126,17 @@
         .rule-box { background: rgba(233,69,96,.08); border: 1px solid var(--accent); border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; }
         .rule-box h3 { font-size: .85rem; color: var(--accent); margin-bottom: .4rem; letter-spacing: .04em; }
         .rule-text { font-size: .9rem; white-space: pre-wrap; line-height: 1.6; }
-        .char-search { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); padding:.6rem .9rem; font-size:.9rem; outline:none; margin-bottom:.5rem; transition:border-color .2s; }
+        .char-search { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:.5rem .75rem; font-size:.85rem; outline:none; margin-bottom:.5rem; transition:border-color .2s; box-sizing:border-box; }
         .char-search:focus { border-color:var(--accent); }
-        .char-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(68px,1fr)); gap:.35rem; max-height:200px; overflow-y:auto; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:.5rem; }
-        .char-item { background:var(--card); border:2px solid var(--border); border-radius:7px; padding:.35rem .25rem; cursor:pointer; text-align:center; font-size:.78rem; transition:border-color .12s, background .12s; user-select:none; }
-        .char-item:hover { border-color:var(--accent); }
-        .char-item.selected { background:var(--accent2); border-color:var(--accent); color:#fff; }
-        .char-item.disabled { opacity:.35; cursor:not-allowed; }
-        .char-tags { display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.5rem; min-height:1.5rem; }
-        .char-tag { display:inline-flex; align-items:center; gap:.3rem; background:var(--accent2); border:1px solid var(--accent); border-radius:20px; padding:.2rem .6rem; font-size:.82rem; }
-        .char-tag-x { cursor:pointer; opacity:.7; font-size:.85rem; }
-        .char-tag-x:hover { opacity:1; }
+        .char-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(72px,1fr)); gap:.3rem; max-height:200px; overflow-y:auto; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:.5rem; }
+        .char-pick { background:var(--card); border:1px solid var(--border); border-radius:6px; padding:.3rem .4rem; font-size:.78rem; cursor:pointer; text-align:center; transition:border-color .1s, background .1s; user-select:none; }
+        .char-pick:hover { border-color:var(--accent); }
+        .char-pick.selected { background:var(--accent2); border-color:var(--accent); }
+        .char-pick.maxed { opacity:.35; cursor:not-allowed; pointer-events:none; }
+        .char-chips { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.5rem; min-height:1.6rem; align-items:center; }
+        .char-chip { display:inline-flex; align-items:center; gap:.3rem; background:#0a1a2a; border:1px solid var(--accent); border-radius:20px; padding:.25rem .65rem; font-size:.82rem; color:var(--text); }
+        .char-chip-x { cursor:pointer; opacity:.7; line-height:1; font-size:.9rem; color:var(--accent); }
+        .char-chip-x:hover { opacity:1; }
         .char-hint { font-size:.78rem; color:var(--muted); margin-top:.35rem; }
     </style>
 </head>
@@ -200,9 +200,12 @@
             </div>
             <div class="field" id="char-field">
                 <label>주 사용 실험체 <span style="color:var(--muted);font-weight:400;text-transform:none">(선택, 최대 3개)</span></label>
-                <input type="text" class="char-search" id="char-search" placeholder="실험체 이름 검색..." autocomplete="off">
-                <div class="char-grid" id="char-grid"></div>
-                <div class="char-tags" id="char-tags"></div>
+                <div class="char-chips" id="char-chips"><span style="color:var(--muted);font-size:.83rem">선택 없음</span></div>
+                <button type="button" class="pos-btn" id="char-toggle-btn" style="width:100%;margin-top:.4rem;margin-bottom:0;padding:.5rem;font-size:.83rem" onclick="toggleCharPicker()">+ 실험체 선택</button>
+                <div id="char-picker" style="display:none;margin-top:.4rem">
+                    <input type="text" class="char-search" id="char-search" placeholder="실험체 이름 검색..." autocomplete="off">
+                    <div class="char-grid" id="char-grid"></div>
+                </div>
                 <p class="char-hint" id="char-hint">최대 3개까지 선택할 수 있어요.</p>
             </div>
             <div class="field" id="position-field">
@@ -247,23 +250,38 @@
     let selectedChars = [];
 
     const CHARACTERS = ['재키','아야','현우','매그너스','피오라','나딘','자히르','하트','아이솔','리 다이린','유키','혜진','쇼우','시셀라','키아라','아드리아나','쇼이치','실비아','엘마','레녹스','로지','루크','캐시','아델라','버니스','바바라','알렉스','수아','레온','일레븐','리오','윌리엄','니키','나타폰','안','이바','다니엘','제니','카밀로','클로에','요한','비앙카','셀린','에키온','마이','에이든','라우라','띠아','펠릭스','엘레나','프리야','아디나','마커스','칼라','에스텔','피올로','마르티나','헤이즈','아이작','타지아','이렘','테오도르','이안','바냐','데비&마를렌','아르다','아비게일','알론소','레니','초바메','케네스','카티야','샬럿','다르코','르노어','가넷','유민','히스이','유스티나','아슈트반','니아','슈린','헨리','블레어','미르카','펜리르','코렐라인','비형'];
+    const DAK_VER = '11.5.0';
+    const CHAR_EN = {'재키':'Jackie','아야':'Aya','현우':'Hyunwoo','매그너스':'Magnus','피오라':'Fiora','나딘':'Nadine','자히르':'Zahir','하트':'Hart','아이솔':'Isol','리 다이린':'LiDailin','유키':'Yuki','혜진':'Hyejin','쇼우':'Xiukai','시셀라':'Sissela','키아라':'Chiara','아드리아나':'Adriana','쇼이치':'Shoichi','실비아':'Silvia','엘마':'Emma','레녹스':'Lenox','로지':'Rozzi','루크':'Luke','캐시':'Cathy','아델라':'Adela','버니스':'Bernice','바바라':'Barbara','알렉스':'Alex','수아':'Sua','레온':'Leon','일레븐':'Eleven','리오':'Rio','윌리엄':'William','니키':'Nicky','나타폰':'Nathapon','안':'Jan','이바':'Eva','다니엘':'Daniel','제니':'Jenny','카밀로':'Camilo','클로에':'Chloe','요한':'Johann','비앙카':'Bianca','셀린':'Celine','에키온':'Echion','마이':'Mai','에이든':'Aiden','라우라':'Laura','띠아':'Tia','펠릭스':'Felix','엘레나':'Elena','프리야':'Priya','아디나':'Adina','마커스':'Markus','칼라':'Karla','에스텔':'Estelle','피올로':'Piolo','마르티나':'Martina','헤이즈':'Haze','아이작':'Isaac','타지아':'Tazia','이렘':'Irem','테오도르':'Theodore','이안':'Lyanh','바냐':'Vanya','데비&마를렌':'DebiMarlene','아르다':'Arda','아비게일':'Abigail','알론소':'Alonso','레니':'Leni','초바메':'Tsubame','케네스':'Kenneth','카티야':'Katja','샬럿':'Charlotte','다르코':'Darko','르노어':'Lenore','가넷':'Garnet','유민':'YuMin','히스이':'Hisui','유스티나':'Justyna','아슈트반':'Istvan','니아':'Niah','슈린':'Xuelin','헨리':'Henry','블레어':'Blair','미르카':'Mirka','펜리르':'Fenrir','코렐라인':'Coraline','비형':'Bihyung'};
+
+    function charImg(name) {
+        const en = CHAR_EN[name];
+        if (!en) return '';
+        return `<img src="https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharCommunity_${en}_S000.png" style="width:32px;height:32px;border-radius:50%;object-fit:cover;display:block;margin:0 auto .12rem" onerror="this.remove()">`;
+    }
 
     function renderCharGrid(query) {
         const filtered = CHARACTERS.filter(c => c.includes(query));
         const el = document.getElementById('char-grid');
         el.innerHTML = filtered.map(c => {
             const sel = selectedChars.includes(c);
-            const dis = !sel && selectedChars.length >= 3;
-            return `<div class="char-item${sel?' selected':''}${dis?' disabled':''}" onclick="toggleChar('${c}')">${c}</div>`;
+            const maxed = !sel && selectedChars.length >= 3;
+            return `<div class="char-pick${sel?' selected':''}${maxed?' maxed':''}" onclick="toggleChar('${c}')">${charImg(c)}${c}</div>`;
         }).join('') || '<div style="color:var(--muted);font-size:.82rem;grid-column:1/-1;text-align:center;padding:.4rem">검색 결과 없음</div>';
     }
 
-    function renderCharTags() {
-        document.getElementById('char-tags').innerHTML = selectedChars.map(c =>
-            `<span class="char-tag">${c}<span class="char-tag-x" onclick="toggleChar('${c}')">✕</span></span>`
-        ).join('');
+    function renderCharChips() {
+        const el = document.getElementById('char-chips');
+        if (!selectedChars.length) {
+            el.innerHTML = '<span style="color:var(--muted);font-size:.83rem">선택 없음</span>';
+        } else {
+            el.innerHTML = selectedChars.map(c =>
+                `<span class="char-chip">${charImg(c).replace('display:block','display:inline-block').replace('margin:0 auto .12rem','vertical-align:middle;margin-right:.25rem')}${c}<span class="char-chip-x" onclick="toggleChar('${c}')">✕</span></span>`
+            ).join('');
+        }
         document.getElementById('char-hint').textContent =
-            selectedChars.length >= 3 ? '최대 3개 선택됨. 더 이상 추가할 수 없어요.' : `최대 3개까지 선택할 수 있어요. (현재 ${selectedChars.length}개)`;
+            selectedChars.length >= 3 ? '최대 3개 선택됨.' : `최대 3개까지 선택할 수 있어요. (현재 ${selectedChars.length}개)`;
+        document.getElementById('char-toggle-btn').textContent =
+            selectedChars.length ? `실험체 선택 변경 (${selectedChars.length}/3)` : '+ 실험체 선택';
     }
 
     function toggleChar(c) {
@@ -274,7 +292,19 @@
             selectedChars.push(c);
         }
         renderCharGrid(document.getElementById('char-search').value);
-        renderCharTags();
+        renderCharChips();
+    }
+
+    function toggleCharPicker() {
+        const picker = document.getElementById('char-picker');
+        const shown = picker.style.display !== 'none';
+        picker.style.display = shown ? 'none' : 'block';
+        if (!shown) {
+            const inp = document.getElementById('char-search');
+            inp.value = '';
+            renderCharGrid('');
+            inp.focus();
+        }
     }
 
     document.getElementById('char-search').addEventListener('input', e => renderCharGrid(e.target.value));
@@ -313,8 +343,6 @@
         });
     }
 
-    renderCharGrid('');
-
     if (editToken) {
         document.getElementById('page-title').textContent = '✏️ 참가 정보 수정';
         document.getElementById('submit-btn').textContent = '수정하기';
@@ -327,8 +355,7 @@
                 if (d.tier)     selectTier(d.tier);
                 if (d.main_characters?.length) {
                     selectedChars = d.main_characters.slice(0, 3);
-                    renderCharGrid('');
-                    renderCharTags();
+                    renderCharChips();
                 }
             }).catch(() => {});
     }
