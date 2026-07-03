@@ -46,6 +46,7 @@ h1{font-size:1.4rem;margin-bottom:.4rem;}
     <div class="waiting-icon">⏳</div>
     <h1 style="text-align:center">대기 중</h1>
     <p class="sub" style="text-align:center" id="waiting-msg"></p>
+    <pre id="debug-info" style="font-size:.75rem;color:#e0e0f0;background:#1a1a2e;border:1px solid #e94560;border-radius:8px;padding:.75rem;margin:.5rem 0;white-space:pre-wrap;word-break:break-all;text-align:left"></pre>
     <div class="card log" id="pick-log"></div>
   </div>
 
@@ -130,6 +131,9 @@ async function poll(){
       document.getElementById('waiting').style.display='block';
       document.getElementById('waiting-msg').textContent=
         data.currentTeam ? `현재 ${data.currentTeam}팀 차례 · 내 팀: ${data.myTeam}팀` : '대기 중...';
+      document.getElementById('debug-info').textContent = data._debug
+        ? JSON.stringify(data._debug, null, 2)
+        : '⚠️ 서버가 아직 구 버전입니다. pm2 restart nadja-bot 후 새로고침하세요.';
       renderLog(data.picks,'pick-log');
     }
   }catch(e){}

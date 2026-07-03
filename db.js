@@ -145,7 +145,7 @@ module.exports = {
         const turnOrder = Array.from({ length: remaining.length }, (_, i) => teamNums[i % teamNums.length]);
 
         ev.draftState = {
-            status: 'in_progress',
+            status: remaining.length === 0 ? 'completed' : 'in_progress',
             captains,
             turnOrder,
             currentTurnIndex: 0,

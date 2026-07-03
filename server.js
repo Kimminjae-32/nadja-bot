@@ -262,15 +262,28 @@ app.get('/api/draft/:eventId/:captainToken', (req, res) => {
     if (!draft) return res.status(404).json({ error: 'No draft' });
     const all = db.getParticipants(eventId);
     const remaining = all.filter(p => draft.remainingTokens.includes(p.cancel_token));
-    const currentTeam = draft.turnOrder[draft.currentTurnIndex] ?? null;
+    // in_progress인데 turnOrder가 비어있으면(픽할 사람이 없음) completed로 처리
+    const effectiveStatus = (draft.status === 'in_progress' && draft.turnOrder.length === 0)
+        ? 'completed' : draft.status;
+    const currentTeam = effectiveStatus === 'in_progress'
+        ? (draft.turnOrder[draft.currentTurnIndex] ?? null) : null;
     res.json({
         myTeam: captain.teamNum,
         currentTeam,
-        isMyTurn: captain.teamNum === currentTeam && draft.status === 'in_progress',
-        status: draft.status,
+        isMyTurn: captain.teamNum === currentTeam && effectiveStatus === 'in_progress',
+        status: effectiveStatus,
         remaining,
         picks: draft.picks,
         captainName: captain.discordNickname,
+        _debug: {
+            draftStatus: draft.status,
+            turnOrderLen: draft.turnOrder.length,
+            currentTurnIndex: draft.currentTurnIndex,
+            turnOrder: draft.turnOrder,
+            remainingTokensLen: draft.remainingTokens.length,
+            myTeamType: typeof captain.teamNum,
+            currentTeamType: typeof currentTeam,
+        },
     });
 });
 
