@@ -46,14 +46,14 @@ module.exports = {
     },
 
     // discord_id 중복 시 업데이트
-    addParticipant(eventId, discordId, discordNick, ingameNick, position, tier) {
+    addParticipant(eventId, discordId, discordNick, ingameNick, position, tier, mainCharacters) {
         const data = load();
         if (discordId) {
             const existing = Object.values(data.participants).find(
                 p => p.event_id === eventId && p.discord_id === discordId
             );
             if (existing) {
-                Object.assign(existing, { discord_nickname: discordNick, ingame_nickname: ingameNick, position, tier: tier || null });
+                Object.assign(existing, { discord_nickname: discordNick, ingame_nickname: ingameNick, position, tier: tier || null, main_characters: mainCharacters || [] });
                 save(data);
                 return existing.cancel_token;
             }
@@ -62,7 +62,8 @@ module.exports = {
         data.participants[token] = {
             event_id: eventId, discord_id: discordId || null,
             discord_nickname: discordNick, ingame_nickname: ingameNick,
-            position, tier: tier || null, team_num: null, cancel_token: token, submitted_at: Date.now()
+            position, tier: tier || null, main_characters: mainCharacters || [],
+            team_num: null, cancel_token: token, submitted_at: Date.now()
         };
         save(data);
         return token;
@@ -81,10 +82,10 @@ module.exports = {
         ) || null;
     },
 
-    updateByToken(token, discordNick, ingameNick, position, tier) {
+    updateByToken(token, discordNick, ingameNick, position, tier, mainCharacters) {
         const data = load();
         if (data.participants[token]) {
-            Object.assign(data.participants[token], { discord_nickname: discordNick, ingame_nickname: ingameNick, position, tier: tier || null });
+            Object.assign(data.participants[token], { discord_nickname: discordNick, ingame_nickname: ingameNick, position, tier: tier || null, main_characters: mainCharacters || [] });
             save(data);
         }
     },
@@ -235,5 +236,14 @@ module.exports = {
 
     getAllEvents() {
         return Object.values(load().events);
+    },
+
+    setRule(eventId, rule) {
+        const data = load();
+        if (data.events[eventId]) { data.events[eventId].rule = rule || null; save(data); }
+    },
+
+    getRule(eventId) {
+        return load().events[eventId]?.rule || null;
     },
 };

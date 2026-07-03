@@ -50,7 +50,7 @@ app.get('/join', (req, res) => {
 app.get('/api/event-info', (req, res) => {
     const ev = db.getEvent(req.query.event || '');
     if (!ev) return res.status(404).json({ error: '이벤트를 찾을 수 없습니다.' });
-    res.json({ gameType: ev.gameType, mapType: ev.mapType });
+    res.json({ gameType: ev.gameType, mapType: ev.mapType, rule: ev.rule || null });
 });
 
 // DB 참가자 기준으로 인메모리 participants 동기화 후 Discord 임베드 갱신
@@ -68,7 +68,7 @@ async function syncEmbedParticipants(eventId) {
 
 // POST /join
 app.post('/join', (req, res) => {
-    const { event, token, discord_id, discord_nickname, ingame_nickname, position, tier } = req.body;
+    const { event, token, discord_id, discord_nickname, ingame_nickname, position, tier, main_characters } = req.body;
     if (!event || !discord_nickname?.trim() || !ingame_nickname?.trim())
         return res.status(400).json({ error: '모든 항목을 입력해주세요.' });
     if (!db.eventExists(event))
@@ -85,15 +85,22 @@ app.post('/join', (req, res) => {
 
     const validTier = tier && VALID_TIERS.includes(tier) ? tier : null;
 
+    // 주 캐릭터 검증 (최대 3개, CHARACTERS 목록 내 값)
+    let chars = [];
+    if (main_characters) {
+        const raw = Array.isArray(main_characters) ? main_characters : [main_characters];
+        chars = raw.filter(c => CHARACTERS.includes(c)).slice(0, 3);
+    }
+
     if (token) {
         const existing = db.getByToken(token);
         if (!existing || existing.event_id !== event)
             return res.status(403).json({ error: '유효하지 않은 수정 토큰입니다.' });
-        db.updateByToken(token, discord_nickname.trim(), ingame_nickname.trim(), position, validTier);
+        db.updateByToken(token, discord_nickname.trim(), ingame_nickname.trim(), position, validTier, chars);
         syncEmbedParticipants(event);
         return res.json({ success: true, cancel_token: token, updated: true });
     }
-    const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position, validTier);
+    const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position, validTier, chars);
     syncEmbedParticipants(event);
     res.json({ success: true, cancel_token, updated: false });
 });
@@ -315,6 +322,46 @@ app.get('/api/is-admin', (req, res) => {
     const ev = db.getEvent(event);
     if (!ev || ev.createdBy !== discord_id) return res.json({ isAdmin: false });
     res.json({ isAdmin: true, adminUrl: `/admin?event=${event}&token=${ev.adminToken}` });
+});
+
+// POST /api/admin/rule  — 내전 룰 저장
+app.post('/api/admin/rule', (req, res) => {
+    const { event, token, rule } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    db.setRule(event, rule?.trim() || null);
+    res.json({ success: true });
+});
+
+// POST /api/admin/notify  — 내전 시작 알림 (Discord 채널에 참가자 멘션)
+app.post('/api/admin/notify', async (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!discordClient) return res.status(500).json({ error: '봇 클라이언트가 없습니다.' });
+
+    const ev = db.getEvent(event);
+    if (!ev?.channelId) return res.status(404).json({ error: '채널 정보가 없습니다.' });
+
+    const participants = db.getParticipants(event);
+    if (!participants.length) return res.status(400).json({ error: '참가자가 없습니다.' });
+
+    const mentions = participants
+        .filter(p => p.discord_id)
+        .map(p => `<@${p.discord_id}>`)
+        .join(' ');
+    const noIdCount = participants.filter(p => !p.discord_id).length;
+
+    try {
+        const ch = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+        if (!ch) return res.status(404).json({ error: '채널을 찾을 수 없습니다.' });
+        let msg = `📣 **내전 시작 알림**\n`;
+        if (mentions) msg += `${mentions}\n`;
+        if (noIdCount) msg += `*(디스코드 ID 없는 참가자 ${noIdCount}명은 멘션 생략)*\n`;
+        msg += `내전이 곧 시작됩니다! 준비해주세요.`;
+        await ch.send(msg);
+        res.json({ success: true, mentionedCount: participants.filter(p => p.discord_id).length, skippedCount: noIdCount });
+    } catch (e) {
+        res.status(500).json({ error: '전송 실패: ' + e.message });
+    }
 });
 
 // POST /api/admin/close  — 모집 종료 (Discord 메시지 삭제 + 데이터 정리)
