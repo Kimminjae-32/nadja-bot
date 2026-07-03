@@ -138,12 +138,12 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
 
     const F = fontLoaded ? '"CardFont",sans-serif' : 'sans-serif';
 
-    const CARD_W  = 260;
-    const ROW_H   = 46;
-    const HDR_H   = 38;
-    const PAD     = 14;
-    const ICON_SZ = 22;
-    const TITLE_H = 36;
+    const CARD_W  = 380;
+    const ROW_H   = 60;
+    const HDR_H   = 52;
+    const PAD     = 18;
+    const ICON_SZ = 30;
+    const TITLE_H = 50;
 
     const COLS = Math.min(teamCount, 4);
     const ROWS = Math.ceil(teamCount / COLS);
@@ -160,9 +160,9 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
     ctx.fillStyle = '#0f0f1a';
     ctx.fillRect(0, 0, W, H);
 
-    ctx.font      = `bold 16px ${F}`;
+    ctx.font      = `bold 22px ${F}`;
     ctx.fillStyle = '#e0e0f0';
-    ctx.fillText(`팟 배정 결과 · 총 ${totalCount}명`, PAD, TITLE_H - 10);
+    ctx.fillText(`팟 배정 결과 · 총 ${totalCount}명`, PAD, TITLE_H - 12);
 
     for (let t = 1; t <= teamCount; t++) {
         const col     = (t - 1) % COLS;
@@ -181,8 +181,8 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
-        ctx.font      = `bold 14px ${F}`;
-        ctx.fillText(`${t}팀  (${players.length}명)`, cx + 12, cy + HDR_H / 2 + 5);
+        ctx.font      = `bold 20px ${F}`;
+        ctx.fillText(`${t}팀  (${players.length}명)`, cx + 14, cy + HDR_H / 2 + 7);
 
         for (let i = 0; i < players.length; i++) {
             const p   = players[i];
@@ -206,8 +206,8 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
             }
 
             ctx.fillStyle = '#e0e0f0';
-            ctx.font      = `13px ${F}`;
-            const nickMaxW = CARD_W - (lx - cx) - ICON_SZ - 18;
+            ctx.font      = `17px ${F}`;
+            const nickMaxW = CARD_W - (lx - cx) - ICON_SZ - 22;
             ctx.fillText(fitText(ctx, p.discord_nickname, nickMaxW), lx, mid + 5);
 
             if (p.tier && TIER_URLS[p.tier]) {
