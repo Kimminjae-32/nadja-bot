@@ -11,6 +11,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@fontsource/nanum-gothic": "^5.1.1",
+    "@napi-rs/canvas": "^0.1.67",
     "discord.js": "^14.26.3",
     "dotenv": "^17.4.2",
     "express": "^4.21.2",

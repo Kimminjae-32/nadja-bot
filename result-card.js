@@ -2,37 +2,42 @@ const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 const fs   = require('fs');
 
-GlobalFonts.loadSystemFonts();
-
-const FONT_PATH = path.join(__dirname, 'NanumGothic.ttf');
-const FONT_CANDIDATES = [
-    '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
-    '/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf',
-    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-    FONT_PATH,
-];
-
-// 모듈 로드 시 폰트 준비 (비동기)
-const fontReadyP = (async () => {
-    for (const fp of FONT_CANDIDATES) {
+// 폰트 로드 (우선순위 순)
+function loadFont() {
+    const candidates = [
+        // 1. npm 패키지 (@fontsource/nanum-gothic)
+        path.join(__dirname, 'node_modules/@fontsource/nanum-gothic/files/nanum-gothic-all-400-normal.woff2'),
+        path.join(__dirname, 'node_modules/@fontsource/nanum-gothic/files/nanum-gothic-korean-400-normal.woff2'),
+        // 2. 시스템 폰트 (apt-get install fonts-nanum)
+        '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
+        '/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf',
+        '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+        // 3. 이전에 다운로드한 파일
+        path.join(__dirname, 'NanumGothic.ttf'),
+    ];
+    for (const fp of candidates) {
         if (fs.existsSync(fp)) {
-            try { GlobalFonts.loadFontFromPath(fp, 'CardFont'); return; } catch {}
+            try {
+                GlobalFonts.loadFontFromPath(fp, 'CardFont');
+                console.log('[result-card] 폰트 로드:', fp);
+                return true;
+            } catch (e) {
+                console.warn('[result-card] 폰트 로드 실패:', fp, e.message);
+            }
         }
     }
-    // 시스템에 한글 폰트 없으면 자동 다운로드
-    try {
-        console.log('[result-card] NanumGothic 폰트 다운로드 중...');
-        const res = await fetch('https://raw.githubusercontent.com/google/fonts/main/ofl/nanumgothic/NanumGothic-Regular.ttf');
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        fs.writeFileSync(FONT_PATH, Buffer.from(await res.arrayBuffer()));
-        GlobalFonts.loadFontFromPath(FONT_PATH, 'CardFont');
-        console.log('[result-card] 폰트 다운로드 완료');
-    } catch (e) {
-        console.warn('[result-card] 폰트 준비 실패:', e.message);
-    }
-})();
+    return false;
+}
 
-const FONT = '"CardFont","Nanum Gothic","Noto Sans KR",sans-serif';
+GlobalFonts.loadSystemFonts();
+const fontLoaded = loadFont();
+if (!fontLoaded) {
+    console.warn('[result-card] 한글 폰트 없음 — npm install 후 pm2 restart 해주세요.');
+}
+
+const FONT = fontLoaded
+    ? '"CardFont",sans-serif'
+    : 'sans-serif';
 
 const TIER_URLS = {
     '아이언':       'https://cdn.dak.gg/er/images/tier/full/1.png',
@@ -102,8 +107,6 @@ function roundedRect(ctx, x, y, w, h, r, topOnly = false) {
 }
 
 async function generateResultCard(teamMap, teamCount, totalCount) {
-    await fontReadyP; // 폰트 준비 대기
-
     const CARD_W  = 260;
     const ROW_H   = 46;
     const HDR_H   = 38;
@@ -128,7 +131,7 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
 
     ctx.font      = `bold 16px ${FONT}`;
     ctx.fillStyle = '#e0e0f0';
-    ctx.fillText(`팀 배정 결과 · 총 ${totalCount}명`, PAD, TITLE_H - 10);
+    ctx.fillText(`팟 배정 결과 · 총 ${totalCount}명`, PAD, TITLE_H - 10);
 
     for (let t = 1; t <= teamCount; t++) {
         const col     = (t - 1) % COLS;
