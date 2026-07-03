@@ -2,42 +2,68 @@ const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 const fs   = require('fs');
 
-// 폰트 로드 (우선순위 순)
-function loadFont() {
+const LOCAL_TTF = path.join(__dirname, 'NanumGothic.ttf');
+const FONT_DL_URL = 'https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf';
+
+function tryLoad(fp) {
+    if (!fs.existsSync(fp)) return false;
+    try {
+        const buf = fs.readFileSync(fp);
+        if (GlobalFonts.register(buf, 'CardFont')) return true;
+    } catch {}
+    try {
+        if (GlobalFonts.loadFontFromPath(fp, 'CardFont')) return true;
+    } catch {}
+    return false;
+}
+
+function loadFontSync() {
     const candidates = [
-        // 1. npm 패키지 (@fontsource/nanum-gothic)
         path.join(__dirname, 'node_modules/@fontsource/nanum-gothic/files/nanum-gothic-all-400-normal.woff2'),
         path.join(__dirname, 'node_modules/@fontsource/nanum-gothic/files/nanum-gothic-korean-400-normal.woff2'),
-        // 2. 시스템 폰트 (apt-get install fonts-nanum)
         '/usr/share/fonts/truetype/nanum/NanumGothic.ttf',
         '/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf',
         '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-        // 3. 이전에 다운로드한 파일
-        path.join(__dirname, 'NanumGothic.ttf'),
+        LOCAL_TTF,
     ];
     for (const fp of candidates) {
-        if (fs.existsSync(fp)) {
-            try {
-                GlobalFonts.loadFontFromPath(fp, 'CardFont');
-                console.log('[result-card] 폰트 로드:', fp);
-                return true;
-            } catch (e) {
-                console.warn('[result-card] 폰트 로드 실패:', fp, e.message);
-            }
+        if (tryLoad(fp)) {
+            console.log('[result-card] 폰트 로드:', fp);
+            return true;
         }
     }
     return false;
 }
 
-GlobalFonts.loadSystemFonts();
-const fontLoaded = loadFont();
-if (!fontLoaded) {
-    console.warn('[result-card] 한글 폰트 없음 — npm install 후 pm2 restart 해주세요.');
+let fontLoaded = false;
+
+async function initialize() {
+    GlobalFonts.loadSystemFonts();
+    fontLoaded = loadFontSync();
+
+    if (!fontLoaded) {
+        try {
+            console.log('[result-card] 폰트 없음 — 다운로드 시도:', FONT_DL_URL);
+            const res = await fetch(FONT_DL_URL, { signal: AbortSignal.timeout(15000) });
+            if (res.ok) {
+                const buf = Buffer.from(await res.arrayBuffer());
+                fs.writeFileSync(LOCAL_TTF, buf);
+                fontLoaded = GlobalFonts.register(buf, 'CardFont');
+                if (fontLoaded) console.log('[result-card] 폰트 다운로드 성공');
+            }
+        } catch (e) {
+            console.warn('[result-card] 다운로드 실패:', e.message);
+        }
+    }
+
+    const families = GlobalFonts.families;
+    console.log('[result-card] fontLoaded=%s, families=%d개:', fontLoaded, families?.length,
+        families?.slice(0, 5));
 }
 
-const FONT = fontLoaded
-    ? '"CardFont",sans-serif'
-    : 'sans-serif';
+const initPromise = initialize();
+
+// ---------------------------------------------------------------------------
 
 const TIER_URLS = {
     '아이언':       'https://cdn.dak.gg/er/images/tier/full/1.png',
@@ -107,6 +133,10 @@ function roundedRect(ctx, x, y, w, h, r, topOnly = false) {
 }
 
 async function generateResultCard(teamMap, teamCount, totalCount) {
+    await initPromise;
+
+    const F = fontLoaded ? '"CardFont",sans-serif' : 'sans-serif';
+
     const CARD_W  = 260;
     const ROW_H   = 46;
     const HDR_H   = 38;
@@ -129,7 +159,7 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
     ctx.fillStyle = '#0f0f1a';
     ctx.fillRect(0, 0, W, H);
 
-    ctx.font      = `bold 16px ${FONT}`;
+    ctx.font      = `bold 16px ${F}`;
     ctx.fillStyle = '#e0e0f0';
     ctx.fillText(`팟 배정 결과 · 총 ${totalCount}명`, PAD, TITLE_H - 10);
 
@@ -150,7 +180,7 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
-        ctx.font      = `bold 13px ${FONT}`;
+        ctx.font      = `bold 14px ${F}`;
         ctx.fillText(`${t}팀  (${players.length}명)`, cx + 12, cy + HDR_H / 2 + 5);
 
         for (let i = 0; i < players.length; i++) {
@@ -175,7 +205,7 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
             }
 
             ctx.fillStyle = '#e0e0f0';
-            ctx.font      = `13px ${FONT}`;
+            ctx.font      = `13px ${F}`;
             const nickMaxW = CARD_W - (lx - cx) - ICON_SZ - 18;
             ctx.fillText(fitText(ctx, p.discord_nickname, nickMaxW), lx, mid + 5);
 
