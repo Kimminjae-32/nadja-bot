@@ -179,7 +179,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
         creatorId: user.id,
         guildId,
         channelId: interaction.channelId,
-        participants: [user.id],
+        participants: [],
         gameType, mapType,
         time: timeStr,
         durationHours: duration,
