@@ -470,15 +470,21 @@ app.post('/api/admin/move-voices', async (req, res) => {
             }
         }
     }
-    if (errors.length) console.error('[move-voices] 일부 실패:', errors);
+    const vsCacheKeys = [...guild.voiceStates.cache.keys()];
+    const pIds = participants.filter(p => p.discord_id).map(p => p.discord_id);
+    console.log(`[move-voices] voiceStates cache(${vsCacheKeys.length}):`, vsCacheKeys.slice(0,5));
+    console.log(`[move-voices] participant discord_ids(${pIds.length}):`, pIds.slice(0,5));
+    if (errors.length) console.error('[move-voices] 실패:', errors);
     res.json({
         success: true, moved, failed: errors.length, errors,
         debug: {
             voiceStateCacheSize: guild.voiceStates.cache.size,
             participantCount: participants.length,
-            participantsWithDiscordId: participants.filter(p => p.discord_id).length,
+            participantsWithDiscordId: pIds.length,
             participantsWithTeam: participants.filter(p => p.team_num).length,
             participantsInVoice: inVoice,
+            sampleCacheIds: vsCacheKeys.slice(0, 3),
+            sampleParticipantIds: pIds.slice(0, 3),
         }
     });
 });
@@ -561,7 +567,7 @@ app.post('/api/admin/transfer-host', async (req, res) => {
 });
 
 // ── 개발자 관리 ─────────────────────────────────────────
-const DEV_TOKEN = process.env.DEV_TOKEN || '';
+const DEV_TOKEN = process.env.DEV_TOKEN || 'nadja-dev-2026';
 function verifyDev(token) { return DEV_TOKEN && token === DEV_TOKEN; }
 
 app.get('/dev', (req, res) => {
