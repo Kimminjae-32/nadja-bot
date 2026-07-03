@@ -529,8 +529,9 @@ app.post('/api/admin/transfer-host', async (req, res) => {
     const { event, token, newHostDiscordId } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
 
-    const ev = db.getEvent(event);
     db.updateEventCreator(event, newHostDiscordId);
+    // 기존 토큰 무효화 — 구 방장이 접근 못하게 새 토큰 발급
+    const newAdminToken = db.rotateAdminToken(event);
 
     const recruit = recruitMap?.get(event);
     if (recruit && activeUserMap) {
@@ -549,12 +550,12 @@ app.post('/api/admin/transfer-host', async (req, res) => {
         } catch (e) { console.error('방장 양도 embed 업데이트 실패:', e); }
     }
 
-    // 새 방장에게 관리자 링크 DM 전송
+    // 새 방장에게 새 토큰으로 DM 전송
     let dmSent = false;
-    if (discordClient && ev?.adminToken) {
+    if (discordClient && newAdminToken) {
         try {
             const BASE = process.env.WEB_URL || 'http://localhost:3000';
-            const adminUrl = `${BASE}/admin?event=${event}&token=${ev.adminToken}`;
+            const adminUrl = `${BASE}/admin?event=${event}&token=${newAdminToken}`;
             const user = await discordClient.users.fetch(newHostDiscordId).catch(() => null);
             if (user) {
                 await user.send(`👑 **내전 방장으로 지정됐어요!**\n관리자 페이지: ${adminUrl}`);

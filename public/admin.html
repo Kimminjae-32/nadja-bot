@@ -498,7 +498,10 @@ async function transferHost() {
     if (!confirm(`"${name}"에게 방장을 양도할까요?`)) return;
     const data = await api('/api/admin/transfer-host', { event: EVENT, token: TOKEN, newHostDiscordId: sel.value });
     if (data.error) { toast(data.error, true); return; }
-    toast(data.dmSent ? '👑 방장이 양도됐어요! 관리자 링크를 DM으로 전송했어요.' : '👑 방장이 양도됐어요! (DM 전송 실패 — 상대방이 DM을 차단했을 수 있어요)');
+    const msg = data.dmSent ? '👑 방장이 양도됐어요! 새 방장에게 링크를 DM으로 전송했어요.' : '👑 방장이 양도됐어요! (DM 전송 실패 — 상대방이 DM을 차단했을 수 있어요)';
+    toast(msg);
+    // 토큰이 교체됐으므로 현재 페이지는 더 이상 유효하지 않음 — 3초 후 이탈
+    setTimeout(() => { location.href = '/'; }, 3000);
 }
 
 async function loadVoiceChannels() {

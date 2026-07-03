@@ -216,6 +216,15 @@ module.exports = {
         if (data.events[eventId]) { data.events[eventId].createdBy = newCreatorId; save(data); }
     },
 
+    rotateAdminToken(eventId) {
+        const data = load();
+        if (!data.events[eventId]) return null;
+        const newToken = crypto.randomBytes(12).toString('hex');
+        data.events[eventId].adminToken = newToken;
+        save(data);
+        return newToken;
+    },
+
     getAllEvents() {
         return Object.values(load().events);
     },
