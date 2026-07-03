@@ -4,6 +4,13 @@ const db      = require('./db');
 const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES, TIERS } = require('./constants');
 const VALID_TIERS = TIERS.map(t => t.name);
 
+let generateResultCard = null;
+try {
+    generateResultCard = require('./result-card').generateResultCard;
+} catch (e) {
+    console.warn('[result-card] canvas 미설치 — 이미지 카드 비활성화. npm install @napi-rs/canvas');
+}
+
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -338,7 +345,32 @@ app.post('/api/admin/send-discord', async (req, res) => {
     }
 
     try {
-        const { EmbedBuilder } = require('discord.js');
+        const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+
+        const channel = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+        if (!channel) return res.status(404).json({ error: '채널을 찾을 수 없습니다.' });
+
+        // 이미지 카드 전송 (canvas 설치된 경우)
+        if (generateResultCard) {
+            try {
+                const imgBuf = await generateResultCard(teams, teamCount, participants.length);
+                const file   = new AttachmentBuilder(imgBuf, { name: 'teams.png' });
+                const embed  = new EmbedBuilder()
+                    .setColor(0xFF0000)
+                    .setImage('attachment://teams.png')
+                    .setFooter({ text: `총 ${participants.length}명` })
+                    .setTimestamp();
+                if (unassigned.length) {
+                    embed.addFields({ name: '❓ 미배정', value: unassigned.map(p => p.discord_nickname).join(', ') });
+                }
+                await channel.send({ embeds: [embed], files: [file] });
+                return res.json({ success: true });
+            } catch (imgErr) {
+                console.error('[result-card] 이미지 생성 실패, 텍스트 폴백:', imgErr.message);
+            }
+        }
+
+        // 폴백: 텍스트 임베드
         const embed = new EmbedBuilder()
             .setTitle('🎲 팀 배정 결과')
             .setColor(0xFF0000)
@@ -359,9 +391,6 @@ app.post('/api/admin/send-discord', async (req, res) => {
         if (unassigned.length) {
             embed.addFields({ name: '❓ 미배정', value: unassigned.map(p => p.discord_nickname).join(', '), inline: false });
         }
-
-        const channel = await discordClient.channels.fetch(ev.channelId).catch(() => null);
-        if (!channel) return res.status(404).json({ error: '채널을 찾을 수 없습니다.' });
         await channel.send({ embeds: [embed] });
         res.json({ success: true });
     } catch (e) {
