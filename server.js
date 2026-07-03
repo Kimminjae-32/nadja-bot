@@ -155,6 +155,7 @@ app.post('/api/admin/remove', (req, res) => {
     const { event, token, cancel_token } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
     db.deleteByToken(cancel_token);
+    syncEmbedParticipants(event);
     res.json({ success: true });
 });
 
@@ -237,11 +238,15 @@ app.get('/api/admin/draft/status', (req, res) => {
         teamNum: c.teamNum, discordNickname: c.discordNickname,
         draftUrl: `${BASE}/draft/${event}/${c.captainToken}`,
     }));
+    const effectiveStatus = (draft.status === 'in_progress' && draft.turnOrder.length === 0)
+        ? 'completed' : draft.status;
+    const currentTeam = effectiveStatus === 'in_progress'
+        ? (draft.turnOrder[draft.currentTurnIndex] ?? null) : null;
     res.json({
-        status: draft.status,
-        currentTeam: draft.turnOrder[draft.currentTurnIndex] ?? null,
+        status: effectiveStatus,
+        currentTeam,
         totalPicks: draft.turnOrder.length,
-        donePicks: draft.currentTurnIndex,
+        donePicks: Math.min(draft.currentTurnIndex, draft.turnOrder.length),
         remaining, picks: draft.picks, captainLinks,
     });
 });
@@ -412,6 +417,7 @@ app.post('/api/admin/change-map', async (req, res) => {
     }
 
     saveDataFn?.();
+    db.resetTeamAssignments(event);
 
     if (discordClient && recruit.channelId && createEmbedFn) {
         try {
@@ -650,8 +656,10 @@ app.post('/api/dev/close-event', async (req, res) => {
 app.post('/api/dev/kick-participant', (req, res) => {
     const { devToken, cancelToken } = req.body;
     if (!verifyDev(devToken)) return res.status(403).json({ error: 'Forbidden' });
-    if (!db.getByToken(cancelToken)) return res.status(404).json({ error: '참가자 없음' });
+    const p = db.getByToken(cancelToken);
+    if (!p) return res.status(404).json({ error: '참가자 없음' });
     db.deleteByToken(cancelToken);
+    syncEmbedParticipants(p.event_id);
     res.json({ success: true });
 });
 

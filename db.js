@@ -225,6 +225,14 @@ module.exports = {
         return newToken;
     },
 
+    resetTeamAssignments(eventId) {
+        const data = load();
+        Object.values(data.participants)
+            .filter(p => p.event_id === eventId)
+            .forEach(p => { p.team_num = null; });
+        save(data);
+    },
+
     getAllEvents() {
         return Object.values(load().events);
     },

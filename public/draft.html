@@ -131,9 +131,13 @@ async function poll(){
       document.getElementById('waiting').style.display='block';
       document.getElementById('waiting-msg').textContent=
         data.currentTeam ? `현재 ${data.currentTeam}팀 차례 · 내 팀: ${data.myTeam}팀` : '대기 중...';
-      document.getElementById('debug-info').textContent = data._debug
-        ? JSON.stringify(data._debug, null, 2)
-        : '⚠️ 서버가 아직 구 버전입니다. pm2 restart nadja-bot 후 새로고침하세요.';
+      const dbg = document.getElementById('debug-info');
+      if(!data.currentTeam && data._debug){
+        dbg.textContent = JSON.stringify(data._debug, null, 2);
+        dbg.style.display='block';
+      } else {
+        dbg.style.display='none';
+      }
       renderLog(data.picks,'pick-log');
     }
   }catch(e){}

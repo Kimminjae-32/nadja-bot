@@ -601,8 +601,10 @@ function updateDraftProgress(ds){
     if(ds.status === 'completed'){
         el.innerHTML = `✅ 드래프트 완료! (총 ${ds.donePicks}픽)`;
         el.style.color = 'var(--green)';
-    } else {
+    } else if(ds.currentTeam != null) {
         el.innerHTML = `⏳ 진행 중: ${ds.donePicks}/${ds.totalPicks}픽 · 현재 <strong>${EMOJIS[(ds.currentTeam-1)%EMOJIS.length]} ${ds.currentTeam}팀</strong> 차례`;
+    } else {
+        el.innerHTML = `⏳ 진행 중: ${ds.donePicks}/${ds.totalPicks}픽`;
     }
 }
 

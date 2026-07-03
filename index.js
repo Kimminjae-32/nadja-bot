@@ -172,6 +172,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
         const oldMsgId = activeUserRecruits.get(rKey);
         const oldData  = allRecruits.get(oldMsgId);
         await deleteMessage(oldMsgId, oldData?.channelId).catch(() => null);
+        db.deleteEvent(oldMsgId);
         allRecruits.delete(oldMsgId);
     }
 
