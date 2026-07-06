@@ -95,6 +95,12 @@ module.exports = {
         if (data.participants[token]) { data.participants[token].team_num = teamNum; save(data); }
     },
 
+    // 관리자가 참가자 티어 수정 (허위 신고 정정용)
+    setTier(token, tier) {
+        const data = load();
+        if (data.participants[token]) { data.participants[token].tier = tier || null; save(data); }
+    },
+
     shuffleTeams(eventId, teamCount) {
         const data = load();
         const list = Object.values(data.participants).filter(p => p.event_id === eventId);

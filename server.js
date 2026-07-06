@@ -164,6 +164,15 @@ app.post('/api/admin/assign', (req, res) => {
     res.json({ success: true });
 });
 
+// POST /api/admin/tier  { event, token, cancel_token, tier }  — 관리자가 참가자 티어 수정
+app.post('/api/admin/tier', (req, res) => {
+    const { event, token, cancel_token, tier } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const newTier = tier && VALID_TIERS.includes(tier) ? tier : null;
+    db.setTier(cancel_token, newTier);
+    res.json({ success: true, tier: newTier });
+});
+
 // POST /api/admin/remove  { event, token, cancel_token }
 app.post('/api/admin/remove', (req, res) => {
     const { event, token, cancel_token } = req.body;

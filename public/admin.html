@@ -206,6 +206,7 @@ const POS_ICON = { '탱커':'tank','전사':'warrior','암살자':'assassin','�
 const TEAM_COLORS = ['#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22','#95a5a6','#1abc9c'];
 const EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫'];
 const TIER_IMG = {'아이언':'https://cdn.dak.gg/er/images/tier/full/1.png','브론즈':'https://cdn.dak.gg/er/images/tier/full/2.png','실버':'https://cdn.dak.gg/er/images/tier/full/3.png','골드':'https://cdn.dak.gg/er/images/tier/full/4.png','플래티넘':'https://cdn.dak.gg/er/images/tier/full/5.png','다이아몬드':'https://cdn.dak.gg/er/images/tier/full/6.png','메테오라이트':'https://cdn.dak.gg/er/images/tier/full/63.png','미스릴':'https://cdn.dak.gg/er/images/tier/full/66.png','데미갓':'https://cdn.dak.gg/er/images/tier/full/7.png','이터니티':'https://cdn.dak.gg/er/images/tier/full/8.png'};
+const TIER_NAMES = ['언랭크','아이언','브론즈','실버','골드','플래티넘','다이아몬드','메테오라이트','미스릴','데미갓','이터니티'];
 function tierImg(tier) {
     return TIER_IMG[tier]
         ? `<img src="${TIER_IMG[tier]}" style="width:18px;height:18px;vertical-align:middle;margin-right:3px;" onerror="this.style.display='none'">`
@@ -330,6 +331,14 @@ function teamOptions(current, teamCount){
     return html;
 }
 
+function tierOptions(current){
+    let html = `<option value="">티어 없음</option>`;
+    for(const t of TIER_NAMES){
+        html += `<option value="${t}" ${current===t?'selected':''}>${t}</option>`;
+    }
+    return html;
+}
+
 function renderTable(){
     const tc = eventData?.teamCount || 2;
     const isTeamMode = eventData?.gameType === '내전';
@@ -339,7 +348,10 @@ function renderTable(){
             <td><strong>${esc(p.discord_nickname)}</strong></td>
             <td>${esc(p.ingame_nickname)}</td>
             <td>
-                ${p.tier?`<span class="pos-badge" style="margin-bottom:.2rem">${tierImg(p.tier)}${esc(p.tier)}</span><br>`:''}
+                <div style="display:flex;align-items:center;gap:.25rem;margin-bottom:.25rem">
+                    ${tierImg(p.tier)}
+                    <select class="team-select" onchange="changeTier('${esc(p.cancel_token)}', this.value)" title="티어 수정">${tierOptions(p.tier)}</select>
+                </div>
                 ${p.position?`<span class="pos-badge">${posImg(p.position)}${esc(p.position)}</span>`:''}
                 ${p.main_characters?.length?`<div style="margin-top:.3rem;font-size:.78rem;color:var(--muted)">🎮 ${p.main_characters.map(c=>esc(c)).join(' · ')}</div>`:''}
             </td>
@@ -393,6 +405,16 @@ async function assignTeam(cancelToken, teamNum){
     if(p) p.team_num = teamNum===''? null : Number(teamNum);
     renderTeams();
     toast('팀 배정 저장됨');
+}
+
+async function changeTier(cancelToken, tier){
+    const data = await api('/api/admin/tier', { event:EVENT, token:TOKEN, cancel_token:cancelToken, tier });
+    if(data.error){ toast('티어 변경 실패: '+data.error, true); return; }
+    const p = participants.find(x=>x.cancel_token===cancelToken);
+    if(p) p.tier = data.tier || null;
+    renderTable();
+    renderTeams();
+    toast('티어가 변경됐어요');
 }
 
 async function removeMember(cancelToken){
