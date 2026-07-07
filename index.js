@@ -133,16 +133,20 @@ async function createRecruitEmbed(data) {
     const participantsList = participantNames.join(', ') || '없음';
     const creatorName = await getName(data.creatorId);
 
+    const title = data.mapType
+        ? `🎮 [${data.gameType} / ${data.mapType}] 구인 중`
+        : `🎮 [${data.gameType}] 구인 중`;
     const embed = new EmbedBuilder()
-        .setTitle(`🎮 [${data.gameType} / ${data.mapType}] 구인 중`)
+        .setTitle(title)
         .addFields(
             { name: '⏰ 시작 시간', value: data.time,                                         inline: true },
             { name: '👥 인원',      value: `${data.participants.length} / ${data.maxPlayers}`, inline: true },
             { name: '👑 모집자',    value: creatorName,                                        inline: true },
             { name: '📝 전체 참가자', value: participantsList }
         )
-        .setColor(colors[data.gameType] || 0x000000)
+        .setColor(colors[data.gameType] || 0x5865F2)
         .setTimestamp();
+    if (data.description) embed.setDescription(`📝 ${data.description}`);
 
     // 내전만 팀 필드 표시 (론울프는 팀 개념 없음)
     if (data.gameType === '내전') {
@@ -163,7 +167,7 @@ async function createRecruitEmbed(data) {
 // =====================================================
 // 구인 생성 공통 함수
 // =====================================================
-async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamCount, timeStr, duration }) {
+async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamCount, timeStr, duration, description, isGeneric }) {
     const user    = interaction.user;
     const guildId = interaction.guildId ?? 'dm';
     const rKey    = `${guildId}_${user.id}`;  // 서버별 유일 키
@@ -182,6 +186,8 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
         channelId: interaction.channelId,
         participants: [],
         gameType, mapType,
+        description: description || null,
+        isGeneric: !!isGeneric,
         time: timeStr,
         durationHours: duration,
         maxPlayers, teamCount,
@@ -214,15 +220,22 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     activeUserRecruits.set(rKey, msgId);
     saveData();
 
-    // 모든 모드: DB 이벤트 생성 (웹 폼 참가 + 관리자 페이지 공통)
-    db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount, gameType, mapType);
-
-    // 참가/취소 버튼 (관리는 웹 어드민 페이지에서)
-    await msg.edit({ components: [
-        new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary)
-        )
-    ]}).catch(() => null);
+    if (isGeneric) {
+        // 범용 구인 — 웹 폼/관리자 페이지 없이 버튼 토글로 참가 관리
+        await msg.edit({ components: [
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`gjoin_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary)
+            )
+        ]}).catch(() => null);
+    } else {
+        // 이터널 리턴 — DB 이벤트 생성 (웹 폼 참가 + 관리자 페이지 공통)
+        db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount, gameType, mapType);
+        await msg.edit({ components: [
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary)
+            )
+        ]}).catch(() => null);
+    }
 }
 
 // pendingLumia 만료 (5분)
@@ -260,14 +273,34 @@ client.on(Events.InteractionCreate, async interaction => {
 
         // /구인
         if (interaction.commandName === '구인') {
-            const choice     = interaction.options.getString('유형');
+            const choice      = interaction.options.getString('유형');
+            const timeStr     = interaction.options.getString('시간')      || '즉시';
+            const duration    = interaction.options.getInteger('종료시간') || 24;
+            const description = interaction.options.getString('설명') || null;
+
+            // 기타(범용) 구인 — 게임 이름·인원 직접 입력, 웹 폼 없이 버튼 참가
+            if (choice === '기타') {
+                const gameName   = (interaction.options.getString('게임') || '').trim();
+                const maxPlayers = interaction.options.getInteger('인원');
+                if (!gameName || !maxPlayers) {
+                    return await interaction.reply({ content: '❌ 기타 게임 구인은 `게임`과 `인원`을 함께 입력해주세요.\n예) `/구인 유형:🎮 기타 게임(직접 입력) 게임:발로란트 인원:5`', ephemeral: true });
+                }
+                if (maxPlayers < 1 || maxPlayers > 20) {
+                    return await interaction.reply({ content: '❌ 인원은 1~20명 사이로 입력해주세요.', ephemeral: true });
+                }
+                return await createRecruit(interaction, {
+                    gameType: gameName, mapType: null, maxPlayers, teamCount: 2,
+                    timeStr, duration, description, isGeneric: true
+                });
+            }
+
+            // 이터널 리턴 프리셋 (일반/랭크 루미아, 일반 코발트)
             const [gameType, mapKey] = choice.split('_');
             const mapType    = mapKey === '루미아' ? '루미아 섬' : '코발트';
             const maxPlayers = mapType === '코발트' ? 4 : 3;
             await createRecruit(interaction, {
                 gameType, mapType, maxPlayers, teamCount: 2,
-                timeStr:  interaction.options.getString('시간')      || '즉시',
-                duration: interaction.options.getInteger('종료시간') || 24
+                timeStr, duration, description
             });
         }
 
@@ -346,7 +379,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     .setTitle('📖 나쟈 봇 사용 가이드')
                     .setColor(0x00AE86)
                     .addFields(
-                        { name: '⚔️ /구인',           value: '일반(루미아): 3명 / 랭크(루미아): 3명 / 일반(코발트): 4명' },
+                        { name: '⚔️ /구인',           value: '일반(루미아): 3명 / 랭크(루미아): 3명 / 일반(코발트): 4명\n🎮 기타 게임: `게임`·`인원`·`설명` 직접 입력 (발로란트·LoL 등, 버튼으로 참가)' },
                         { name: '🏝️ /내전 루미아 섬', value: '팀당인원·최대인원 자유 설정 (최대 8팀)' },
                         { name: '🐺 /내전 론울프',     value: '1인 1팀 개인전 · 최대 18명 · 포지션 불필요' },
                         { name: '🌊 /내전 코발트',     value: '4vs4 고정' },
@@ -454,7 +487,7 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         }
 
-        // 참가/취소 — 웹 폼 기반
+        // 참가/취소 — 웹 폼 기반 (이터널 리턴)
         if (action === 'join' || action === 'leave') {
             const targetMsgId = parts[1];
             if (!allRecruits.get(targetMsgId)) return;
@@ -465,6 +498,40 @@ client.on(Events.InteractionCreate, async interaction => {
             }
             const webUrl = `${BASE}/join?event=${targetMsgId}&discord_id=${interaction.user.id}`;
             return await interaction.reply({ content: `아래 링크에서 참가 신청해주세요!\n${webUrl}`, ephemeral: true });
+        }
+
+        // 범용 구인 참가/취소 — 버튼 토글 (웹 폼 없음)
+        if (action === 'gjoin') {
+            const targetMsgId = parts[1];
+            const data = allRecruits.get(targetMsgId);
+            if (!data) return await interaction.reply({ content: '⚠️ 이미 종료된 구인이에요.', ephemeral: true });
+
+            const uid = interaction.user.id;
+            const idx = data.participants.indexOf(uid);
+            let justJoined = false;
+            if (idx === -1) {
+                if (data.participants.length >= data.maxPlayers) {
+                    return await interaction.reply({ content: '❌ 인원이 이미 다 찼어요.', ephemeral: true });
+                }
+                data.participants.push(uid);
+                justJoined = true;
+            } else {
+                data.participants.splice(idx, 1);
+            }
+            saveData();
+
+            await interaction.update({
+                embeds: [await createRecruitEmbed(data)],
+                components: [new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId(`gjoin_${targetMsgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary)
+                )]
+            });
+
+            // 인원이 다 차면 방장에게 DM 알림
+            if (justJoined && data.participants.length === data.maxPlayers) {
+                const creator = await client.users.fetch(data.creatorId).catch(() => null);
+                if (creator) creator.send(`🎉 [${data.gameType}] 구인 인원이 다 찼어요! (${data.maxPlayers}명 모집 완료)`).catch(() => null);
+            }
         }
     }
 
