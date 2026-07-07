@@ -144,6 +144,8 @@ app.get('/api/admin/data', (req, res) => {
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
     const ev = db.getEvent(event);
     const participants = db.getParticipants(event);
+    // mapType 미저장 이벤트(구버전)는 메모리의 recruit에서 보완
+    if (ev && !ev.mapType) ev.mapType = recruitMap?.get(event)?.mapType || null;
     res.json({ event: ev, participants });
 });
 
@@ -502,6 +504,7 @@ app.post('/api/admin/change-map', async (req, res) => {
     }
 
     saveDataFn?.();
+    db.updateEventMapType(event, recruit.mapType);
     db.resetTeamAssignments(event);
 
     if (discordClient && recruit.channelId && createEmbedFn) {

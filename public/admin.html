@@ -145,9 +145,9 @@
             <div class="mgmt-label">🗺️ 맵/모드 변경</div>
             <div id="current-map-badge" style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem"></div>
             <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-                <button class="btn btn-secondary btn-sm" onclick="changeMap('루미아 섬')">🏝️ 루미아 섬</button>
-                <button class="btn btn-secondary btn-sm" onclick="changeMap('코발트')">🌊 코발트</button>
-                <button class="btn btn-secondary btn-sm" onclick="changeMap('론울프')">🐺 론울프</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('루미아 섬')"><img src="/icons/map-lumia.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain" onerror="this.replaceWith(document.createTextNode('🏝️ '))">루미아 섬</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('코발트')"><img src="/icons/map-cobalt.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain" onerror="this.replaceWith(document.createTextNode('🌊 '))">코발트</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('론울프')"><img src="/icons/mode-lonewolf.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain" onerror="this.replaceWith(document.createTextNode('🐺 '))">론울프</button>
             </div>
         </div>
 
@@ -207,6 +207,17 @@ const TEAM_COLORS = ['#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22'
 const EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫'];
 const TIER_IMG = {'아이언':'https://cdn.dak.gg/er/images/tier/full/1.png','브론즈':'https://cdn.dak.gg/er/images/tier/full/2.png','실버':'https://cdn.dak.gg/er/images/tier/full/3.png','골드':'https://cdn.dak.gg/er/images/tier/full/4.png','플래티넘':'https://cdn.dak.gg/er/images/tier/full/5.png','다이아몬드':'https://cdn.dak.gg/er/images/tier/full/6.png','메테오라이트':'https://cdn.dak.gg/er/images/tier/full/63.png','미스릴':'https://cdn.dak.gg/er/images/tier/full/66.png','데미갓':'https://cdn.dak.gg/er/images/tier/full/7.png','이터니티':'https://cdn.dak.gg/er/images/tier/full/8.png'};
 const TIER_NAMES = ['언랭크','아이언','브론즈','실버','골드','플래티넘','다이아몬드','메테오라이트','미스릴','데미갓','이터니티'];
+// 맵/모드 아이콘 — public/icons/ 에 이미지가 있으면 사용, 없으면 이모지로 폴백
+const MAP_ICON = {
+    '루미아 섬': { img: '/icons/map-lumia.png',     emoji: '🏝️' },
+    '코발트':   { img: '/icons/map-cobalt.png',    emoji: '🌊' },
+    '론울프':   { img: '/icons/mode-lonewolf.png', emoji: '🐺' },
+};
+function mapIconImg(key, size = 20) {
+    const m = MAP_ICON[key];
+    if (!m) return '';
+    return `<img src="${m.img}" alt="" style="width:${size}px;height:${size}px;vertical-align:middle;margin-right:5px;object-fit:contain;border-radius:4px" onerror="this.replaceWith(document.createTextNode('${m.emoji} '))">`;
+}
 function tierImg(tier) {
     return TIER_IMG[tier]
         ? `<img src="${TIER_IMG[tier]}" style="width:18px;height:18px;vertical-align:middle;margin-right:3px;" onerror="this.style.display='none'">`
@@ -310,7 +321,7 @@ async function load(){
     document.getElementById('rule-section').style.display = '';
     if (eventData?.rule) document.getElementById('rule-textarea').value = eventData.rule;
 
-    document.getElementById('subtitle').textContent = `이벤트 ID: ${EVENT}`;
+    document.getElementById('subtitle').innerHTML = modeHTML();
     render();
 }
 
@@ -486,10 +497,21 @@ async function removeBan(character){
 // ── 추가 관리 ────────────────────────────────────────────
 let voiceChannels = [];
 
+function currentMapKey() {
+    if ((eventData?.gameType || '내전') === '론울프') return '론울프';
+    return eventData?.mapType || '루미아 섬';
+}
+function modeLabel() {
+    const gt = eventData?.gameType || '내전';
+    const tc = eventData?.teamCount || 2;
+    if (gt === '론울프')              return `론울프 (개인전) · 최대 ${tc}명`;
+    if (currentMapKey() === '코발트')  return `코발트 · ${tc}팀 (4vs4)`;
+    return `${currentMapKey()} · ${tc}팀`;
+}
+function modeHTML() { return mapIconImg(currentMapKey()) + esc(modeLabel()); }
+
 function updateMapBadge() {
-    const gt = eventData?.gameType || '';
-    const mt = eventData?.mapType  || '';
-    document.getElementById('current-map-badge').textContent = `현재: ${gt} / ${mt}`;
+    document.getElementById('current-map-badge').innerHTML = '현재: ' + modeHTML();
 }
 
 function populateTransferSelect() {

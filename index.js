@@ -215,7 +215,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     saveData();
 
     // 모든 모드: DB 이벤트 생성 (웹 폼 참가 + 관리자 페이지 공통)
-    db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount, gameType);
+    db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount, gameType, mapType);
 
     // 참가/취소 버튼 (관리는 웹 어드민 페이지에서)
     await msg.edit({ components: [

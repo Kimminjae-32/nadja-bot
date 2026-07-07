@@ -15,12 +15,12 @@ function save(data) {
 }
 
 module.exports = {
-    // 이벤트 생성 — admin_token, team_count, gameType 포함
-    createEvent(id, guildId, channelId, createdBy, teamCount, gameType) {
+    // 이벤트 생성 — admin_token, team_count, gameType, mapType 포함
+    createEvent(id, guildId, channelId, createdBy, teamCount, gameType, mapType) {
         const data = load();
         if (!data.events[id]) {
             const adminToken = crypto.randomBytes(12).toString('hex');
-            data.events[id] = { id, guildId, channelId, createdBy, teamCount: teamCount || 2, gameType: gameType || '내전', adminToken, createdAt: Date.now() };
+            data.events[id] = { id, guildId, channelId, createdBy, teamCount: teamCount || 2, gameType: gameType || '내전', mapType: mapType || null, adminToken, createdAt: Date.now() };
             save(data);
         }
         return data.events[id].adminToken;
@@ -216,6 +216,11 @@ module.exports = {
     updateEventTeamCount(eventId, teamCount) {
         const data = load();
         if (data.events[eventId]) { data.events[eventId].teamCount = teamCount; save(data); }
+    },
+
+    updateEventMapType(eventId, mapType) {
+        const data = load();
+        if (data.events[eventId]) { data.events[eventId].mapType = mapType || null; save(data); }
     },
 
     updateEventCreator(eventId, newCreatorId) {
