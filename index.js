@@ -283,7 +283,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const gameName   = (interaction.options.getString('게임') || '').trim();
                 const maxPlayers = interaction.options.getInteger('인원');
                 if (!gameName || !maxPlayers) {
-                    return await interaction.reply({ content: '❌ 기타 게임 구인은 `게임`과 `인원`을 함께 입력해주세요.\n예) `/구인 유형:🎮 기타 게임(직접 입력) 게임:발로란트 인원:5`', ephemeral: true });
+                    return await interaction.reply({ content: '❌ 다른 게임 구인은 `게임`과 `인원`을 함께 입력해주세요.\n예) `/구인 유형:🎮 다른 게임 구인 게임:발로란트 인원:5`', ephemeral: true });
                 }
                 if (maxPlayers < 1 || maxPlayers > 20) {
                     return await interaction.reply({ content: '❌ 인원은 1~20명 사이로 입력해주세요.', ephemeral: true });

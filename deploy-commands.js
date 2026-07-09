@@ -7,24 +7,24 @@ const commands = [
     // =====================
     new SlashCommandBuilder()
         .setName('구인')
-        .setDescription('구인을 시작합니다 (이터널 리턴 프리셋 또는 기타 게임 직접 입력).')
+        .setDescription('구인을 시작합니다 (다른 게임 직접 입력 또는 이터널 리턴 프리셋).')
         .addStringOption(option =>
             option.setName('유형')
                 .setDescription('게임 유형을 선택하세요')
                 .setRequired(true)
                 .addChoices(
+                    { name: '🎮 다른 게임 구인', value: '기타' },
                     { name: '일반 (루미아 섬) - 3인', value: '일반_루미아' },
                     { name: '랭크 (루미아 섬) - 3인', value: '랭크_루미아' },
-                    { name: '일반 (코발트) - 4인',    value: '일반_코발트' },
-                    { name: '🎮 기타 게임 (직접 입력)', value: '기타' }
+                    { name: '일반 (코발트) - 4인',    value: '일반_코발트' }
                 ))
         .addStringOption(option =>
             option.setName('게임')
-                .setDescription('[기타 선택 시] 게임 이름 (예: 발로란트, 오버워치, LoL)')
+                .setDescription('[다른 게임 구인 시] 게임 이름 (예: 발로란트, 오버워치, LoL)')
                 .setRequired(false))
         .addIntegerOption(option =>
             option.setName('인원')
-                .setDescription('[기타 선택 시] 모집 인원 (1~20)')
+                .setDescription('[다른 게임 구인 시] 모집 인원 (1~20)')
                 .setRequired(false)
                 .setMinValue(1)
                 .setMaxValue(20))
