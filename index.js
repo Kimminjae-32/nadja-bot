@@ -537,4 +537,8 @@ client.on(Events.InteractionCreate, async interaction => {
 
 });
 
+client.once(Events.ClientReady, () => {
+    client.user.setActivity('/사용법 | 문의 @chapseon', { type: 4 });
+});
+
 client.login(process.env.TOKEN);
