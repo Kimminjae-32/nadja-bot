@@ -300,7 +300,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const maxPlayers = mapType === '코발트' ? 4 : 3;
             await createRecruit(interaction, {
                 gameType, mapType, maxPlayers, teamCount: 2,
-                timeStr, duration, description
+                timeStr, duration, description, isGeneric: true
             });
         }
 
