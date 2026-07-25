@@ -40,7 +40,8 @@ function mmrToTier(mmr, rank) {
 }
 
 // Season API의 isCurrent가 Season9(2023)에 멈춰있어서 rank/top으로 직접 최신 시즌 탐색
-let _cachedSeasonId = null;
+// 서버 재시작 시 API 속도 제한(1/초)으로 탐색 실패 방지용 기본값 설정
+let _cachedSeasonId = 39; // Season 20 (2026) — 최신 확인값
 async function getCurrentSeasonId() {
     if (_cachedSeasonId) return _cachedSeasonId;
     const key = process.env.ER_API_KEY;
