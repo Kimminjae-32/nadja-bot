@@ -46,14 +46,14 @@ module.exports = {
     },
 
     // discord_id 중복 시 업데이트
-    addParticipant(eventId, discordId, discordNick, ingameNick, position, tier, mainCharacters) {
+    addParticipant(eventId, discordId, discordNick, ingameNick, position, tier, mainCharacters, mmr) {
         const data = load();
         if (discordId) {
             const existing = Object.values(data.participants).find(
                 p => p.event_id === eventId && p.discord_id === discordId
             );
             if (existing) {
-                Object.assign(existing, { discord_nickname: discordNick, ingame_nickname: ingameNick, position, tier: tier || null, main_characters: mainCharacters || [] });
+                Object.assign(existing, { discord_nickname: discordNick, ingame_nickname: ingameNick, position, tier: tier || null, main_characters: mainCharacters || [], mmr: mmr || null });
                 save(data);
                 return existing.cancel_token;
             }
@@ -62,7 +62,7 @@ module.exports = {
         data.participants[token] = {
             event_id: eventId, discord_id: discordId || null,
             discord_nickname: discordNick, ingame_nickname: ingameNick,
-            position, tier: tier || null, main_characters: mainCharacters || [],
+            position, tier: tier || null, main_characters: mainCharacters || [], mmr: mmr || null,
             team_num: null, cancel_token: token, submitted_at: Date.now()
         };
         save(data);
@@ -82,10 +82,10 @@ module.exports = {
         ) || null;
     },
 
-    updateByToken(token, discordNick, ingameNick, position, tier, mainCharacters) {
+    updateByToken(token, discordNick, ingameNick, position, tier, mainCharacters, mmr) {
         const data = load();
         if (data.participants[token]) {
-            Object.assign(data.participants[token], { discord_nickname: discordNick, ingame_nickname: ingameNick, position, tier: tier || null, main_characters: mainCharacters || [] });
+            Object.assign(data.participants[token], { discord_nickname: discordNick, ingame_nickname: ingameNick, position, tier: tier || null, main_characters: mainCharacters || [], mmr: mmr || null });
             save(data);
         }
     },

@@ -1,7 +1,7 @@
 const express = require('express');
 const path    = require('path');
 const db      = require('./db');
-const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES, TIERS } = require('./constants');
+const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES, TIERS, TIER_BY_MMR } = require('./constants');
 const VALID_TIERS = TIERS.map(t => t.name);
 
 let generateResultCard = null;
@@ -24,6 +24,61 @@ let saveDataFn           = null;
 let createEmbedFn        = null;
 
 const VALID_POSITIONS = ['탱커', '전사', '암살자', '스킬 딜러', '원거리 딜러', '지원가'];
+
+// ── ER API 티어 자동 조회 ──────────────────────────
+function mmrToTier(mmr, rank) {
+    if (mmr >= 8300) {
+        if (rank && rank <= 300)  return '이터니티';
+        if (rank && rank <= 1000) return '데미갓';
+        return '미스릴';
+    }
+    for (const t of TIER_BY_MMR) {
+        if (mmr >= t.min) return t.name;
+    }
+    return '아이언';
+}
+
+let _cachedSeasonId = null;
+async function getCurrentSeasonId() {
+    if (_cachedSeasonId) return _cachedSeasonId;
+    try {
+        const r = await fetch('https://open-api.bser.io/v1/data/Season',
+            { headers: { 'x-api-key': process.env.ER_API_KEY }, signal: AbortSignal.timeout(8000) });
+        const d = await r.json();
+        const seasons = Array.isArray(d.data) ? d.data : [];
+        const cur = seasons.find(s => s.isCurrent) ?? seasons.at(-1);
+        if (cur?.seasonID) _cachedSeasonId = cur.seasonID;
+    } catch {}
+    return _cachedSeasonId;
+}
+
+const _lookupCache = new Map(); // nick → { tier, mmr, rank, ts }
+const LOOKUP_TTL = 5 * 60 * 1000;
+
+async function fetchTierMMR(ingameNick) {
+    const cached = _lookupCache.get(ingameNick);
+    if (cached && Date.now() - cached.ts < LOOKUP_TTL) return cached;
+
+    const key = process.env.ER_API_KEY;
+    if (!key) return null;
+    const base = 'https://open-api.bser.io';
+    const opts = k => ({ headers: { 'x-api-key': k }, signal: AbortSignal.timeout(8000) });
+
+    const r1 = await fetch(`${base}/v1/user/nickname?query=${encodeURIComponent(ingameNick)}`, opts(key));
+    const d1 = await r1.json();
+    if (d1.code !== 200 || !d1.user) return null;
+
+    const seasonId = await getCurrentSeasonId();
+    if (!seasonId) return null;
+
+    const r2 = await fetch(`${base}/v1/rank/${d1.user.userNum}/${seasonId}/3`, opts(key));
+    const d2 = await r2.json();
+    const mmr  = d2?.userRank?.mmr  ?? 0;
+    const rank = d2?.userRank?.rank ?? null;
+    const result = { tier: mmrToTier(mmr, rank), mmr, rank, ts: Date.now() };
+    _lookupCache.set(ingameNick, result);
+    return result;
+}
 
 function errorPage(msg) {
     return `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>오류</title>
@@ -68,7 +123,7 @@ async function syncEmbedParticipants(eventId) {
 
 // POST /join
 app.post('/join', (req, res) => {
-    const { event, token, discord_id, discord_nickname, ingame_nickname, position, tier, main_characters } = req.body;
+    const { event, token, discord_id, discord_nickname, ingame_nickname, position, tier, main_characters, mmr } = req.body;
     if (!event || !discord_nickname?.trim() || !ingame_nickname?.trim())
         return res.status(400).json({ error: '모든 항목을 입력해주세요.' });
     if (!db.eventExists(event))
@@ -84,6 +139,7 @@ app.post('/join', (req, res) => {
     }
 
     const validTier = tier && VALID_TIERS.includes(tier) ? tier : null;
+    const validMmr  = mmr ? (Number(mmr) || null) : null;
 
     // 주 캐릭터 검증 (최대 3개, CHARACTERS 목록 내 값)
     let chars = [];
@@ -96,11 +152,11 @@ app.post('/join', (req, res) => {
         const existing = db.getByToken(token);
         if (!existing || existing.event_id !== event)
             return res.status(403).json({ error: '유효하지 않은 수정 토큰입니다.' });
-        db.updateByToken(token, discord_nickname.trim(), ingame_nickname.trim(), position, validTier, chars);
+        db.updateByToken(token, discord_nickname.trim(), ingame_nickname.trim(), position, validTier, chars, validMmr);
         syncEmbedParticipants(event);
         return res.json({ success: true, cancel_token: token, updated: true });
     }
-    const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position, validTier, chars);
+    const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position, validTier, chars, validMmr);
     syncEmbedParticipants(event);
     res.json({ success: true, cancel_token, updated: false });
 });
@@ -333,6 +389,20 @@ app.get('/api/is-admin', (req, res) => {
     const ev = db.getEvent(event);
     if (!ev || ev.createdBy !== discord_id) return res.json({ isAdmin: false });
     res.json({ isAdmin: true, adminUrl: `/admin?event=${event}&token=${ev.adminToken}` });
+});
+
+// GET /api/lookup-tier?nickname=... — 인게임 닉네임으로 티어/MMR 자동 조회
+app.get('/api/lookup-tier', async (req, res) => {
+    const nick = (req.query.nickname || '').trim();
+    if (!nick) return res.status(400).json({ error: '닉네임을 입력해주세요.' });
+    try {
+        const result = await fetchTierMMR(nick);
+        if (!result) return res.status(404).json({ error: '유저를 찾을 수 없어요.' });
+        res.json({ tier: result.tier, mmr: result.mmr, rank: result.rank });
+    } catch (e) {
+        if (e.name === 'TimeoutError') return res.status(504).json({ error: 'API 응답 시간이 초과됐어요.' });
+        res.status(500).json({ error: 'API 조회 중 오류가 발생했어요.' });
+    }
 });
 
 // POST /api/admin/rule  — 내전 룰 저장

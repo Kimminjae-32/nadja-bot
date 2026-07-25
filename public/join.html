@@ -138,6 +138,14 @@
         .char-chip-x { cursor:pointer; opacity:.7; line-height:1; font-size:.9rem; color:var(--accent); }
         .char-chip-x:hover { opacity:1; }
         .char-hint { font-size:.78rem; color:var(--muted); margin-top:.35rem; }
+        .nick-row { display:flex; gap:.4rem; }
+        .nick-row input { flex:1; }
+        .lookup-btn { flex-shrink:0; background:var(--accent2); border:1px solid var(--accent); border-radius:8px; color:#e0e0f0; padding:.75rem .9rem; font-size:.88rem; cursor:pointer; white-space:nowrap; transition:opacity .2s; }
+        .lookup-btn:hover { opacity:.85; }
+        .lookup-btn:disabled { opacity:.4; cursor:not-allowed; }
+        .mmr-result { font-size:.82rem; margin-top:.35rem; padding:.35rem .7rem; border-radius:6px; display:none; }
+        .mmr-result.ok { background:rgba(76,175,80,.12); border:1px solid #4caf50; color:#90ee90; }
+        .mmr-result.fail { background:rgba(233,69,96,.1); border:1px solid var(--accent); color:#ff9999; }
     </style>
 </head>
 <body>
@@ -158,7 +166,11 @@
             </div>
             <div class="field">
                 <label for="in">인게임 닉네임</label>
-                <input type="text" id="in" placeholder="이터널 리턴 인게임 닉네임" autocomplete="off">
+                <div class="nick-row">
+                    <input type="text" id="in" placeholder="이터널 리턴 인게임 닉네임" autocomplete="off">
+                    <button type="button" class="lookup-btn" id="lookup-btn" onclick="lookupTier()">티어 조회</button>
+                </div>
+                <div class="mmr-result" id="mmr-result"></div>
             </div>
             <div class="field" id="tier-field">
                 <label>현재 티어 <span style="color:var(--muted);font-weight:400;text-transform:none">(선택)</span></label>
@@ -244,10 +256,11 @@
     const eventId   = params.get('event');
     const editToken = params.get('token');
     const discordId = params.get('discord_id');
-    let selectedPos  = '';
-    let selectedTier = '';
-    let isLonewolf   = false;
+    let selectedPos   = '';
+    let selectedTier  = '';
+    let isLonewolf    = false;
     let selectedChars = [];
+    let lookedUpMmr   = null;
 
     const CHARACTERS = ['재키','아야','현우','매그너스','피오라','나딘','자히르','하트','아이솔','리 다이린','유키','혜진','쇼우','시셀라','키아라','아드리아나','쇼이치','실비아','엘마','레녹스','로지','루크','캐시','아델라','버니스','바바라','알렉스','수아','레온','일레븐','리오','윌리엄','니키','나타폰','안','이바','다니엘','제니','카밀로','클로에','요한','비앙카','셀린','에키온','마이','에이든','라우라','띠아','펠릭스','엘레나','프리야','아디나','마커스','칼라','에스텔','피올로','마르티나','헤이즈','아이작','타지아','이렘','테오도르','이안','바냐','데비&마를렌','아르다','아비게일','알론소','레니','초바메','케네스','카티야','샬럿','다르코','르노어','가넷','유민','히스이','유스티나','아슈트반','니아','슈린','헨리','블레어','미르카','펜리르','코렐라인','비형'];
     const DAK_VER = '11.5.0';
@@ -308,6 +321,42 @@
     }
 
     document.getElementById('char-search').addEventListener('input', e => renderCharGrid(e.target.value));
+
+    async function lookupTier() {
+        const nick = document.getElementById('in').value.trim();
+        if (!nick) return;
+        const btn = document.getElementById('lookup-btn');
+        const box = document.getElementById('mmr-result');
+        btn.disabled = true;
+        btn.textContent = '조회 중...';
+        box.style.display = 'none';
+        box.className = 'mmr-result';
+        try {
+            const r = await fetch(`/api/lookup-tier?nickname=${encodeURIComponent(nick)}`);
+            const d = await r.json();
+            if (d.tier) {
+                lookedUpMmr = d.mmr;
+                selectTier(d.tier);
+                const rankTxt = d.rank ? ` · ${d.rank}위` : '';
+                box.textContent = `✅ ${d.tier} · MMR ${d.mmr}${rankTxt} (자동 선택됨)`;
+                box.className = 'mmr-result ok';
+            } else {
+                box.textContent = `❌ ${d.error || '유저를 찾을 수 없어요.'}`;
+                box.className = 'mmr-result fail';
+            }
+        } catch {
+            box.textContent = '❌ 조회 중 오류가 발생했어요.';
+            box.className = 'mmr-result fail';
+        }
+        box.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '티어 조회';
+    }
+
+    document.getElementById('in').addEventListener('input', () => {
+        lookedUpMmr = null;
+        document.getElementById('mmr-result').style.display = 'none';
+    });
 
     const TIER_IMG = {
         '언랭크': null,
@@ -393,9 +442,10 @@
         btn.textContent = '처리 중...';
 
         const body = new URLSearchParams({ event: eventId, discord_nickname: dn, ingame_nickname: inn, position: selectedPos });
-        if (selectedTier) body.append('tier', selectedTier);
-        if (editToken)    body.append('token', editToken);
-        if (discordId)    body.append('discord_id', discordId);
+        if (selectedTier)  body.append('tier', selectedTier);
+        if (lookedUpMmr)   body.append('mmr', lookedUpMmr);
+        if (editToken)     body.append('token', editToken);
+        if (discordId)     body.append('discord_id', discordId);
         for (const c of selectedChars) body.append('main_characters', c);
 
         try {
