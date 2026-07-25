@@ -100,9 +100,31 @@ async function fetchTierMMR(ingameNick) {
         } catch (e) { console.warn(`[lookup-tier] rank mode=${mode} 오류:`, e.message); }
     }
 
+    // 3) 모스트 실험체 — /v1/user/stats/uid/{userId}/0 (시즌0 = 전체)
+    const { CHAR_CODE } = require('./constants');
+    let topChars = [];
+    try {
+        const ds = await go(`${base}/v1/user/stats/uid/${encodeURIComponent(userId)}/0`);
+        if (ds.code === 200 && Array.isArray(ds.userStats)) {
+            const totals = {};
+            for (const row of ds.userStats) {
+                for (const cs of row.characterStats || []) {
+                    const code = cs.characterCode;
+                    if (code) totals[code] = (totals[code] || 0) + (cs.totalGames || 0);
+                }
+            }
+            topChars = Object.entries(totals)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([code]) => CHAR_CODE[Number(code)])
+                .filter(Boolean);
+            console.log(`[lookup-tier] topChars: ${topChars.join(', ')}`);
+        }
+    } catch (e) { console.warn('[lookup-tier] stats 오류:', e.message); }
+
     console.log(`[lookup-tier] nick=${ingameNick} bestMmr=${bestMmr} rank=${bestRank}`);
     const tier = bestMmr > 0 ? mmrToTier(bestMmr, bestRank) : null;
-    const result = { found: true, tier, mmr: bestMmr, rank: bestRank, topChars: [], ts: Date.now() };
+    const result = { found: true, tier, mmr: bestMmr, rank: bestRank, topChars, ts: Date.now() };
     _lookupCache.set(ingameNick, result);
     return result;
 }
