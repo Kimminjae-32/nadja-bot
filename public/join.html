@@ -343,7 +343,7 @@
                 }
                 if (d.tier) {
                     lookedUpMmr = d.mmr;
-                    selectTier(d.tier);
+                    selectTier(d.tier, true);
                     const rankTxt  = d.rank ? ` · ${d.rank}위` : '';
                     const charTxt  = d.topChars?.length ? ` / 모스트: ${d.topChars.join(', ')}` : '';
                     box.textContent = `✅ ${d.tier} · MMR ${d.mmr}${rankTxt}${charTxt} (자동 선택됨)`;
@@ -414,7 +414,7 @@
                 if (d.discord_nickname) document.getElementById('dn').value = d.discord_nickname;
                 if (d.ingame_nickname)  document.getElementById('in').value = d.ingame_nickname;
                 if (d.position) selectPos(d.position);
-                if (d.tier)     selectTier(d.tier);
+                if (d.tier)     selectTier(d.tier, true);
                 if (d.main_characters?.length) {
                     selectedChars = d.main_characters.slice(0, 3);
                     renderCharChips();
@@ -433,8 +433,8 @@
         selectedPos = pos;
         document.querySelectorAll('.pos-btn:not(.tier-btn)').forEach(b => b.classList.toggle('on', b.dataset.pos === pos));
     }
-    function selectTier(tier) {
-        selectedTier = (selectedTier === tier) ? '' : tier;
+    function selectTier(tier, force = false) {
+        selectedTier = (!force && selectedTier === tier) ? '' : tier;
         document.querySelectorAll('.tier-btn').forEach(b => b.classList.toggle('on', b.dataset.tier === selectedTier));
     }
 
