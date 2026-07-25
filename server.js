@@ -39,22 +39,51 @@ function mmrToTier(mmr, rank) {
     return '언랭크';
 }
 
+// Season API의 isCurrent가 Season9(2023)에 멈춰있어서 rank/top으로 직접 최신 시즌 탐색
 let _cachedSeasonId = null;
 async function getCurrentSeasonId() {
     if (_cachedSeasonId) return _cachedSeasonId;
-    try {
-        const r = await fetch('https://open-api.bser.io/v1/data/Season',
-            { headers: { 'x-api-key': process.env.ER_API_KEY }, signal: AbortSignal.timeout(8000) });
-        const d = await r.json();
-        const seasons = Array.isArray(d.data) ? d.data : [];
-        const cur = seasons.find(s => s.isCurrent) ?? seasons.at(-1);
-        if (cur?.seasonID) _cachedSeasonId = cur.seasonID;
-    } catch {}
+    const key = process.env.ER_API_KEY;
+    if (!key) return null;
+    // 홀수 ID = 실제 시즌, 짝수 = 프리시즌 (Season9=ID17 기준 패턴)
+    // 확인된 최신 시즌 ID=39에서 몇 단계 위부터 탐색해 불필요한 요청 최소화
+    for (let id = 47; id >= 17; id -= 2) {
+        try {
+            const r = await fetch(`https://open-api.bser.io/v1/rank/top/${id}/3`,
+                { headers: { 'x-api-key': key }, signal: AbortSignal.timeout(5000) });
+            const d = await r.json();
+            if (d.code === 200 && d.topRanks?.length > 0) {
+                _cachedSeasonId = id;
+                console.log(`[lookup-tier] 현재 시즌 ID: ${id}`);
+                break;
+            }
+        } catch {}
+    }
     return _cachedSeasonId;
 }
 
-const _lookupCache = new Map(); // nick → { tier, mmr, rank, ts }
+const _lookupCache = new Map(); // nick → { found, tier, mmr, rank, ts }
 const LOOKUP_TTL = 5 * 60 * 1000;
+
+// rank/top 캐시 (스쿼드 모드 3 기준, 상위 1001명)
+let _topRankCache = null;
+let _topRankCacheTs = 0;
+
+async function getTopRanks(seasonId) {
+    if (_topRankCache && Date.now() - _topRankCacheTs < LOOKUP_TTL) return _topRankCache;
+    const key = process.env.ER_API_KEY;
+    if (!key) return null;
+    try {
+        const r = await fetch(`https://open-api.bser.io/v1/rank/top/${seasonId}/3`,
+            { headers: { 'x-api-key': key }, signal: AbortSignal.timeout(8000) });
+        const d = await r.json();
+        if (d.code === 200 && d.topRanks) {
+            _topRankCache = d.topRanks;
+            _topRankCacheTs = Date.now();
+        }
+    } catch (e) { console.warn('[lookup-tier] rank/top 오류:', e.message); }
+    return _topRankCache;
+}
 
 async function fetchTierMMR(ingameNick) {
     const cached = _lookupCache.get(ingameNick);
@@ -63,49 +92,35 @@ async function fetchTierMMR(ingameNick) {
     const key = process.env.ER_API_KEY;
     if (!key) return null;
     const base = 'https://open-api.bser.io';
-    const hdr = { headers: { 'x-api-key': key }, signal: AbortSignal.timeout(8000) };
 
-    // 1) nick → userNum
-    const r1 = await fetch(`${base}/v1/user/nickname?query=${encodeURIComponent(ingameNick)}`, hdr);
-    const d1 = await r1.json();
-    if (d1.code !== 200 || !d1.user) return null;
-    const userNum = d1.user.userNum;
+    // 1) 닉네임 존재 여부 확인
+    let nickFound = false;
+    try {
+        const d1 = await fetch(`${base}/v1/user/nickname?query=${encodeURIComponent(ingameNick)}`,
+            { headers: { 'x-api-key': key }, signal: AbortSignal.timeout(8000) }).then(r => r.json());
+        nickFound = d1.code === 200 && !!d1.user;
+    } catch (e) { console.warn('[lookup-tier] nickname 조회 오류:', e.message); }
 
-    const seasonId = await getCurrentSeasonId();
-    if (!seasonId) return null;
-
-    // 2) rank — 모드 3(스쿼드)→2(듀오)→1(솔로) 순서로 시도, 데이터 있으면 중단
-    let bestMmr = 0, bestRank = null;
-    for (const mode of [3, 2, 1]) {
-        try {
-            const r = await fetch(`${base}/v1/rank/${userNum}/${seasonId}/${mode}`, hdr);
-            const d = await r.json();
-            const mmr = d?.userRank?.mmr ?? 0;
-            if (mmr > 0) { bestMmr = mmr; bestRank = d.userRank.rank ?? null; break; }
-        } catch {}
+    if (!nickFound) {
+        console.log(`[lookup-tier] 닉네임 없음: ${ingameNick}`);
+        return null; // 존재하지 않는 플레이어
     }
 
-    // 3) 모스트 실험체 (characterStats)
-    let topChars = [];
-    try {
-        const { CHAR_CODE } = require('./constants');
-        const rc = await fetch(`${base}/v1/character/stats/${userNum}/${seasonId}`, hdr);
-        const dc = await rc.json();
-        if (dc.code === 200 && Array.isArray(dc.characterStats)) {
-            const totals = {};
-            for (const s of dc.characterStats) {
-                const code = s.characterCode;
-                if (code) totals[code] = (totals[code] || 0) + (s.totalGames || 0);
-            }
-            topChars = Object.entries(totals)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 3)
-                .map(([code]) => CHAR_CODE[Number(code)])
-                .filter(Boolean);
+    // 2) 상위 1001명 랭킹 목록에서 닉네임 검색 (API 무료 티어 한계)
+    const seasonId = await getCurrentSeasonId();
+    let bestMmr = 0, bestRank = null;
+    if (seasonId) {
+        const topRanks = await getTopRanks(seasonId);
+        if (topRanks) {
+            const found = topRanks.find(p => p.nickname === ingameNick);
+            if (found) { bestMmr = found.mmr; bestRank = found.rank; }
         }
-    } catch {}
+    }
 
-    const result = { tier: mmrToTier(bestMmr, bestRank), mmr: bestMmr, rank: bestRank, topChars, ts: Date.now() };
+    console.log(`[lookup-tier] nick=${ingameNick} mmr=${bestMmr} rank=${bestRank}`);
+    // tier=null → 플레이어 확인됐으나 상위 랭킹 밖 (수동 선택 필요)
+    const tier = bestMmr > 0 ? mmrToTier(bestMmr, bestRank) : null;
+    const result = { found: true, tier, mmr: bestMmr, rank: bestRank, topChars: [], ts: Date.now() };
     _lookupCache.set(ingameNick, result);
     return result;
 }
@@ -428,7 +443,8 @@ app.get('/api/lookup-tier', async (req, res) => {
     try {
         const result = await fetchTierMMR(nick);
         if (!result) return res.status(404).json({ error: '유저를 찾을 수 없어요.' });
-        res.json({ tier: result.tier, mmr: result.mmr, rank: result.rank, topChars: result.topChars || [] });
+        // tier=null → 플레이어 확인됐으나 순위 데이터 없음 (수동 선택 필요)
+        res.json({ found: result.found, tier: result.tier, mmr: result.mmr, rank: result.rank, topChars: result.topChars || [] });
     } catch (e) {
         if (e.name === 'TimeoutError') return res.status(504).json({ error: 'API 응답 시간이 초과됐어요.' });
         res.status(500).json({ error: 'API 조회 중 오류가 발생했어요.' });
