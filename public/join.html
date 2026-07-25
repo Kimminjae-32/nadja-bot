@@ -337,8 +337,15 @@
             if (d.tier) {
                 lookedUpMmr = d.mmr;
                 selectTier(d.tier);
-                const rankTxt = d.rank ? ` · ${d.rank}위` : '';
-                box.textContent = `✅ ${d.tier} · MMR ${d.mmr}${rankTxt} (자동 선택됨)`;
+                // 모스트 실험체 자동 채우기
+                if (d.topChars?.length) {
+                    selectedChars = d.topChars.filter(c => CHARACTERS.includes(c)).slice(0, 3);
+                    renderCharChips();
+                    renderCharGrid(document.getElementById('char-search')?.value || '');
+                }
+                const rankTxt  = d.rank ? ` · ${d.rank}위` : '';
+                const charTxt  = d.topChars?.length ? ` / 모스트: ${d.topChars.join(', ')}` : '';
+                box.textContent = `✅ ${d.tier} · MMR ${d.mmr}${rankTxt}${charTxt} (자동 선택됨)`;
                 box.className = 'mmr-result ok';
             } else {
                 box.textContent = `❌ ${d.error || '유저를 찾을 수 없어요.'}`;

@@ -27,6 +27,7 @@ const VALID_POSITIONS = ['탱커', '전사', '암살자', '스킬 딜러', '원�
 
 // ── ER API 티어 자동 조회 ──────────────────────────
 function mmrToTier(mmr, rank) {
+    if (!mmr) return '언랭크';
     if (mmr >= 8300) {
         if (rank && rank <= 300)  return '이터니티';
         if (rank && rank <= 1000) return '데미갓';
@@ -35,7 +36,7 @@ function mmrToTier(mmr, rank) {
     for (const t of TIER_BY_MMR) {
         if (mmr >= t.min) return t.name;
     }
-    return '아이언';
+    return '언랭크';
 }
 
 let _cachedSeasonId = null;
@@ -62,20 +63,49 @@ async function fetchTierMMR(ingameNick) {
     const key = process.env.ER_API_KEY;
     if (!key) return null;
     const base = 'https://open-api.bser.io';
-    const opts = k => ({ headers: { 'x-api-key': k }, signal: AbortSignal.timeout(8000) });
+    const hdr = { headers: { 'x-api-key': key }, signal: AbortSignal.timeout(8000) };
 
-    const r1 = await fetch(`${base}/v1/user/nickname?query=${encodeURIComponent(ingameNick)}`, opts(key));
+    // 1) nick → userNum
+    const r1 = await fetch(`${base}/v1/user/nickname?query=${encodeURIComponent(ingameNick)}`, hdr);
     const d1 = await r1.json();
     if (d1.code !== 200 || !d1.user) return null;
+    const userNum = d1.user.userNum;
 
     const seasonId = await getCurrentSeasonId();
     if (!seasonId) return null;
 
-    const r2 = await fetch(`${base}/v1/rank/${d1.user.userNum}/${seasonId}/3`, opts(key));
-    const d2 = await r2.json();
-    const mmr  = d2?.userRank?.mmr  ?? 0;
-    const rank = d2?.userRank?.rank ?? null;
-    const result = { tier: mmrToTier(mmr, rank), mmr, rank, ts: Date.now() };
+    // 2) rank — 모드 3(스쿼드)→2(듀오)→1(솔로) 순서로 시도, 데이터 있으면 중단
+    let bestMmr = 0, bestRank = null;
+    for (const mode of [3, 2, 1]) {
+        try {
+            const r = await fetch(`${base}/v1/rank/${userNum}/${seasonId}/${mode}`, hdr);
+            const d = await r.json();
+            const mmr = d?.userRank?.mmr ?? 0;
+            if (mmr > 0) { bestMmr = mmr; bestRank = d.userRank.rank ?? null; break; }
+        } catch {}
+    }
+
+    // 3) 모스트 실험체 (characterStats)
+    let topChars = [];
+    try {
+        const { CHAR_CODE } = require('./constants');
+        const rc = await fetch(`${base}/v1/character/stats/${userNum}/${seasonId}`, hdr);
+        const dc = await rc.json();
+        if (dc.code === 200 && Array.isArray(dc.characterStats)) {
+            const totals = {};
+            for (const s of dc.characterStats) {
+                const code = s.characterCode;
+                if (code) totals[code] = (totals[code] || 0) + (s.totalGames || 0);
+            }
+            topChars = Object.entries(totals)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([code]) => CHAR_CODE[Number(code)])
+                .filter(Boolean);
+        }
+    } catch {}
+
+    const result = { tier: mmrToTier(bestMmr, bestRank), mmr: bestMmr, rank: bestRank, topChars, ts: Date.now() };
     _lookupCache.set(ingameNick, result);
     return result;
 }
@@ -398,7 +428,7 @@ app.get('/api/lookup-tier', async (req, res) => {
     try {
         const result = await fetchTierMMR(nick);
         if (!result) return res.status(404).json({ error: '유저를 찾을 수 없어요.' });
-        res.json({ tier: result.tier, mmr: result.mmr, rank: result.rank });
+        res.json({ tier: result.tier, mmr: result.mmr, rank: result.rank, topChars: result.topChars || [] });
     } catch (e) {
         if (e.name === 'TimeoutError') return res.status(504).json({ error: 'API 응답 시간이 초과됐어요.' });
         res.status(500).json({ error: 'API 조회 중 오류가 발생했어요.' });
