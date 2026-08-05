@@ -101,32 +101,9 @@ async function fetchTierMMR(ingameNick) {
         } catch (e) { console.warn(`[lookup-tier] rank mode=${mode} 오류:`, e.message); }
     }
 
-    // 3) 모스트 실험체 — 랭크 모드(matchingMode=2)만 집계
-    const { CHAR_CODE } = require('./constants');
-    let topChars = [];
-    try {
-        const ds = await go(`${base}/v1/user/stats/uid/${encodeURIComponent(userId)}/0`);
-        if (ds.code === 200 && Array.isArray(ds.userStats)) {
-            const totals = {};
-            for (const row of ds.userStats) {
-                if (row.matchingMode !== 2) continue; // 랭크 모드만
-                for (const cs of row.characterStats || []) {
-                    const code = cs.characterCode;
-                    if (code) totals[code] = (totals[code] || 0) + (cs.totalGames || 0);
-                }
-            }
-            topChars = Object.entries(totals)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 3)
-                .map(([code]) => CHAR_CODE[Number(code)])
-                .filter(Boolean);
-            console.log(`[lookup-tier] topChars: ${topChars.join(', ')}`);
-        }
-    } catch (e) { console.warn('[lookup-tier] stats 오류:', e.message); }
-
     console.log(`[lookup-tier] nick=${ingameNick} bestMmr=${bestMmr} rank=${bestRank}`);
     const tier = bestMmr > 0 ? mmrToTier(bestMmr, bestRank) : null;
-    const result = { found: true, tier, mmr: bestMmr, rank: bestRank, topChars, ts: Date.now() };
+    const result = { found: true, tier, mmr: bestMmr, rank: bestRank, ts: Date.now() };
     _lookupCache.set(ingameNick, result);
     return result;
 }
@@ -459,7 +436,7 @@ app.get('/api/lookup-tier', async (req, res) => {
         const result = await fetchTierMMR(nick);
         if (!result) return res.status(404).json({ error: '유저를 찾을 수 없어요.' });
         // tier=null → 플레이어 확인됐으나 순위 데이터 없음 (수동 선택 필요)
-        res.json({ found: result.found, tier: result.tier, mmr: result.mmr, rank: result.rank, topChars: result.topChars || [] });
+        res.json({ found: result.found, tier: result.tier, mmr: result.mmr, rank: result.rank });
     } catch (e) {
         if (e.name === 'TimeoutError') return res.status(504).json({ error: 'API 응답 시간이 초과됐어요.' });
         res.status(500).json({ error: 'API 조회 중 오류가 발생했어요.' });

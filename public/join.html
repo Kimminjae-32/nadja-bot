@@ -335,22 +335,14 @@
             const r = await fetch(`/api/lookup-tier?nickname=${encodeURIComponent(nick)}`);
             const d = await r.json();
             if (r.ok && d.found) {
-                // 모스트 실험체 자동 선택
-                if (d.topChars?.length) {
-                    selectedChars = d.topChars.filter(c => CHARACTERS.includes(c)).slice(0, 3);
-                    renderCharChips();
-                    renderCharGrid(document.getElementById('char-search')?.value || '');
-                }
                 if (d.tier) {
                     lookedUpMmr = d.mmr;
                     selectTier(d.tier, true);
-                    const rankTxt  = d.rank ? ` · ${d.rank}위` : '';
-                    const charTxt  = d.topChars?.length ? ` / 모스트: ${d.topChars.join(', ')}` : '';
-                    box.textContent = `✅ ${d.tier} · MMR ${d.mmr}${rankTxt}${charTxt} (자동 선택됨)`;
+                    const rankTxt = d.rank ? ` · ${d.rank}위` : '';
+                    box.textContent = `✅ ${d.tier} · MMR ${d.mmr}${rankTxt} (자동 선택됨)`;
                     box.className = 'mmr-result ok';
                 } else {
-                    const charTxt = d.topChars?.length ? ` / 모스트: ${d.topChars.join(', ')}` : '';
-                    box.textContent = `✅ 닉네임 확인됨${charTxt} — 티어를 직접 선택해주세요`;
+                    box.textContent = `✅ 닉네임 확인됨 — 티어를 직접 선택해주세요`;
                     box.className = 'mmr-result ok';
                 }
             } else {
