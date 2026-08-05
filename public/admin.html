@@ -87,6 +87,7 @@
 
     <div class="actions">
         <button class="btn btn-primary" id="shuffle-btn">🎲 자동 배정</button>
+        <button class="btn btn-primary" id="shuffle-tier-btn">⚖️ 팀 섞기(티어)</button>
         <button class="btn btn-secondary" id="char-btn">🃏 실험체 랜덤 배정</button>
         <button class="btn btn-success" id="send-btn">📤 디스코드에 결과 전송</button>
         <button class="btn btn-secondary" id="notify-btn">📣 내전 시작 알림</button>
@@ -291,6 +292,7 @@ async function load(){
 
     const isTeamMode = eventData?.gameType === '내전';
     document.getElementById('shuffle-btn').style.display = isTeamMode ? '' : 'none';
+    document.getElementById('shuffle-tier-btn').style.display = isTeamMode ? '' : 'none';
     document.getElementById('ban-section').style.display = isTeamMode ? '' : 'none';
     document.getElementById('draft-section').style.display = isTeamMode ? '' : 'none';
     document.getElementById('extra-section').style.display = '';
@@ -719,6 +721,17 @@ document.getElementById('shuffle-btn').addEventListener('click', async ()=>{
     render();
     btn.disabled=false;
     toast('자동 배정 완료!');
+});
+
+document.getElementById('shuffle-tier-btn').addEventListener('click', async ()=>{
+    if(!confirm(`MMR 기준으로 ${eventData?.teamCount||2}팀을 밸런스 배정할까요?\n(상위권이 각 팀에 고루 분배됩니다)`)) return;
+    const btn = document.getElementById('shuffle-tier-btn');
+    btn.disabled=true;
+    const data = await api('/api/admin/shuffle-tier', { event:EVENT, token:TOKEN });
+    participants = data.participants;
+    render();
+    btn.disabled=false;
+    toast('티어 밸런스 배정 완료!');
 });
 
 document.getElementById('char-btn').addEventListener('click', async ()=>{

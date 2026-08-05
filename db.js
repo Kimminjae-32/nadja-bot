@@ -109,6 +109,26 @@ module.exports = {
         save(data);
     },
 
+    // MMR 기준 스네이크 드래프트 배정 — 상위권이 각 팀에 고루 분배
+    // 예) 6명 2팀: 1위→팀1, 2위→팀2, 3위→팀2, 4위→팀1, 5위→팀1, 6위→팀2
+    shuffleByTier(eventId, teamCount) {
+        const data = load();
+        const list = Object.values(data.participants).filter(p => p.event_id === eventId);
+        const numTeams = teamCount || 2;
+        // MMR 내림차순 정렬, 동점은 랜덤
+        const sorted = [...list].sort((a, b) => (b.mmr || 0) - (a.mmr || 0) || Math.random() - 0.5);
+        // 스네이크 드래프트: 0→1→...→N-1→N-1→...→1→0→0→...
+        let teamIdx = 0, dir = 1;
+        for (const p of sorted) {
+            data.participants[p.cancel_token].team_num = teamIdx + 1;
+            const next = teamIdx + dir;
+            if (next >= numTeams)      { dir = -1; }
+            else if (next < 0)         { dir = 1; }
+            teamIdx += dir;
+        }
+        save(data);
+    },
+
     deleteByToken(token) {
         const data = load(); delete data.participants[token]; save(data);
     },

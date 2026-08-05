@@ -264,6 +264,15 @@ app.post('/api/admin/shuffle', (req, res) => {
     res.json({ success: true, participants: db.getParticipants(event) });
 });
 
+// POST /api/admin/shuffle-tier — MMR 기준 스네이크 드래프트 배정
+app.post('/api/admin/shuffle-tier', (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const ev = db.getEvent(event);
+    db.shuffleByTier(event, ev.teamCount || 2);
+    res.json({ success: true, participants: db.getParticipants(event) });
+});
+
 // POST /api/admin/assign  { event, token, cancel_token, team_num }
 app.post('/api/admin/assign', (req, res) => {
     const { event, token, cancel_token, team_num } = req.body;
