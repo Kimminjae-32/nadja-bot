@@ -101,7 +101,7 @@ async function fetchTierMMR(ingameNick) {
         } catch (e) { console.warn(`[lookup-tier] rank mode=${mode} 오류:`, e.message); }
     }
 
-    // 3) 모스트 실험체 — /v1/user/stats/uid/{userId}/0 (시즌0 = 전체)
+    // 3) 모스트 실험체 — 랭크 모드(matchingMode=2)만 집계
     const { CHAR_CODE } = require('./constants');
     let topChars = [];
     try {
@@ -109,6 +109,7 @@ async function fetchTierMMR(ingameNick) {
         if (ds.code === 200 && Array.isArray(ds.userStats)) {
             const totals = {};
             for (const row of ds.userStats) {
+                if (row.matchingMode !== 2) continue; // 랭크 모드만
                 for (const cs of row.characterStats || []) {
                     const code = cs.characterCode;
                     if (code) totals[code] = (totals[code] || 0) + (cs.totalGames || 0);
