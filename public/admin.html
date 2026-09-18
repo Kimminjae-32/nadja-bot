@@ -296,14 +296,15 @@ async function load(){
     participants = data.participants;
 
     const isTeamMode = eventData?.gameType === '내전';
-    document.getElementById('shuffle-btn').style.display = isTeamMode ? '' : 'none';
-    document.getElementById('shuffle-tier-btn').style.display = isTeamMode ? '' : 'none';
+    // 팀 배정 구역: 내전(팀 모드)에서만
+    document.getElementById('group-team').style.display = isTeamMode ? '' : 'none';
     document.getElementById('extra-section').style.display = '';
     document.getElementById('voice-group').style.display = isTeamMode ? '' : 'none';
-    const isTourney = eventData?.mapType === '코발트 토너먼트';
-    document.getElementById('chars-per-player-wrap').style.display = (isTeamMode && isCobaltMode()) ? 'inline-flex' : 'none';
-    // 토너먼트는 경기별 실험체 배정만 사용 — 상단 실험체 구역 숨김
-    document.getElementById('group-char').style.display = isTourney ? 'none' : '';
+    // 실험체 구역(팀 공용 풀): 일반 코발트에서만. 토너먼트는 경기별 배정 사용, 루미아/론울프는 없음
+    const isPlainCobalt = isTeamMode && eventData?.mapType === '코발트';
+    document.getElementById('group-char').style.display = isPlainCobalt ? '' : 'none';
+    document.getElementById('chars-per-player-wrap').style.display = isPlainCobalt ? 'inline-flex' : 'none';
+    if (!isPlainCobalt) document.getElementById('char-results').style.display = 'none';
     document.getElementById('tourney-section').style.display = (isTeamMode && eventData?.mapType === '코발트 토너먼트') ? '' : 'none';
     renderTournament();
     updateMapBadge();
