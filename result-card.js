@@ -243,7 +243,9 @@ async function generateBracketCard(tournament, teamMap) {
     // 슬롯 위치: pos[r][m][s] = { x, y, side }  (s: 0=teamA, 1=teamB)
     const leavesPerHalf = rounds[0].length;           // 반쪽 리프 수 = 1라운드 경기 수 (R≥2), R=1이면 1
     const halfLeaves = R === 1 ? 1 : leavesPerHalf;
-    const H = TITLE_H + PAD + halfLeaves * LEAF_H + PAD;
+    const tp = tournament.thirdPlace || null;
+    const TP_H = tp ? 150 : 0;   // 3·4위전 영역 높이
+    const H = TITLE_H + PAD + halfLeaves * LEAF_H + PAD + TP_H;
     const colW = BOX_W + GAP;
     const W = PAD * 2 + 2 * R * colW + CH_W;
     const midX = W / 2;
@@ -369,6 +371,29 @@ async function generateBracketCard(tournament, teamMap) {
     ctx.font = `bold 34px ${F}`;
     ctx.fillText(champ !== null ? `${champ}팀` : '미정', midX, cy + 72);
     ctx.textAlign = 'left';
+
+    // ── 3·4위전 (준결승 패자전) ──
+    if (tp) {
+        const ty = H - TP_H + 10;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#9a9ab5';
+        ctx.font = `bold 18px ${F}`;
+        ctx.fillText('3·4위전', midX, ty + 14);
+        const gap = 30;
+        const ax = midX - gap / 2 - BOX_W, bx = midX + gap / 2;
+        const by = ty + 28;
+        const fakeMatch = { teamA: tp.teamA, teamB: tp.teamB, winner: tp.winner };
+        drawSlot({ x: ax, y: by + BOX_H / 2 }, tp.teamA, fakeMatch, 1);
+        drawSlot({ x: bx, y: by + BOX_H / 2 }, tp.teamB, fakeMatch, 1);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#6a6a80';
+        ctx.font = `bold 16px ${F}`;
+        ctx.fillText('vs', midX, by + BOX_H / 2 + 6);
+        ctx.fillStyle = tp.winner !== null ? '#cd7f32' : '#55556a';
+        ctx.font = `bold 20px ${F}`;
+        ctx.fillText(tp.winner !== null ? `3위  ${tp.winner}팀` : '3위  미정', midX, by + BOX_H + 32);
+        ctx.textAlign = 'left';
+    }
 
     return canvas.toBuffer('image/png');
 }

@@ -329,7 +329,7 @@ module.exports = {
     setMatchWinner(eventId, round, idx, teamNum) {
         const data = load();
         const t = data.events[eventId]?.tournament;
-        const m = t?.rounds[round]?.[idx];
+        const m = round === 'third' ? t?.thirdPlace : t?.rounds[round]?.[idx];
         if (!m) return { error: '경기를 찾을 수 없어요.' };
         if (teamNum !== null && teamNum !== m.teamA && teamNum !== m.teamB) return { error: '해당 경기의 팀이 아니에요.' };
         m.winner = teamNum;
@@ -340,7 +340,8 @@ module.exports = {
 
     setMatchChars(eventId, round, idx, chars) {
         const data = load();
-        const m = data.events[eventId]?.tournament?.rounds[round]?.[idx];
+        const t = data.events[eventId]?.tournament;
+        const m = round === 'third' ? t?.thirdPlace : t?.rounds[round]?.[idx];
         if (!m) return null;
         m.chars = chars;
         save(data);
@@ -372,7 +373,23 @@ function propagateTournament(t) {
             }
         }
     }
-    const final = t.rounds[t.rounds.length - 1][0];
+    const R = t.rounds.length;
+    const final = t.rounds[R - 1][0];
     t.champion = final.winner;
+
+    // 3·4위전: 준결승(R-2 라운드) 패자끼리 — 4팀 이상일 때만
+    if (R >= 2) {
+        const loser = m => (m.teamA !== null && m.teamB !== null && m.winner !== null) ? (m.winner === m.teamA ? m.teamB : m.teamA) : null;
+        const semis = t.rounds[R - 2];
+        const la = loser(semis[0]), lb = loser(semis[1]);
+        if (!t.thirdPlace) t.thirdPlace = { teamA: null, teamB: null, winner: null, chars: null };
+        const tp = t.thirdPlace;
+        if (la !== tp.teamA || lb !== tp.teamB) { tp.teamA = la; tp.teamB = lb; tp.chars = null; }
+        if (tp.teamA === null || tp.teamB === null || (tp.winner !== tp.teamA && tp.winner !== tp.teamB)) tp.winner = null;
+        t.third = tp.winner;
+    } else {
+        t.thirdPlace = null; t.third = null;
+    }
+
     t.status = final.winner !== null ? 'completed' : 'in_progress';
 }

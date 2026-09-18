@@ -537,7 +537,7 @@ function renderTournament(force){
     const useMatchChars = document.getElementById('tourney-chars-toggle').checked || t.rounds.some(ms=>ms.some(m=>m.chars));
     document.getElementById('tourney-chars-toggle').checked = useMatchChars;
     document.getElementById('tourney-status').innerHTML = t.status==='completed'
-        ? `<span style="color:var(--green)">우승: ${t.champion}팀</span> · ${teamMembersText(t.champion)}`
+        ? `<span style="color:var(--green)">우승: ${t.champion}팀</span> · ${teamMembersText(t.champion)}${t.third!==null?` &nbsp;·&nbsp; <span style="color:#cd7f32">3위: ${t.third}팀</span>`:''}`
         : '진행 중 — 각 경기의 승리 팀을 클릭하세요';
 
     const teamHtml = (m, r, i, tn) => {
@@ -548,7 +548,7 @@ function renderTournament(force){
         const canPick = m.teamA!==null && m.teamB!==null;
         return `<div class="match-team ${cls}">
             <span class="match-team-name" style="color:${color}">${tn}팀 <span class="match-team-sub">${teamMembersText(tn)}</span></span>
-            ${canPick ? `<button class="btn btn-secondary btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="setWinner(${r},${i},${m.winner===tn?'null':tn})">${m.winner===tn?'취소':'승'}</button>` : ''}
+            ${canPick ? `<button class="btn btn-secondary btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="setWinner('${r}',${i},${m.winner===tn?'null':tn})">${m.winner===tn?'취소':'승'}</button>` : ''}
         </div>`;
     };
     const charsHtml = m => {
@@ -556,10 +556,7 @@ function renderTournament(force){
         return `<div class="match-chars">${Object.entries(m.chars).map(([tn,list])=>`<div><strong>${tn}팀</strong> ${list.map(esc).join(' · ')}</div>`).join('')}</div>`;
     };
 
-    document.getElementById('tourney-bracket').innerHTML = t.rounds.map((matches,r)=>`
-        <div class="bracket-round">
-            <div class="bracket-round-title">${roundName(r)}</div>
-            ${matches.map((m,i)=>`
+    const matchCard = (m, r, i) => `
                 <div class="match">
                     ${teamHtml(m,r,i,m.teamA)}
                     ${teamHtml(m,r,i,m.teamB)}
@@ -568,11 +565,25 @@ function renderTournament(force){
                         <span style="font-size:.75rem;color:var(--muted)">인당</span>
                         <input type="number" class="num-input" id="mc-${r}-${i}" min="1" max="10" value="3">
                         <span style="font-size:.75rem;color:var(--muted)">캐릭</span>
-                        <button class="btn btn-secondary btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="assignMatchChars(${r},${i})">실험체 배정</button>
+                        <button class="btn btn-secondary btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="assignMatchChars('${r}',${i})">실험체 배정</button>
                     </div>` : ''}
                     ${charsHtml(m)}
-                </div>`).join('')}
+                </div>`;
+
+    let html = t.rounds.map((matches,r)=>`
+        <div class="bracket-round">
+            <div class="bracket-round-title">${roundName(r)}</div>
+            ${matches.map((m,i)=>matchCard(m,r,i)).join('')}
         </div>`).join('');
+    // 3·4위전 — 준결승 패자끼리 (4팀 이상)
+    if(t.thirdPlace){
+        html += `
+        <div class="bracket-round" style="border-left:1px dashed var(--border);padding-left:1.2rem">
+            <div class="bracket-round-title">3·4위전${t.third!==null?` · 3위 ${t.third}팀`:''}</div>
+            ${matchCard(t.thirdPlace,'third',0)}
+        </div>`;
+    }
+    document.getElementById('tourney-bracket').innerHTML = html;
 }
 
 async function refreshTournament(){

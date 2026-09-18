@@ -420,7 +420,7 @@ app.post('/api/admin/tournament/start', (req, res) => {
 app.post('/api/admin/tournament/winner', (req, res) => {
     const { event, token, round, match, teamNum } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
-    const r = db.setMatchWinner(event, Number(round), Number(match), teamNum === null ? null : Number(teamNum));
+    const r = db.setMatchWinner(event, round === 'third' ? 'third' : Number(round), Number(match), teamNum === null ? null : Number(teamNum));
     if (r.error) return res.status(400).json(r);
     res.json(r);
 });
@@ -429,7 +429,8 @@ app.post('/api/admin/tournament/winner', (req, res) => {
 app.post('/api/admin/tournament/match-chars', (req, res) => {
     const { event, token, round, match, charsPerPlayer } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
-    const m = db.getTournament(event)?.rounds[Number(round)]?.[Number(match)];
+    const t = db.getTournament(event);
+    const m = round === 'third' ? t?.thirdPlace : t?.rounds[Number(round)]?.[Number(match)];
     if (!m) return res.status(400).json({ error: '경기를 찾을 수 없어요.' });
     if (m.teamA === null || m.teamB === null) return res.status(400).json({ error: '아직 대진이 정해지지 않았어요.' });
     const perPlayer = Math.max(1, Number(charsPerPlayer) || 1);
@@ -442,7 +443,7 @@ app.post('/api/admin/tournament/match-chars', (req, res) => {
         if (need > pool.length) return res.status(400).json({ error: `${tn}팀에 필요한 실험체 ${need}개가 전체 ${pool.length}개보다 많아요.` });
         chars[tn] = [...pool].sort(() => Math.random() - 0.5).slice(0, need);
     }
-    db.setMatchChars(event, Number(round), Number(match), chars);
+    db.setMatchChars(event, round === 'third' ? 'third' : Number(round), Number(match), chars);
     res.json({ success: true, chars });
 });
 
@@ -498,6 +499,11 @@ app.post('/api/admin/tournament/send-discord', async (req, res) => {
             });
             embed.addFields({ name: roundName(r), value: lines.join('\n') || '-' });
         });
+        if (t.thirdPlace) {
+            const tp = t.thirdPlace;
+            const vs = `${teamLabel(tp.teamA)} vs ${teamLabel(tp.teamB)}`;
+            embed.addFields({ name: '3·4위전', value: tp.winner !== null ? `${vs} → **${tp.winner}팀 3위**` : vs });
+        }
         const teamNums = [...new Set(participants.filter(p => p.team_num).map(p => p.team_num))].sort((a, b) => a - b);
         embed.addFields({ name: '팀 구성', value: teamNums.map(tn => `${teamLabel(tn)}: ${teamMembers(tn)}`).join('\n').slice(0, 1024) });
         await channel.send({ embeds: [embed] });
