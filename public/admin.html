@@ -156,7 +156,10 @@
 
     <!-- 실험체 배정 결과 -->
     <div id="char-results" style="display:none;margin-top:1.5rem">
-        <h2 style="font-size:1.1rem;margin-bottom:.75rem">실험체 배정 결과</h2>
+        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
+            <h2 style="font-size:1.1rem">실험체 배정 결과</h2>
+            <button class="btn btn-success btn-sm" id="char-send-btn" onclick="sendCharPools()">디스코드에 공지</button>
+        </div>
         <div class="teams-grid" id="char-grid"></div>
     </div>
 
@@ -568,6 +571,7 @@ function renderTournament(force){
                         <button class="btn btn-secondary btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="assignMatchChars('${r}',${i})">실험체 배정</button>
                     </div>` : ''}
                     ${charsHtml(m)}
+                    ${m.teamA!==null && m.teamB!==null ? `<div style="margin-top:.4rem"><button class="btn btn-success btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="sendMatch('${r}',${i})">디스코드 공지${m.chars?' (실험체 포함)':''}</button></div>` : ''}
                 </div>`;
 
     let html = t.rounds.map((matches,r)=>`
@@ -842,12 +846,29 @@ document.getElementById('char-btn').addEventListener('click', async ()=>{
         }
         html+='</div>';
     }
+    // 공지용으로 마지막 팀 공용 풀 저장
+    _lastCharPools = data.charsPerPlayer ? Object.fromEntries(Object.entries(teams).filter(([,l])=>l.length).map(([tn,l])=>[tn, l.flatMap(a=>a.characters||[a.character])])) : null;
+    document.getElementById('char-send-btn').style.display = _lastCharPools ? '' : 'none';
     const charResults = document.getElementById('char-results');
     document.getElementById('char-grid').innerHTML = html;
     charResults.style.display='block';
     charResults.scrollIntoView({ behavior:'smooth' });
     toast('실험체 배정 완료!');
 });
+
+let _lastCharPools = null;
+async function sendCharPools(){
+    if(!_lastCharPools){ toast('먼저 실험체를 배정해주세요', true); return; }
+    const btn = document.getElementById('char-send-btn'); btn.disabled = true;
+    const data = await api('/api/admin/random-chars/send', { event:EVENT, token:TOKEN, pools:_lastCharPools });
+    btn.disabled = false;
+    data.success ? toast('디스코드에 공지했어요!') : toast('전송 실패: '+data.error, true);
+}
+
+async function sendMatch(round, match){
+    const data = await api('/api/admin/tournament/match-send', { event:EVENT, token:TOKEN, round, match });
+    data.success ? toast('디스코드에 공지했어요!') : toast('전송 실패: '+data.error, true);
+}
 
 document.getElementById('send-btn').addEventListener('click', async ()=>{
     const assigned = participants.filter(p=>p.team_num).length;

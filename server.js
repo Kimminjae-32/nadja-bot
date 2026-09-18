@@ -4,9 +4,9 @@ const db      = require('./db');
 const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES, TIERS, TIER_BY_MMR } = require('./constants');
 const VALID_TIERS = TIERS.map(t => t.name);
 
-let generateResultCard = null, generateBracketCard = null;
+let generateResultCard = null, generateBracketCard = null, generateCharPoolCard = null;
 try {
-    ({ generateResultCard, generateBracketCard } = require('./result-card'));
+    ({ generateResultCard, generateBracketCard, generateCharPoolCard } = require('./result-card'));
 } catch (e) {
     console.warn('[result-card] canvas 미설치 — 이미지 카드 비활성화. npm install @napi-rs/canvas');
 }
@@ -511,6 +511,80 @@ app.post('/api/admin/tournament/send-discord', async (req, res) => {
     } catch (e) {
         res.status(500).json({ error: '전송 실패: ' + e.message });
     }
+});
+
+// ── 실험체 배정 결과 디스코드 공지 (이미지 카드 + 팀원 목록) ──
+async function sendCharPoolAnnouncement(ev, title, groups, footer) {
+    const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+    const channel = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+    if (!channel) throw new Error('채널을 찾을 수 없습니다.');
+    const participants = db.getParticipants(ev.id);
+    const members = tn => participants.filter(p => p.team_num === tn).map(p => p.discord_nickname).join(', ') || '-';
+    const embed = new EmbedBuilder().setTitle(title).setColor(0xFF0000).setTimestamp();
+    for (const g of groups) embed.addFields({ name: `${TEAM_EMOJIS[g.teamNum - 1] || ''} ${g.label} 팀원`, value: members(g.teamNum), inline: true });
+    if (footer) embed.setFooter({ text: footer });
+
+    if (generateCharPoolCard) {
+        try {
+            const imgBuf = await generateCharPoolCard(title, groups);
+            embed.setImage('attachment://chars.png');
+            await channel.send({ embeds: [embed], files: [new AttachmentBuilder(imgBuf, { name: 'chars.png' })] });
+            return;
+        } catch (e) { console.error('[char-card] 이미지 생성 실패, 텍스트 폴백:', e.message); }
+    }
+    for (const g of groups) embed.addFields({ name: `${g.label} 실험체`, value: g.chars.join(' · ') || '-' });
+    await channel.send({ embeds: [embed] });
+}
+
+const teamGroup = (tn, chars) => ({ teamNum: tn, label: `${tn}팀`, color: TEAM_COLOR_HEX[(tn - 1) % TEAM_COLOR_HEX.length], chars });
+const TEAM_COLOR_HEX = ['#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22','#95a5a6','#1abc9c'];
+
+// POST /api/admin/random-chars/send — 일반 코발트 팀 공용 풀 공지
+app.post('/api/admin/random-chars/send', async (req, res) => {
+    const { event, token, pools } = req.body;   // pools: { "1": [...], "2": [...] }
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!discordClient) return res.status(500).json({ error: '봇 클라이언트가 없습니다.' });
+    const ev = db.getEvent(event);
+    if (!ev?.channelId) return res.status(404).json({ error: '채널 정보가 없습니다.' });
+    const groups = Object.entries(pools || {})
+        .map(([tn, list]) => teamGroup(Number(tn), (list || []).filter(c => CHARACTERS.includes(c))))
+        .filter(g => g.chars.length).sort((a, b) => a.teamNum - b.teamNum);
+    if (!groups.length) return res.status(400).json({ error: '배정된 실험체가 없어요.' });
+    try {
+        await sendCharPoolAnnouncement(ev, '실험체 배정 결과', groups, '팀 내 공용 · 팀원 누구나 사용 가능');
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: '전송 실패: ' + e.message }); }
+});
+
+// POST /api/admin/tournament/match-send — 토너먼트 경기 대진 + 실험체 공지
+app.post('/api/admin/tournament/match-send', async (req, res) => {
+    const { event, token, round, match } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!discordClient) return res.status(500).json({ error: '봇 클라이언트가 없습니다.' });
+    const ev = db.getEvent(event);
+    const t  = ev?.tournament;
+    const m  = round === 'third' ? t?.thirdPlace : t?.rounds[Number(round)]?.[Number(match)];
+    if (!m) return res.status(400).json({ error: '경기를 찾을 수 없어요.' });
+    if (m.teamA === null || m.teamB === null) return res.status(400).json({ error: '아직 대진이 정해지지 않았어요.' });
+    const total = t.rounds.length;
+    const roundName = round === 'third' ? '3·4위전'
+        : Number(round) === total - 1 ? '결승' : Number(round) === total - 2 ? `준결승 ${Number(match) + 1}경기` : `${Number(round) + 1}라운드 ${Number(match) + 1}경기`;
+    const title = `${roundName} — ${m.teamA}팀 vs ${m.teamB}팀`;
+    const groups = [m.teamA, m.teamB].map(tn => teamGroup(tn, m.chars?.[tn] || []));
+    try {
+        if (m.chars) await sendCharPoolAnnouncement(ev, title, groups, '팀 내 공용 · 팀원 누구나 사용 가능');
+        else {
+            const { EmbedBuilder } = require('discord.js');
+            const channel = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+            if (!channel) throw new Error('채널을 찾을 수 없습니다.');
+            const participants = db.getParticipants(event);
+            const members = tn => participants.filter(p => p.team_num === tn).map(p => p.discord_nickname).join(', ') || '-';
+            const embed = new EmbedBuilder().setTitle(title).setColor(0xFF0000).setTimestamp();
+            for (const tn of [m.teamA, m.teamB]) embed.addFields({ name: `${TEAM_EMOJIS[tn - 1] || ''} ${tn}팀`, value: members(tn), inline: true });
+            await channel.send({ embeds: [embed] });
+        }
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: '전송 실패: ' + e.message }); }
 });
 
 // POST /api/admin/char-ban — 캐릭터 밴/밴취소
