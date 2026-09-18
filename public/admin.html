@@ -428,6 +428,7 @@ function bindTeamDragDrop(){
             e.dataTransfer.setData('text/plain', _dragToken);
         });
         el.addEventListener('dragend', ()=>{
+            _dragToken = null;
             el.classList.remove('dragging');
             grid.querySelectorAll('.team-card.drag-over').forEach(c=>c.classList.remove('drag-over'));
         });
@@ -519,12 +520,17 @@ function teamMembersText(tn){
     return participants.filter(p=>p.team_num===tn).map(p=>esc(p.discord_nickname)).join(', ');
 }
 
-function renderTournament(){
+let _lastTourneyKey = null;
+function renderTournament(force){
     const t = eventData?.tournament;
     const setup = document.getElementById('tourney-setup');
     const view  = document.getElementById('tourney-view');
-    if(!t){ setup.style.display=''; view.style.display='none'; return; }
+    if(!t){ setup.style.display=''; view.style.display='none'; _lastTourneyKey=null; return; }
     setup.style.display='none'; view.style.display='';
+    // 상태가 같으면 재렌더 생략 — 인당 캐릭 입력값 등 보존
+    const key = JSON.stringify(t) + '|' + document.getElementById('tourney-chars-toggle').checked + '|' + participants.map(p=>p.cancel_token+':'+p.team_num).join(',');
+    if(!force && key === _lastTourneyKey) return;
+    _lastTourneyKey = key;
 
     const total = t.rounds.length;
     const roundName = r => r===total-1 ? '결승' : r===total-2 ? '준결승' : `${r+1}라운드`;
@@ -889,6 +895,7 @@ document.getElementById('close-btn').addEventListener('click', async ()=>{
 
 // 실시간 폴링 (5초마다 참가자 데이터 갱신)
 async function silentRefresh(){
+    if(_dragToken) return; // 드래그 중 재렌더 방지
     try {
         const data = await api(`/api/admin/data?event=${EVENT}&token=${TOKEN}`);
         if(data.error || !data.participants) return;
