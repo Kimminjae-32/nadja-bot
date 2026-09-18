@@ -138,10 +138,10 @@ app.get('/api/event-info', (req, res) => {
 
 // DB 참가자 기준으로 인메모리 participants 동기화 후 Discord 임베드 갱신
 // ── 참가자 임시 역할 ──────────────────────────────
-// 역할 이름: "09/18 코발트 참가자" — 모집 종료/자동 삭제 시 함께 삭제됨
+// 역할 이름: "09/18 코발트 참가자" — 역할을 만드는 시점의 날짜(한국 시간, 월/일) — 모집 종료/자동 삭제 시 함께 삭제됨
 function eventRoleName(ev) {
-    const d = new Date(ev.createdAt || Date.now());
-    const mm = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
+    const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const mm = String(kst.getUTCMonth() + 1).padStart(2, '0'), dd = String(kst.getUTCDate()).padStart(2, '0');
     const mode = ev.gameType === '론울프' ? '론울프' : (ev.mapType || ev.gameType || '내전');
     return `${mm}/${dd} ${mode} 참가자`;
 }
