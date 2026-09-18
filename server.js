@@ -749,6 +749,18 @@ app.post('/api/admin/change-map', async (req, res) => {
         recruit.teams      = [[], []]; recruit.team1 = []; recruit.team2 = [];
         db.updateEventGameType(event, '내전');
         db.updateEventTeamCount(event, 2);
+    } else if (newMap === '코발트 토너먼트') {
+        const mp = parseInt(newMax) || 16;
+        if (mp % 4 !== 0 || mp < 8 || mp > 32) return res.json({ error: '코발트 토너먼트는 4의 배수, 8~32명이어야 해요.' });
+        newTeamCount = mp / 4;
+        recruit.gameType  = '내전';
+        recruit.mapType   = '코발트 토너먼트';
+        recruit.maxPlayers = mp;
+        recruit.teamCount  = newTeamCount;
+        recruit.teams      = Array.from({ length: newTeamCount }, () => []);
+        recruit.team1 = []; recruit.team2 = [];
+        db.updateEventGameType(event, '내전');
+        db.updateEventTeamCount(event, newTeamCount);
     } else if (newMap === '론울프') {
         const mp = Math.min(18, Math.max(2, parseInt(newMax) || 18));
         newTeamCount = mp;
@@ -766,6 +778,9 @@ app.post('/api/admin/change-map', async (req, res) => {
     saveDataFn?.();
     db.updateEventMapType(event, recruit.mapType);
     db.resetTeamAssignments(event);
+    db.resetTournament(event);
+    // 테스트 참가자는 모드 바뀌면 제거
+    db.getParticipants(event).filter(p => p.is_dummy).forEach(p => db.deleteByToken(p.cancel_token));
 
     if (discordClient && recruit.channelId && createEmbedFn) {
         try {

@@ -15,8 +15,8 @@
         .stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.75rem 1.2rem;text-align:center;}
         .stat-num{font-size:1.6rem;font-weight:700;}
         .stat-label{font-size:.75rem;color:var(--muted);}
-        .actions{display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap;}
-        .action-group{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.6rem .8rem;display:flex;flex-direction:column;gap:.45rem;}
+        .actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;margin-bottom:1.5rem;}
+        .action-group{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.6rem .8rem;display:flex;flex-direction:column;gap:.45rem;min-height:82px;}
         .action-group-label{font-size:.72rem;color:var(--muted);font-weight:600;letter-spacing:.02em;}
         .action-group-btns{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
         .btn{border:none;border-radius:8px;padding:.65rem 1.2rem;font-size:.9rem;font-weight:600;cursor:pointer;transition:opacity .2s;}
@@ -187,6 +187,7 @@
             <div style="display:flex;gap:.5rem;flex-wrap:wrap">
                 <button class="btn btn-secondary btn-sm" onclick="changeMap('루미아 섬')">루미아 섬</button>
                 <button class="btn btn-secondary btn-sm" onclick="changeMap('코발트')">코발트</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('코발트 토너먼트')">코발트 토너먼트</button>
                 <button class="btn btn-secondary btn-sm" onclick="changeMap('론울프')">론울프</button>
             </div>
         </div>
@@ -595,6 +596,12 @@ async function changeMap(newMap) {
         if (!confirm(`루미아 섬 ${tc}팀 × ${perTeam}명 = 최대 ${tc * perTeam}명\n기존 팀 배정이 초기화됩니다. 계속할까요?`)) return;
     } else if (newMap === '코발트') {
         if (!confirm('코발트 2팀 4vs4 (최대 8명) 고정으로 변경할까요?\n기존 팀 배정이 초기화됩니다.')) return;
+    } else if (newMap === '코발트 토너먼트') {
+        const mp = prompt('최대 인원을 입력하세요 (4의 배수, 8~32명)', '16');
+        if (mp === null) return;
+        maxPlayers = parseInt(mp);
+        if (!maxPlayers || maxPlayers % 4 !== 0 || maxPlayers < 8 || maxPlayers > 32) { toast('4의 배수로 8~32 사이를 입력해주세요.', true); return; }
+        if (!confirm(`코발트 토너먼트 ${maxPlayers / 4}팀 × 4명 = ${maxPlayers}명으로 변경할까요?\n기존 팀 배정이 초기화됩니다.`)) return;
     } else if (newMap === '론울프') {
         const mp = prompt('최대 인원을 입력하세요 (2~18명)', '18');
         if (mp === null) return;
