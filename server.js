@@ -41,27 +41,33 @@ function mmrToTier(mmr, rank) {
 
 // Season API의 isCurrent가 Season9(2023)에 멈춰있어서 rank/top으로 직접 최신 시즌 탐색
 // 서버 재시작 시 API 속도 제한(1/초)으로 탐색 실패 방지용 기본값 설정
-let _cachedSeasonId = 39; // Season 20 (2026) — 최신 확인값
-async function getCurrentSeasonId() {
-    if (_cachedSeasonId) return _cachedSeasonId;
+// 기본값은 마지막으로 확인된 시즌. 시작 시 + 6시간마다 상위 ID부터 내려오며 실제 시즌을 탐색해 자동 갱신
+// (API 속도 제한 1req/s 준수)
+let _cachedSeasonId = 41; // Season 21 (2026-09 확인)
+const SEASON_ID_FLOOR = 41;
+async function refreshSeasonId() {
     const key = process.env.ER_API_KEY;
-    if (!key) return null;
-    // 홀수 ID = 실제 시즌, 짝수 = 프리시즌 (Season9=ID17 기준 패턴)
-    // 확인된 최신 시즌 ID=39에서 몇 단계 위부터 탐색해 불필요한 요청 최소화
-    for (let id = 47; id >= 17; id -= 2) {
+    if (!key) return;
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (let id = SEASON_ID_FLOOR + 10; id >= SEASON_ID_FLOOR; id -= 1) {
         try {
             const r = await fetch(`https://open-api.bser.io/v1/rank/top/${id}/3`,
                 { headers: { 'x-api-key': key }, signal: AbortSignal.timeout(5000) });
             const d = await r.json();
             if (d.code === 200 && d.topRanks?.length > 0) {
+                if (id !== _cachedSeasonId) console.log(`[lookup-tier] 시즌 ID 갱신: ${_cachedSeasonId} → ${id}`);
                 _cachedSeasonId = id;
-                console.log(`[lookup-tier] 현재 시즌 ID: ${id}`);
-                break;
+                _lookupCache.clear();
+                return;
             }
         } catch {}
+        await sleep(1100);
     }
-    return _cachedSeasonId;
 }
+setTimeout(refreshSeasonId, 5000);
+setInterval(refreshSeasonId, 6 * 60 * 60 * 1000);
+
+async function getCurrentSeasonId() { return _cachedSeasonId; }
 
 const _lookupCache = new Map(); // nick → { found, tier, mmr, rank, ts }
 const LOOKUP_TTL = 5 * 60 * 1000;
