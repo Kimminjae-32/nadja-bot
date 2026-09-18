@@ -27,6 +27,7 @@ webServer.setCloseCallback(async (msgId) => {
     try {
         await deleteMessage(msgId, data.channelId);
     } catch (e) { /* 무시 */ }
+    await webServer.deleteEventRole(msgId).catch(() => null);
     db.deleteEvent(msgId);
     allRecruits.delete(msgId);
     activeUserRecruits.delete(`${data.guildId ?? 'dm'}_${data.creatorId}`);
@@ -176,6 +177,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
         const oldMsgId = activeUserRecruits.get(rKey);
         const oldData  = allRecruits.get(oldMsgId);
         await deleteMessage(oldMsgId, oldData?.channelId).catch(() => null);
+        await webServer.deleteEventRole(oldMsgId).catch(() => null);
         db.deleteEvent(oldMsgId);
         allRecruits.delete(oldMsgId);
     }
@@ -253,6 +255,7 @@ cron.schedule('* * * * *', async () => {
         const expireMs = (data.durationHours || 24) * 60 * 60 * 1000;
         if (data.createdAt && now - data.createdAt > expireMs) {
             await deleteMessage(msgId, data.channelId).catch(() => null);
+            await webServer.deleteEventRole(msgId).catch(() => null);
             db.deleteEvent(msgId);
             allRecruits.delete(msgId);
             activeUserRecruits.delete(`${data.guildId ?? 'dm'}_${data.creatorId}`);

@@ -137,6 +137,59 @@ app.get('/api/event-info', (req, res) => {
 });
 
 // DB 참가자 기준으로 인메모리 participants 동기화 후 Discord 임베드 갱신
+// ── 참가자 임시 역할 ──────────────────────────────
+// 역할 이름: "09/18 코발트 참가자" — 모집 종료/자동 삭제 시 함께 삭제됨
+function eventRoleName(ev) {
+    const d = new Date(ev.createdAt || Date.now());
+    const mm = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
+    const mode = ev.gameType === '론울프' ? '론울프' : (ev.mapType || ev.gameType || '내전');
+    return `${mm}/${dd} ${mode} 참가자`;
+}
+
+async function getGuild(ev) {
+    if (!discordClient || !ev?.guildId) return null;
+    return discordClient.guilds.cache.get(ev.guildId) || await discordClient.guilds.fetch(ev.guildId).catch(() => null);
+}
+
+// 역할 생성 + 현재 참가자 전원에게 부여
+async function createEventRole(eventId) {
+    const ev = db.getEvent(eventId);
+    const guild = await getGuild(ev);
+    if (!guild) throw new Error('서버를 찾을 수 없어요.');
+    if (ev.roleId && guild.roles.cache.get(ev.roleId)) return { roleId: ev.roleId, roleName: ev.roleName, added: 0 };
+    const name = eventRoleName(ev);
+    const role = await guild.roles.create({ name, mentionable: true, reason: `나쟈 내전 참가자 임시 역할 (${eventId})` });
+    db.setEventRole(eventId, role.id, name);
+    let added = 0;
+    for (const p of db.getParticipants(eventId)) {
+        if (!p.discord_id) continue;
+        const m = await guild.members.fetch(p.discord_id).catch(() => null);
+        if (m) { await m.roles.add(role.id).catch(() => null); added++; }
+    }
+    return { roleId: role.id, roleName: name, added };
+}
+
+// 역할 삭제 (모집 종료 · 자동 만료 · 수동)
+async function deleteEventRole(eventId) {
+    const ev = db.getEvent(eventId);
+    if (!ev?.roleId) return false;
+    const guild = await getGuild(ev);
+    const role = guild?.roles.cache.get(ev.roleId) || await guild?.roles.fetch(ev.roleId).catch(() => null);
+    if (role) await role.delete('나쟈 내전 종료').catch(e => console.warn('[role] 삭제 실패:', e.message));
+    db.setEventRole(eventId, null, null);
+    return true;
+}
+
+// 참가/취소 시 역할 동기화
+async function syncRoleMember(eventId, discordId, add) {
+    const ev = db.getEvent(eventId);
+    if (!ev?.roleId || !discordId) return;
+    const guild = await getGuild(ev);
+    const m = await guild?.members.fetch(discordId).catch(() => null);
+    if (!m) return;
+    await (add ? m.roles.add(ev.roleId) : m.roles.remove(ev.roleId)).catch(e => console.warn('[role] 동기화 실패:', e.message));
+}
+
 async function syncEmbedParticipants(eventId) {
     const recruit = recruitMap?.get(eventId);
     if (!recruit || !discordClient || !createEmbedFn) return;
@@ -186,6 +239,7 @@ app.post('/join', (req, res) => {
     }
     const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position, validTier, chars, validMmr);
     syncEmbedParticipants(event);
+    syncRoleMember(event, discord_id || null, true);
     res.json({ success: true, cancel_token, updated: false });
 });
 
@@ -210,6 +264,7 @@ app.post('/cancel', (req, res) => {
     if (!p) return res.status(404).json({ error: '이미 취소된 참가 정보입니다.' });
     db.deleteByToken(token);
     syncEmbedParticipants(p.event_id);
+    syncRoleMember(p.event_id, p.discord_id, false);
     res.json({ success: true });
 });
 
@@ -272,8 +327,10 @@ app.post('/api/admin/tier', (req, res) => {
 app.post('/api/admin/remove', (req, res) => {
     const { event, token, cancel_token } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const removed = db.getByToken(cancel_token);
     db.deleteByToken(cancel_token);
     syncEmbedParticipants(event);
+    if (removed) syncRoleMember(event, removed.discord_id, false);
     res.json({ success: true });
 });
 
@@ -625,13 +682,41 @@ app.post('/api/admin/notify', async (req, res) => {
         const ch = await discordClient.channels.fetch(ev.channelId).catch(() => null);
         if (!ch) return res.status(404).json({ error: '채널을 찾을 수 없습니다.' });
         let msg = `📣 **내전 시작 알림**\n`;
-        if (mentions) msg += `${mentions}\n`;
-        if (noIdCount) msg += `*(디스코드 ID 없는 참가자 ${noIdCount}명은 멘션 생략)*\n`;
+        if (ev.roleId) msg += `<@&${ev.roleId}>\n`;
+        else {
+            if (mentions) msg += `${mentions}\n`;
+            if (noIdCount) msg += `*(디스코드 ID 없는 참가자 ${noIdCount}명은 멘션 생략)*\n`;
+        }
         msg += `내전이 곧 시작됩니다! 준비해주세요.`;
         await ch.send(msg);
         res.json({ success: true, mentionedCount: participants.filter(p => p.discord_id).length, skippedCount: noIdCount });
     } catch (e) {
         res.status(500).json({ error: '전송 실패: ' + e.message });
+    }
+});
+
+// POST /api/admin/role/create — 참가자 임시 역할 생성 + 부여
+app.post('/api/admin/role/create', async (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!discordClient) return res.status(500).json({ error: '봇 클라이언트가 없습니다.' });
+    try {
+        const r = await createEventRole(event);
+        res.json({ success: true, ...r });
+    } catch (e) {
+        res.status(500).json({ error: '역할 생성 실패: ' + e.message + ' (봇에 "역할 관리" 권한이 있는지 확인해주세요)' });
+    }
+});
+
+// POST /api/admin/role/delete — 임시 역할 삭제
+app.post('/api/admin/role/delete', async (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    try {
+        await deleteEventRole(event);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: '역할 삭제 실패: ' + e.message });
     }
 });
 
@@ -1056,4 +1141,5 @@ module.exports = {
     setActiveUserMap(map)      { activeUserMap = map; },
     setSaveDataFn(fn)          { saveDataFn = fn; },
     setCreateEmbedFn(fn)       { createEmbedFn = fn; },
+    deleteEventRole,
 };

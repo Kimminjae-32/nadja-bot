@@ -129,6 +129,16 @@ module.exports = {
         save(data);
     },
 
+    // 참가자 임시 역할 (roleId=null 이면 해제)
+    setEventRole(eventId, roleId, roleName) {
+        const data = load();
+        if (data.events[eventId]) {
+            data.events[eventId].roleId   = roleId || null;
+            data.events[eventId].roleName = roleName || null;
+            save(data);
+        }
+    },
+
     // 테스트용 더미 참가자 표시
     markDummy(token) {
         const data = load();

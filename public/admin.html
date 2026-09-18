@@ -116,7 +116,9 @@
             <div class="action-group-btns">
                 <button class="btn btn-success" id="send-btn">디스코드에 결과 전송</button>
                 <button class="btn btn-secondary" id="notify-btn">내전 시작 알림</button>
+                <button class="btn btn-secondary" id="role-btn" onclick="toggleRole()">참가자 역할 만들기</button>
             </div>
+            <div id="role-info" style="font-size:.78rem;color:var(--muted);display:none"></div>
         </div>
         <div class="action-group">
             <div class="action-group-label">종료</div>
@@ -318,6 +320,8 @@ async function load(){
     populateTransferSelect();
     loadVoiceChannels();
 
+    renderRoleInfo();
+
     // 룰 섹션 초기화
     document.getElementById('rule-section').style.display = '';
     if (eventData?.rule) document.getElementById('rule-textarea').value = eventData.rule;
@@ -470,6 +474,42 @@ async function removeMember(cancelToken){
     participants = participants.filter(p=>p.cancel_token!==cancelToken);
     render();
     toast('삭제됐어요');
+}
+
+// ── 참가자 임시 역할 ──
+function renderRoleInfo(){
+    const btn = document.getElementById('role-btn');
+    const info = document.getElementById('role-info');
+    if(eventData?.roleId){
+        btn.textContent = '참가자 역할 삭제';
+        btn.className = 'btn btn-danger';
+        info.style.display = '';
+        info.textContent = `역할 "${eventData.roleName}" 부여됨 · 시작 알림은 이 역할을 멘션해요 · 모집 종료 시 자동 삭제`;
+    } else {
+        btn.textContent = '참가자 역할 만들기';
+        btn.className = 'btn btn-secondary';
+        info.style.display = 'none';
+    }
+}
+
+async function toggleRole(){
+    const btn = document.getElementById('role-btn');
+    btn.disabled = true;
+    if(eventData?.roleId){
+        if(!confirm(`역할 "${eventData.roleName}"을(를) 삭제할까요?`)){ btn.disabled=false; return; }
+        const data = await api('/api/admin/role/delete', { event:EVENT, token:TOKEN });
+        btn.disabled = false;
+        if(data.error){ toast(data.error, true); return; }
+        eventData.roleId = null; eventData.roleName = null;
+        toast('역할을 삭제했어요');
+    } else {
+        const data = await api('/api/admin/role/create', { event:EVENT, token:TOKEN });
+        btn.disabled = false;
+        if(data.error){ toast(data.error, true); return; }
+        eventData.roleId = data.roleId; eventData.roleName = data.roleName;
+        toast(`역할 "${data.roleName}" 생성 · ${data.added}명에게 부여`);
+    }
+    renderRoleInfo();
 }
 
 function isCobaltMode(){ return (eventData?.mapType || '').startsWith('코발트'); }
@@ -859,6 +899,7 @@ async function silentRefresh(){
 
         render();
         renderTournament();
+        renderRoleInfo();
         populateTransferSelect();
         if(newCount !== oldCount) toast(`참가자 업데이트: ${newCount}명`);
         const now = new Date();
