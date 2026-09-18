@@ -60,6 +60,12 @@ const commands = [
             .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (예: 22시 30분)').setRequired(false))
             .addIntegerOption(opt => opt.setName('종료시간').setDescription('삭제 대기 시간 (기본 24시간)').setRequired(false)))
         .addSubcommand(sub => sub
+            .setName('코발트토너먼트')
+            .setDescription('코발트 토너먼트 (4인 팀 × N팀, 싱글 엘리미네이션)')
+            .addIntegerOption(opt => opt.setName('최대인원').setDescription('최대 참가 인원 (4의 배수, 8~32명, 기본 16명)').setRequired(false).setMinValue(8).setMaxValue(32))
+            .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (예: 22시 30분)').setRequired(false))
+            .addIntegerOption(opt => opt.setName('종료시간').setDescription('삭제 대기 시간 (기본 24시간)').setRequired(false)))
+        .addSubcommand(sub => sub
             .setName('론울프')
             .setDescription('론울프 개인전 (최대 18명)')
             .addIntegerOption(opt => opt.setName('최대인원').setDescription('최대 참가 인원 (기본 18명)').setRequired(false).setMinValue(2).setMaxValue(18))

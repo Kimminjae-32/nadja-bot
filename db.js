@@ -129,6 +129,12 @@ module.exports = {
         save(data);
     },
 
+    // 테스트용 더미 참가자 표시
+    markDummy(token) {
+        const data = load();
+        if (data.participants[token]) { data.participants[token].is_dummy = true; save(data); }
+    },
+
     deleteByToken(token) {
         const data = load(); delete data.participants[token]; save(data);
     },
@@ -277,4 +283,86 @@ module.exports = {
     getRule(eventId) {
         return load().events[eventId]?.rule || null;
     },
+
+    // ── 토너먼트 (싱글 엘리미네이션) ────────────────────
+    // rounds[r][i] = { teamA, teamB, winner, chars }  (teamX = 팀 번호 | null=부전승)
+    // 라운드 r의 i번 경기는 r-1 라운드 2i, 2i+1번 경기 승자끼리 붙음
+    startTournament(eventId) {
+        const data = load();
+        const ev = data.events[eventId];
+        if (!ev) return null;
+        const teamNums = [...new Set(
+            Object.values(data.participants).filter(p => p.event_id === eventId && p.team_num).map(p => p.team_num)
+        )].sort((a, b) => a - b);
+        if (teamNums.length < 2) return null;
+
+        const seeds = [...teamNums].sort(() => Math.random() - 0.5);
+        let size = 1; while (size < seeds.length) size *= 2;
+        // 1라운드: i번 경기 = seeds[i] vs seeds[size-1-i] → 부전승이 한 경기에 하나만 생김
+        const first = Array.from({ length: size / 2 }, (_, i) => ({
+            teamA: seeds[i] ?? null, teamB: seeds[size - 1 - i] ?? null, winner: null, chars: null,
+        }));
+        const rounds = [first];
+        for (let n = size / 2; n > 1; n /= 2) {
+            rounds.push(Array.from({ length: n / 2 }, () => ({ teamA: null, teamB: null, winner: null, chars: null })));
+        }
+        ev.tournament = { status: 'in_progress', rounds, champion: null, startedAt: Date.now() };
+        propagateTournament(ev.tournament);
+        save(data);
+        return ev.tournament;
+    },
+
+    getTournament(eventId) {
+        return load().events[eventId]?.tournament || null;
+    },
+
+    setMatchWinner(eventId, round, idx, teamNum) {
+        const data = load();
+        const t = data.events[eventId]?.tournament;
+        const m = t?.rounds[round]?.[idx];
+        if (!m) return { error: '경기를 찾을 수 없어요.' };
+        if (teamNum !== null && teamNum !== m.teamA && teamNum !== m.teamB) return { error: '해당 경기의 팀이 아니에요.' };
+        m.winner = teamNum;
+        propagateTournament(t);
+        save(data);
+        return { success: true, tournament: t };
+    },
+
+    setMatchChars(eventId, round, idx, chars) {
+        const data = load();
+        const m = data.events[eventId]?.tournament?.rounds[round]?.[idx];
+        if (!m) return null;
+        m.chars = chars;
+        save(data);
+        return m;
+    },
+
+    resetTournament(eventId) {
+        const data = load();
+        if (data.events[eventId]) { delete data.events[eventId].tournament; save(data); }
+    },
 };
+
+// 부전승 자동 처리 + 다음 라운드 대진 갱신 + 우승팀 판정
+function propagateTournament(t) {
+    for (let r = 0; r < t.rounds.length; r++) {
+        for (let i = 0; i < t.rounds[r].length; i++) {
+            const m = t.rounds[r][i];
+            if (r > 0) {
+                const a = t.rounds[r - 1][2 * i], b = t.rounds[r - 1][2 * i + 1];
+                const na = a?.winner ?? null, nb = b?.winner ?? null;
+                if (na !== m.teamA || nb !== m.teamB) { m.teamA = na; m.teamB = nb; m.chars = null; }
+                // 대진이 아직 안 정해졌거나 승자가 대진에 없으면 승자 무효
+                if (m.teamA === null || m.teamB === null || (m.winner !== m.teamA && m.winner !== m.teamB)) m.winner = null;
+            }
+            // 부전승: 한쪽만 있으면 자동 진출 (1라운드에서만 발생)
+            if (r === 0) {
+                if (m.teamA !== null && m.teamB === null) m.winner = m.teamA;
+                else if (m.teamB !== null && m.teamA === null) m.winner = m.teamB;
+            }
+        }
+    }
+    const final = t.rounds[t.rounds.length - 1][0];
+    t.champion = final.winner;
+    t.status = final.winner !== null ? 'completed' : 'in_progress';
+}

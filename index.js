@@ -320,6 +320,15 @@ client.on(Events.InteractionCreate, async interaction => {
                 });
             }
 
+            if (유형 === '코발트토너먼트') {
+                const maxPlayers = interaction.options.getInteger('최대인원') ?? 16;
+                if (maxPlayers % 4 !== 0) return await interaction.reply({ content: '❌ 코발트 토너먼트는 4의 배수 인원만 가능해요 (8~32명).', ephemeral: true });
+                return await createRecruit(interaction, {
+                    gameType: '내전', mapType: '코발트 토너먼트',
+                    maxPlayers, teamCount: maxPlayers / 4, timeStr, duration
+                });
+            }
+
             if (유형 === '론울프') {
                 const maxPlayers = Math.min(interaction.options.getInteger('최대인원') ?? 18, 18);
                 return await createRecruit(interaction, {
@@ -383,6 +392,7 @@ client.on(Events.InteractionCreate, async interaction => {
                         { name: '🏝️ /내전 루미아 섬', value: '팀당인원·최대인원 자유 설정 (최대 8팀)' },
                         { name: '🐺 /내전 론울프',     value: '1인 1팀 개인전 · 최대 18명 · 포지션 불필요' },
                         { name: '🌊 /내전 코발트',     value: '4vs4 고정' },
+                        { name: '🏆 /내전 코발트토너먼트', value: '4인 팀 × N팀 싱글 엘리미네이션 (8~32명) · 관리 페이지에서 대진표 진행' },
                         { name: '✅ 참가/취소 버튼',   value: '웹 폼 링크로 참가 신청\n닉네임·티어·포지션 입력 (론울프는 포지션 제외)\n이미 신청 시 취소 링크 안내' },
                         { name: '⚙️ 웹 관리 페이지',   value: '참가 신청 후 수정 페이지에서 접근 (방장 전용)\n• 자동/수동 팀 배정\n• 팀경매(드래프트)\n• 캐릭터 밴 · 실험체 랜덤 배정\n• 맵/모드 변경 (디스코드 메시지 자동 업데이트)\n• 음성 채널 이동 · 원래대로\n• 방장 양도\n• 디스코드 결과 전송 · 모집 종료' },
                         { name: '🗓️ /시즌',             value: '현재 시즌 정보 및 종료까지 남은 기간' },

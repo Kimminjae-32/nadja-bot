@@ -48,6 +48,21 @@
         .toast.error{background:var(--accent);}
         select option{background:#1a1a2e;}
 
+        /* ── 토너먼트 ── */
+        .bracket{display:flex;gap:1.2rem;overflow-x:auto;padding-bottom:.5rem;}
+        .bracket-round{min-width:230px;display:flex;flex-direction:column;justify-content:space-around;gap:.6rem;}
+        .bracket-round-title{font-size:.8rem;color:var(--muted);text-align:center;margin-bottom:.2rem;}
+        .match{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.5rem .6rem;font-size:.85rem;}
+        .match-team{display:flex;align-items:center;gap:.4rem;padding:.3rem .4rem;border-radius:6px;}
+        .match-team.winner{background:rgba(46,204,113,.15);border:1px solid var(--green);}
+        .match-team.loser{opacity:.45;}
+        .match-team-name{flex:1;font-weight:600;}
+        .match-team-sub{font-size:.72rem;color:var(--muted);font-weight:400;}
+        .match-chars{margin-top:.4rem;font-size:.74rem;color:var(--muted);line-height:1.5;}
+        .match-chars strong{color:var(--text);}
+        .match-actions{display:flex;align-items:center;gap:.4rem;margin-top:.4rem;}
+        .num-input{width:44px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:.25rem .35rem;font-size:.8rem;outline:none;}
+
         /* ── 밴픽 ── */
         .section-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;margin-top:1.5rem;}
         .section-title{font-size:1.05rem;font-weight:700;margin-bottom:.3rem;}
@@ -115,6 +130,25 @@
     </div>
 
 
+    <!-- 코발트 토너먼트 섹션 -->
+    <div id="tourney-section" class="section-card" style="display:none">
+        <div class="section-title">코발트 토너먼트</div>
+        <div class="section-sub">팀 배정을 마친 뒤 시작하세요. 팀 수가 2·4·8이 아니면 일부 팀은 부전승으로 올라가요.</div>
+        <div id="tourney-setup">
+            <button class="btn btn-primary" id="tourney-start-btn">토너먼트 시작</button>
+            <button class="btn btn-secondary" onclick="fillDummy()">테스트 팀 자동 생성</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearDummy()">테스트 참가자 삭제</button>
+        </div>
+        <div id="tourney-view" style="display:none">
+            <div id="tourney-status" style="font-size:.9rem;font-weight:600;margin-bottom:.75rem"></div>
+            <div class="bracket" id="tourney-bracket"></div>
+            <div style="display:flex;gap:.5rem;margin-top:.9rem;flex-wrap:wrap">
+                <button class="btn btn-success btn-sm" onclick="sendTournament()">디스코드에 대진표 전송</button>
+                <button class="btn btn-danger btn-sm" onclick="resetTournament()">토너먼트 초기화</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 추가 관리 섹션 -->
     <div id="extra-section" class="section-card" style="display:none">
         <div class="section-title">추가 관리</div>
@@ -169,6 +203,7 @@ const TIER_NAMES = ['언랭크','아이언','브론즈','실버','골드','플�
 const MAP_ICON = {
     '루미아 섬': { img: '/icons/map-lumia.png' },
     '코발트':   { img: '/icons/map-cobalt.png' },
+    '코발트 토너먼트': { img: '/icons/map-cobalt.png' },
     '론울프':   { img: '/icons/mode-lonewolf.png' },
 };
 function mapIconImg(key, size = 20) {
@@ -249,7 +284,9 @@ async function load(){
     document.getElementById('shuffle-tier-btn').style.display = isTeamMode ? '' : 'none';
     document.getElementById('extra-section').style.display = '';
     document.getElementById('voice-group').style.display = isTeamMode ? '' : 'none';
-    document.getElementById('chars-per-player-wrap').style.display = (isTeamMode && eventData?.mapType === '코발트') ? 'inline-flex' : 'none';
+    document.getElementById('chars-per-player-wrap').style.display = (isTeamMode && isCobaltMode()) ? 'inline-flex' : 'none';
+    document.getElementById('tourney-section').style.display = (isTeamMode && eventData?.mapType === '코발트 토너먼트') ? '' : 'none';
+    renderTournament();
     updateMapBadge();
     populateTransferSelect();
     loadVoiceChannels();
@@ -373,6 +410,124 @@ async function removeMember(cancelToken){
     toast('삭제됐어요');
 }
 
+function isCobaltMode(){ return (eventData?.mapType || '').startsWith('코발트'); }
+
+// ── 코발트 토너먼트 ──────────────────────────────────────
+function teamMembersText(tn){
+    return participants.filter(p=>p.team_num===tn).map(p=>esc(p.discord_nickname)).join(', ');
+}
+
+function renderTournament(){
+    const t = eventData?.tournament;
+    const setup = document.getElementById('tourney-setup');
+    const view  = document.getElementById('tourney-view');
+    if(!t){ setup.style.display=''; view.style.display='none'; return; }
+    setup.style.display='none'; view.style.display='';
+
+    const total = t.rounds.length;
+    const roundName = r => r===total-1 ? '결승' : r===total-2 ? '준결승' : `${r+1}라운드`;
+    document.getElementById('tourney-status').innerHTML = t.status==='completed'
+        ? `<span style="color:var(--green)">우승: ${t.champion}팀</span> · ${teamMembersText(t.champion)}`
+        : '진행 중 — 각 경기의 승리 팀을 클릭하세요';
+
+    const teamHtml = (m, r, i, tn) => {
+        if(tn===null) return `<div class="match-team loser"><span class="match-team-name" style="color:var(--muted)">부전승</span></div>`;
+        const decided = m.winner!==null;
+        const cls = decided ? (m.winner===tn ? 'winner' : 'loser') : '';
+        const color = TEAM_COLORS[(tn-1)%TEAM_COLORS.length];
+        const canPick = m.teamA!==null && m.teamB!==null;
+        return `<div class="match-team ${cls}">
+            <span class="match-team-name" style="color:${color}">${tn}팀 <span class="match-team-sub">${teamMembersText(tn)}</span></span>
+            ${canPick ? `<button class="btn btn-secondary btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="setWinner(${r},${i},${m.winner===tn?'null':tn})">${m.winner===tn?'취소':'승'}</button>` : ''}
+        </div>`;
+    };
+    const charsHtml = m => {
+        if(!m.chars) return '';
+        return `<div class="match-chars">${Object.entries(m.chars).map(([tn,list])=>`<div><strong>${tn}팀</strong> ${list.map(esc).join(' · ')}</div>`).join('')}</div>`;
+    };
+
+    document.getElementById('tourney-bracket').innerHTML = t.rounds.map((matches,r)=>`
+        <div class="bracket-round">
+            <div class="bracket-round-title">${roundName(r)}</div>
+            ${matches.map((m,i)=>`
+                <div class="match">
+                    ${teamHtml(m,r,i,m.teamA)}
+                    ${teamHtml(m,r,i,m.teamB)}
+                    ${m.teamA!==null && m.teamB!==null ? `
+                    <div class="match-actions">
+                        <span style="font-size:.75rem;color:var(--muted)">인당</span>
+                        <input type="number" class="num-input" id="mc-${r}-${i}" min="1" max="10" value="3">
+                        <span style="font-size:.75rem;color:var(--muted)">캐릭</span>
+                        <button class="btn btn-secondary btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="assignMatchChars(${r},${i})">실험체 배정</button>
+                    </div>` : ''}
+                    ${charsHtml(m)}
+                </div>`).join('')}
+        </div>`).join('');
+}
+
+async function refreshTournament(){
+    const data = await api(`/api/admin/data?event=${EVENT}&token=${TOKEN}`);
+    if(data.error) return;
+    eventData = data.event; participants = data.participants;
+    renderTournament();
+}
+
+document.getElementById('tourney-start-btn').addEventListener('click', async ()=>{
+    const teamNums = new Set(participants.filter(p=>p.team_num).map(p=>p.team_num));
+    if(teamNums.size < 2){ toast('팀 배정 먼저 해주세요! (2팀 이상)', true); return; }
+    const unassigned = participants.filter(p=>!p.team_num).length;
+    if(!confirm(`${teamNums.size}팀으로 토너먼트를 시작할까요?${unassigned?`\n(미배정 ${unassigned}명은 제외됩니다)`:''}`)) return;
+    const data = await api('/api/admin/tournament/start', { event:EVENT, token:TOKEN });
+    if(data.error){ toast(data.error, true); return; }
+    toast('토너먼트 시작!');
+    refreshTournament();
+});
+
+async function fillDummy(){
+    const data = await api('/api/admin/fill-dummy', { event:EVENT, token:TOKEN });
+    if(data.error){ toast(data.error, true); return; }
+    participants = data.participants;
+    render();
+    toast(`테스트 참가자 ${data.added}명 추가 + 팀 배정 완료`);
+}
+
+async function clearDummy(){
+    const data = await api('/api/admin/clear-dummy', { event:EVENT, token:TOKEN });
+    if(data.error){ toast(data.error, true); return; }
+    participants = data.participants;
+    render();
+    toast(`테스트 참가자 ${data.removed}명 삭제`);
+}
+
+async function setWinner(round, match, teamNum){
+    const data = await api('/api/admin/tournament/winner', { event:EVENT, token:TOKEN, round, match, teamNum });
+    if(data.error){ toast(data.error, true); return; }
+    eventData.tournament = data.tournament;
+    renderTournament();
+    if(data.tournament.status==='completed') toast(`우승: ${data.tournament.champion}팀!`);
+}
+
+async function assignMatchChars(round, match){
+    const n = Math.max(1, Number(document.getElementById(`mc-${round}-${match}`)?.value) || 1);
+    const data = await api('/api/admin/tournament/match-chars', { event:EVENT, token:TOKEN, round, match, charsPerPlayer:n });
+    if(data.error){ toast(data.error, true); return; }
+    toast('실험체 배정 완료!');
+    refreshTournament();
+}
+
+async function sendTournament(){
+    const data = await api('/api/admin/tournament/send-discord', { event:EVENT, token:TOKEN });
+    data.success ? toast('디스코드에 전송됐어요!') : toast('전송 실패: '+data.error, true);
+}
+
+async function resetTournament(){
+    if(!confirm('토너먼트 진행 상황을 모두 지우고 초기화할까요?')) return;
+    const data = await api('/api/admin/tournament/reset', { event:EVENT, token:TOKEN });
+    if(data.error){ toast(data.error, true); return; }
+    toast('초기화됐어요');
+    refreshTournament();
+}
+
 // ── 추가 관리 ────────────────────────────────────────────
 let voiceChannels = [];
 
@@ -385,6 +540,7 @@ function modeLabel() {
     const tc = eventData?.teamCount || 2;
     if (gt === '론울프')              return `론울프 (개인전) · 최대 ${tc}명`;
     if (currentMapKey() === '코발트')  return `코발트 · ${tc}팀 (4vs4)`;
+    if (currentMapKey() === '코발트 토너먼트') return `코발트 토너먼트 · ${tc}팀 (4vs4)`;
     return `${currentMapKey()} · ${tc}팀`;
 }
 function modeHTML() { return mapIconImg(currentMapKey()) + esc(modeLabel()); }
@@ -526,7 +682,7 @@ document.getElementById('char-btn').addEventListener('click', async ()=>{
     if(!assigned.length){ toast('팀 배정 먼저 해주세요!', true); return; }
     const btn = document.getElementById('char-btn');
     btn.disabled=true;
-    const isCobalt = eventData?.mapType === '코발트';
+    const isCobalt = isCobaltMode();
     const charsPerPlayer = isCobalt ? Math.max(1, Number(document.getElementById('chars-per-player').value) || 1) : 0;
     const data = await api('/api/admin/random-chars', { event:EVENT, token:TOKEN, charsPerPlayer });
     btn.disabled=false;
@@ -632,6 +788,7 @@ async function silentRefresh(){
         eventData = data.event;
 
         render();
+        renderTournament();
         populateTransferSelect();
         if(newCount !== oldCount) toast(`참가자 업데이트: ${newCount}명`);
         const now = new Date();

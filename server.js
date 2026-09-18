@@ -4,9 +4,9 @@ const db      = require('./db');
 const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES, TIERS, TIER_BY_MMR } = require('./constants');
 const VALID_TIERS = TIERS.map(t => t.name);
 
-let generateResultCard = null;
+let generateResultCard = null, generateBracketCard = null;
 try {
-    generateResultCard = require('./result-card').generateResultCard;
+    ({ generateResultCard, generateBracketCard } = require('./result-card'));
 } catch (e) {
     console.warn('[result-card] canvas 미설치 — 이미지 카드 비활성화. npm install @napi-rs/canvas');
 }
@@ -315,6 +315,137 @@ app.post('/api/admin/random-chars', (req, res) => {
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
     const assignments = assigned.map((p, i) => toEntry(p, [shuffled[i % shuffled.length]]));
     res.json({ success: true, assignments, bannedCount: banned.length });
+});
+
+// ── 테스트용 더미 참가자 ─────────────────────────
+// POST /api/admin/fill-dummy — 빈 자리를 테스트 참가자로 채우고 팀 배정까지 완료
+app.post('/api/admin/fill-dummy', (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const ev = db.getEvent(event);
+    if (!ev) return res.status(404).json({ error: '이벤트가 없어요.' });
+    const teamCount  = ev.teamCount || 2;
+    const maxPlayers = recruitMap?.get(event)?.maxPlayers || teamCount * 4;
+    const existing   = db.getParticipants(event);
+    const need = maxPlayers - existing.length;
+    if (need <= 0) return res.status(400).json({ error: '이미 인원이 가득 찼어요.' });
+
+    let n = existing.filter(p => p.is_dummy).length;
+    for (let i = 0; i < need; i++) {
+        n++;
+        const tok = db.addParticipant(event, null, `테스트${n}`, `test_${n}`, '전사', null, [], 0);
+        db.markDummy(tok);
+    }
+    // 전원 팀 재배정 (순서대로 고르게)
+    db.resetTeamAssignments(event);
+    db.getParticipants(event).forEach((p, i) => db.assignTeam(p.cancel_token, (i % teamCount) + 1));
+    res.json({ success: true, added: need, participants: db.getParticipants(event) });
+});
+
+// POST /api/admin/clear-dummy — 테스트 참가자 전부 삭제
+app.post('/api/admin/clear-dummy', (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const dummies = db.getParticipants(event).filter(p => p.is_dummy);
+    dummies.forEach(p => db.deleteByToken(p.cancel_token));
+    res.json({ success: true, removed: dummies.length, participants: db.getParticipants(event) });
+});
+
+// ── 코발트 토너먼트 ──────────────────────────────
+app.post('/api/admin/tournament/start', (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const t = db.startTournament(event);
+    if (!t) return res.status(400).json({ error: '팀 배정된 팀이 2팀 이상이어야 해요.' });
+    res.json({ success: true, tournament: t });
+});
+
+app.post('/api/admin/tournament/winner', (req, res) => {
+    const { event, token, round, match, teamNum } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const r = db.setMatchWinner(event, Number(round), Number(match), teamNum === null ? null : Number(teamNum));
+    if (r.error) return res.status(400).json(r);
+    res.json(r);
+});
+
+// 경기 단위 실험체 공용 풀 배정 — 팀 내 중복 없음, 상대 팀과는 중복 허용
+app.post('/api/admin/tournament/match-chars', (req, res) => {
+    const { event, token, round, match, charsPerPlayer } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const m = db.getTournament(event)?.rounds[Number(round)]?.[Number(match)];
+    if (!m) return res.status(400).json({ error: '경기를 찾을 수 없어요.' });
+    if (m.teamA === null || m.teamB === null) return res.status(400).json({ error: '아직 대진이 정해지지 않았어요.' });
+    const perPlayer = Math.max(1, Number(charsPerPlayer) || 1);
+    const participants = db.getParticipants(event);
+    const banned = db.getBannedCharacters(event);
+    const pool   = CHARACTERS.filter(c => !banned.includes(c));
+    const chars  = {};
+    for (const tn of [m.teamA, m.teamB]) {
+        const need = participants.filter(p => p.team_num === tn).length * perPlayer;
+        if (need > pool.length) return res.status(400).json({ error: `${tn}팀에 필요한 실험체 ${need}개가 전체 ${pool.length}개보다 많아요.` });
+        chars[tn] = [...pool].sort(() => Math.random() - 0.5).slice(0, need);
+    }
+    db.setMatchChars(event, Number(round), Number(match), chars);
+    res.json({ success: true, chars });
+});
+
+app.post('/api/admin/tournament/reset', (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    db.resetTournament(event);
+    res.json({ success: true });
+});
+
+// 대진표를 디스코드 채널에 임베드로 전송
+app.post('/api/admin/tournament/send-discord', async (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!discordClient) return res.status(500).json({ error: '봇 클라이언트가 없습니다.' });
+    const ev = db.getEvent(event);
+    const t  = ev?.tournament;
+    if (!t) return res.status(400).json({ error: '토너먼트가 시작되지 않았어요.' });
+    const participants = db.getParticipants(event);
+    const teamLabel = tn => tn === null ? '(미정)' : `${TEAM_EMOJIS[tn - 1] || ''} ${tn}팀`;
+    const teamMembers = tn => participants.filter(p => p.team_num === tn).map(p => p.discord_nickname).join(', ') || '-';
+    try {
+        const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
+        const channel = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+        if (!channel) return res.status(404).json({ error: '채널을 찾을 수 없습니다.' });
+        const title = t.status === 'completed' ? `🏆 코발트 토너먼트 결과 — 우승 ${t.champion}팀` : '🏆 코발트 토너먼트 대진표';
+
+        // 이미지 대진표 (canvas 설치된 경우)
+        if (generateBracketCard) {
+            try {
+                const teamMap = {};
+                for (const p of participants) if (p.team_num) (teamMap[p.team_num] ??= []).push(p);
+                const imgBuf = await generateBracketCard(t, teamMap);
+                const file   = new AttachmentBuilder(imgBuf, { name: 'bracket.png' });
+                const embed  = new EmbedBuilder().setTitle(title).setColor(0xFF0000).setImage('attachment://bracket.png').setTimestamp();
+                await channel.send({ embeds: [embed], files: [file] });
+                return res.json({ success: true });
+            } catch (imgErr) {
+                console.error('[bracket-card] 이미지 생성 실패, 텍스트 폴백:', imgErr.message);
+            }
+        }
+
+        // 폴백: 텍스트 임베드
+        const embed = new EmbedBuilder().setTitle(title).setColor(0xFF0000).setTimestamp();
+        const total = t.rounds.length;
+        const roundName = r => r === total - 1 ? '결승' : r === total - 2 ? '준결승' : `${r + 1}라운드`;
+        t.rounds.forEach((matches, r) => {
+            const lines = matches.map((m, i) => {
+                const vs = `${teamLabel(m.teamA)} vs ${teamLabel(m.teamB)}`;
+                return m.winner !== null ? `${i + 1}. ${vs} → **${m.winner}팀 승**` : `${i + 1}. ${vs}`;
+            });
+            embed.addFields({ name: roundName(r), value: lines.join('\n') || '-' });
+        });
+        const teamNums = [...new Set(participants.filter(p => p.team_num).map(p => p.team_num))].sort((a, b) => a - b);
+        embed.addFields({ name: '팀 구성', value: teamNums.map(tn => `${teamLabel(tn)}: ${teamMembers(tn)}`).join('\n').slice(0, 1024) });
+        await channel.send({ embeds: [embed] });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: '전송 실패: ' + e.message });
+    }
 });
 
 // POST /api/admin/char-ban — 캐릭터 밴/밴취소
