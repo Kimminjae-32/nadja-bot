@@ -300,7 +300,10 @@ async function load(){
     document.getElementById('shuffle-tier-btn').style.display = isTeamMode ? '' : 'none';
     document.getElementById('extra-section').style.display = '';
     document.getElementById('voice-group').style.display = isTeamMode ? '' : 'none';
+    const isTourney = eventData?.mapType === '코발트 토너먼트';
     document.getElementById('chars-per-player-wrap').style.display = (isTeamMode && isCobaltMode()) ? 'inline-flex' : 'none';
+    // 토너먼트는 경기별 실험체 배정만 사용 — 상단 실험체 구역 숨김
+    document.getElementById('group-char').style.display = isTourney ? 'none' : '';
     document.getElementById('tourney-section').style.display = (isTeamMode && eventData?.mapType === '코발트 토너먼트') ? '' : 'none';
     renderTournament();
     updateMapBadge();
