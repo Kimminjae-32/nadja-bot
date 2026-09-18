@@ -170,8 +170,6 @@
         <div class="section-sub">팀 배정을 마친 뒤 시작하세요. 팀 수가 2·4·8이 아니면 일부 팀은 부전승으로 올라가요.</div>
         <div id="tourney-setup">
             <button class="btn btn-primary" id="tourney-start-btn">토너먼트 시작</button>
-            <button class="btn btn-secondary" onclick="fillDummy()">테스트 팀 자동 생성</button>
-            <button class="btn btn-secondary btn-sm" onclick="clearDummy()">테스트 참가자 삭제</button>
         </div>
         <div id="tourney-view" style="display:none">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem">
@@ -191,6 +189,15 @@
     <!-- 추가 관리 섹션 -->
     <div id="extra-section" class="section-card" style="display:none">
         <div class="section-title">추가 관리</div>
+
+        <div class="mgmt-group">
+            <div class="mgmt-label">테스트</div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+                <button class="btn btn-secondary btn-sm" onclick="fillDummy()">테스트 참가자 채우기 + 팀 배정</button>
+                <button class="btn btn-secondary btn-sm" onclick="clearDummy()">테스트 참가자 삭제</button>
+                <span style="font-size:.78rem;color:var(--muted)">빈 자리를 테스트N 참가자로 채웁니다 · 모드 변경 시 자동 삭제</span>
+            </div>
+        </div>
 
         <div class="mgmt-group">
             <div class="mgmt-label">맵/모드 변경</div>
