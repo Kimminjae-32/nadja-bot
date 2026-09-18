@@ -15,7 +15,10 @@
         .stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.75rem 1.2rem;text-align:center;}
         .stat-num{font-size:1.6rem;font-weight:700;}
         .stat-label{font-size:.75rem;color:var(--muted);}
-        .actions{display:flex;gap:.6rem;margin-bottom:1.5rem;flex-wrap:wrap;}
+        .actions{display:flex;gap:.75rem;margin-bottom:1.5rem;flex-wrap:wrap;}
+        .action-group{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.6rem .8rem;display:flex;flex-direction:column;gap:.45rem;}
+        .action-group-label{font-size:.72rem;color:var(--muted);font-weight:600;letter-spacing:.02em;}
+        .action-group-btns{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;}
         .btn{border:none;border-radius:8px;padding:.65rem 1.2rem;font-size:.9rem;font-weight:600;cursor:pointer;transition:opacity .2s;}
         .btn:hover{opacity:.85;}
         .btn:disabled{opacity:.4;cursor:not-allowed;}
@@ -87,15 +90,35 @@
     </div>
 
     <div class="actions">
-        <button class="btn btn-primary" id="shuffle-btn">자동 배정</button>
-        <button class="btn btn-primary" id="shuffle-tier-btn">팀 섞기(티어)</button>
-        <button class="btn btn-secondary" id="char-btn">실험체 랜덤 배정</button>
-        <label id="chars-per-player-wrap" style="display:none;align-items:center;gap:.4rem;font-size:.85rem;color:var(--muted)">인당
-            <input type="number" id="chars-per-player" min="1" max="10" value="3" style="width:52px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:.4rem .5rem;font-size:.85rem;outline:none">캐릭
-        </label>
-        <button class="btn btn-success" id="send-btn">디스코드에 결과 전송</button>
-        <button class="btn btn-secondary" id="notify-btn">내전 시작 알림</button>
-        <button class="btn btn-danger" id="close-btn">모집 종료</button>
+        <div class="action-group" id="group-team">
+            <div class="action-group-label">팀 배정</div>
+            <div class="action-group-btns">
+                <button class="btn btn-primary" id="shuffle-btn">자동 배정</button>
+                <button class="btn btn-primary" id="shuffle-tier-btn">팀 섞기(티어)</button>
+            </div>
+        </div>
+        <div class="action-group" id="group-char">
+            <div class="action-group-label">실험체 (선택)</div>
+            <div class="action-group-btns">
+                <button class="btn btn-secondary" id="char-btn">실험체 랜덤 배정</button>
+                <label id="chars-per-player-wrap" style="display:none;align-items:center;gap:.4rem;font-size:.85rem;color:var(--muted)">인당
+                    <input type="number" id="chars-per-player" min="1" max="10" value="3" style="width:52px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:.4rem .5rem;font-size:.85rem;outline:none">캐릭
+                </label>
+            </div>
+        </div>
+        <div class="action-group">
+            <div class="action-group-label">디스코드</div>
+            <div class="action-group-btns">
+                <button class="btn btn-success" id="send-btn">디스코드에 결과 전송</button>
+                <button class="btn btn-secondary" id="notify-btn">내전 시작 알림</button>
+            </div>
+        </div>
+        <div class="action-group">
+            <div class="action-group-label">종료</div>
+            <div class="action-group-btns">
+                <button class="btn btn-danger" id="close-btn">모집 종료</button>
+            </div>
+        </div>
     </div>
 
     <!-- 룰 공지 섹션 -->
@@ -140,7 +163,12 @@
             <button class="btn btn-secondary btn-sm" onclick="clearDummy()">테스트 참가자 삭제</button>
         </div>
         <div id="tourney-view" style="display:none">
-            <div id="tourney-status" style="font-size:.9rem;font-weight:600;margin-bottom:.75rem"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem">
+                <div id="tourney-status" style="font-size:.9rem;font-weight:600"></div>
+                <label style="display:inline-flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--muted);cursor:pointer">
+                    <input type="checkbox" id="tourney-chars-toggle" onchange="renderTournament()"> 경기별 실험체 배정 사용
+                </label>
+            </div>
             <div class="bracket" id="tourney-bracket"></div>
             <div style="display:flex;gap:.5rem;margin-top:.9rem;flex-wrap:wrap">
                 <button class="btn btn-success btn-sm" onclick="sendTournament()">디스코드에 대진표 전송</button>
@@ -157,9 +185,9 @@
             <div class="mgmt-label">맵/모드 변경</div>
             <div id="current-map-badge" style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem"></div>
             <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-                <button class="btn btn-secondary btn-sm" onclick="changeMap('루미아 섬')"><img src="/icons/map-lumia.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain">루미아 섬</button>
-                <button class="btn btn-secondary btn-sm" onclick="changeMap('코발트')"><img src="/icons/map-cobalt.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain">코발트</button>
-                <button class="btn btn-secondary btn-sm" onclick="changeMap('론울프')"><img src="/icons/mode-lonewolf.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain">론울프</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('루미아 섬')">루미아 섬</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('코발트')">코발트</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('론울프')">론울프</button>
             </div>
         </div>
 
@@ -199,18 +227,6 @@ const POS_ICON = { '탱커':'tank','전사':'warrior','암살자':'assassin','�
 const TEAM_COLORS = ['#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22','#95a5a6','#1abc9c'];
 const TIER_IMG = {'아이언':'https://cdn.dak.gg/er/images/tier/full/1.png','브론즈':'https://cdn.dak.gg/er/images/tier/full/2.png','실버':'https://cdn.dak.gg/er/images/tier/full/3.png','골드':'https://cdn.dak.gg/er/images/tier/full/4.png','플래티넘':'https://cdn.dak.gg/er/images/tier/full/5.png','다이아몬드':'https://cdn.dak.gg/er/images/tier/full/6.png','메테오라이트':'https://cdn.dak.gg/er/images/tier/full/63.png','미스릴':'https://cdn.dak.gg/er/images/tier/full/66.png','데미갓':'https://cdn.dak.gg/er/images/tier/full/7.png','이터니티':'https://cdn.dak.gg/er/images/tier/full/8.png'};
 const TIER_NAMES = ['언랭크','아이언','브론즈','실버','골드','플래티넘','다이아몬드','메테오라이트','미스릴','데미갓','이터니티'];
-// 맵/모드 아이콘 — public/icons/ 이미지 사용
-const MAP_ICON = {
-    '루미아 섬': { img: '/icons/map-lumia.png' },
-    '코발트':   { img: '/icons/map-cobalt.png' },
-    '코발트 토너먼트': { img: '/icons/map-cobalt.png' },
-    '론울프':   { img: '/icons/mode-lonewolf.png' },
-};
-function mapIconImg(key, size = 20) {
-    const m = MAP_ICON[key];
-    if (!m) return '';
-    return `<img src="${m.img}" alt="" style="width:${size}px;height:${size}px;vertical-align:middle;margin-right:5px;object-fit:contain;border-radius:4px">`;
-}
 function tierImg(tier) {
     return TIER_IMG[tier]
         ? `<img src="${TIER_IMG[tier]}" style="width:18px;height:18px;vertical-align:middle;margin-right:3px;" onerror="this.style.display='none'">`
@@ -426,6 +442,8 @@ function renderTournament(){
 
     const total = t.rounds.length;
     const roundName = r => r===total-1 ? '결승' : r===total-2 ? '준결승' : `${r+1}라운드`;
+    const useMatchChars = document.getElementById('tourney-chars-toggle').checked || t.rounds.some(ms=>ms.some(m=>m.chars));
+    document.getElementById('tourney-chars-toggle').checked = useMatchChars;
     document.getElementById('tourney-status').innerHTML = t.status==='completed'
         ? `<span style="color:var(--green)">우승: ${t.champion}팀</span> · ${teamMembersText(t.champion)}`
         : '진행 중 — 각 경기의 승리 팀을 클릭하세요';
@@ -453,7 +471,7 @@ function renderTournament(){
                 <div class="match">
                     ${teamHtml(m,r,i,m.teamA)}
                     ${teamHtml(m,r,i,m.teamB)}
-                    ${m.teamA!==null && m.teamB!==null ? `
+                    ${useMatchChars && m.teamA!==null && m.teamB!==null ? `
                     <div class="match-actions">
                         <span style="font-size:.75rem;color:var(--muted)">인당</span>
                         <input type="number" class="num-input" id="mc-${r}-${i}" min="1" max="10" value="3">
@@ -543,7 +561,7 @@ function modeLabel() {
     if (currentMapKey() === '코발트 토너먼트') return `코발트 토너먼트 · ${tc}팀 (4vs4)`;
     return `${currentMapKey()} · ${tc}팀`;
 }
-function modeHTML() { return mapIconImg(currentMapKey()) + esc(modeLabel()); }
+function modeHTML() { return esc(modeLabel()); }
 
 function updateMapBadge() {
     document.getElementById('current-map-badge').innerHTML = '현재: ' + modeHTML();

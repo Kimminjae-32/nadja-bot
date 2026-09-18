@@ -421,6 +421,8 @@ app.post('/api/admin/tournament/send-discord', async (req, res) => {
                 const imgBuf = await generateBracketCard(t, teamMap);
                 const file   = new AttachmentBuilder(imgBuf, { name: 'bracket.png' });
                 const embed  = new EmbedBuilder().setTitle(title).setColor(0xFF0000).setImage('attachment://bracket.png').setTimestamp();
+                const teamNums = Object.keys(teamMap).map(Number).sort((a, b) => a - b);
+                embed.addFields({ name: '팀 구성', value: teamNums.map(tn => `${teamLabel(tn)}: ${teamMembers(tn)}`).join('\n').slice(0, 1024) || '-' });
                 await channel.send({ embeds: [embed], files: [file] });
                 return res.json({ success: true });
             } catch (imgErr) {

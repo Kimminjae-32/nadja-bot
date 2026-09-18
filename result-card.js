@@ -236,8 +236,9 @@ async function generateBracketCard(tournament, teamMap) {
 
     const rounds = tournament.rounds;
     const R      = rounds.length;
-    const BOX_W = 220, BOX_H = 60, GAP = 70, LEAF_H = 92, PAD = 30, TITLE_H = 70;
-    const CH_W  = 210, CH_H = 84;
+    // 디스코드 임베드는 가로 폭 기준으로 축소되므로 가로를 좁게, 글자를 크게
+    const BOX_W = 150, BOX_H = 66, GAP = 46, LEAF_H = 96, PAD = 24, TITLE_H = 72;
+    const CH_W  = 170, CH_H = 96;
 
     // 슬롯 위치: pos[r][m][s] = { x, y, side }  (s: 0=teamA, 1=teamB)
     const leavesPerHalf = rounds[0].length;           // 반쪽 리프 수 = 1라운드 경기 수 (R≥2), R=1이면 1
@@ -276,14 +277,13 @@ async function generateBracketCard(tournament, teamMap) {
     ctx.fillStyle = '#0f0f1a';
     ctx.fillRect(0, 0, W, H);
 
-    ctx.font = `bold 28px ${F}`;
+    ctx.font = `bold 32px ${F}`;
     ctx.fillStyle = '#e0e0f0';
     ctx.textAlign = 'center';
-    ctx.fillText(tournament.status === 'completed' ? `코발트 토너먼트 결과` : '코발트 토너먼트 대진표', W / 2, 46);
+    ctx.fillText(tournament.status === 'completed' ? `코발트 토너먼트 결과` : '코발트 토너먼트 대진표', W / 2, 48);
     ctx.textAlign = 'left';
 
     const teamColor = tn => TEAM_COLORS[(tn - 1) % TEAM_COLORS.length];
-    const members = tn => (teamMap[tn] || []).map(p => p.discord_nickname).join(', ');
 
     // ── 연결선 ──
     ctx.lineWidth = 2;
@@ -335,18 +335,17 @@ async function generateBracketCard(tournament, teamMap) {
         ctx.lineWidth = isWinner ? 3 : 1.5;
         ctx.strokeStyle = team === null ? '#2a2a4a' : (isLoser ? '#3a3a55' : teamColor(team));
         roundedRect(ctx, x, y, BOX_W, BOX_H, 8); ctx.stroke();
+        ctx.textAlign = 'center';
         if (team === null) {
             ctx.fillStyle = '#55556a';
-            ctx.font = `18px ${F}`;
-            ctx.fillText(r === 0 ? '부전승' : '미정', x + 14, p.y + 7);
-            return;
+            ctx.font = `22px ${F}`;
+            ctx.fillText(r === 0 ? '부전승' : '미정', x + BOX_W / 2, p.y + 8);
+        } else {
+            ctx.fillStyle = isLoser ? '#6a6a80' : '#ffffff';
+            ctx.font = `bold 30px ${F}`;
+            ctx.fillText(`${team}팀`, x + BOX_W / 2, p.y + 11);
         }
-        ctx.fillStyle = isLoser ? '#6a6a80' : '#ffffff';
-        ctx.font = `bold 20px ${F}`;
-        ctx.fillText(`${team}팀`, x + 14, p.y - 4);
-        ctx.fillStyle = isLoser ? '#55556a' : '#9a9ab5';
-        ctx.font = `13px ${F}`;
-        ctx.fillText(fitText(ctx, members(team), BOX_W - 28), x + 14, p.y + 18);
+        ctx.textAlign = 'left';
     };
     for (let r = 0; r < R; r++)
         for (let m = 0; m < rounds[r].length; m++) {
@@ -364,16 +363,11 @@ async function generateBracketCard(tournament, teamMap) {
     roundedRect(ctx, cx, cy, CH_W, CH_H, 10); ctx.stroke();
     ctx.textAlign = 'center';
     ctx.fillStyle = champ !== null ? '#f1c40f' : '#55556a';
-    ctx.font = `bold 16px ${F}`;
-    ctx.fillText('우승', midX, cy + 24);
+    ctx.font = `bold 20px ${F}`;
+    ctx.fillText('우승', midX, cy + 30);
     ctx.fillStyle = champ !== null ? '#ffffff' : '#55556a';
-    ctx.font = `bold 24px ${F}`;
-    ctx.fillText(champ !== null ? `${champ}팀` : '미정', midX, cy + 52);
-    if (champ !== null) {
-        ctx.fillStyle = '#9a9ab5';
-        ctx.font = `12px ${F}`;
-        ctx.fillText(fitText(ctx, members(champ), CH_W - 20), midX, cy + 72);
-    }
+    ctx.font = `bold 34px ${F}`;
+    ctx.fillText(champ !== null ? `${champ}팀` : '미정', midX, cy + 72);
     ctx.textAlign = 'left';
 
     return canvas.toBuffer('image/png');
