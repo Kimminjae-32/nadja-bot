@@ -279,7 +279,7 @@ app.post('/api/admin/remove', (req, res) => {
 
 // POST /api/admin/random-chars  — 팀 배정된 참가자에게 실험체 랜덤 배정
 app.post('/api/admin/random-chars', (req, res) => {
-    const { event, token } = req.body;
+    const { event, token, charsPerPlayer } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
     const participants = db.getParticipants(event);
     const assigned = participants.filter(p => p.team_num);
@@ -287,14 +287,33 @@ app.post('/api/admin/random-chars', (req, res) => {
 
     const banned  = db.getBannedCharacters(event);
     const pool    = CHARACTERS.filter(c => !banned.includes(c));
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    const assignments = assigned.map((p, i) => ({
+    const toEntry = (p, characters) => ({
         cancel_token:     p.cancel_token,
         discord_nickname: p.discord_nickname,
         ingame_nickname:  p.ingame_nickname,
         team_num:         p.team_num,
-        character:        shuffled[i % shuffled.length]
-    }));
+        character:        characters[0],
+        characters,
+    });
+
+    // 인당 N캐릭 모드 (코발트) — 팀 내에서는 중복 없음, 팀끼리는 중복 허용
+    const perPlayer = Number(charsPerPlayer) || 0;
+    if (perPlayer > 0) {
+        const byTeam = {};
+        for (const p of assigned) (byTeam[p.team_num] ??= []).push(p);
+        const assignments = [];
+        for (const members of Object.values(byTeam)) {
+            const need = members.length * perPlayer;
+            if (need > pool.length)
+                return res.status(400).json({ error: `한 팀에 필요한 실험체 ${need}개가 전체 실험체 ${pool.length}개보다 많아요.` });
+            const shuffled = [...pool].sort(() => Math.random() - 0.5);
+            members.forEach((p, i) => assignments.push(toEntry(p, shuffled.slice(i * perPlayer, (i + 1) * perPlayer))));
+        }
+        return res.json({ success: true, assignments, charsPerPlayer: perPlayer, bannedCount: banned.length });
+    }
+
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    const assignments = assigned.map((p, i) => toEntry(p, [shuffled[i % shuffled.length]]));
     res.json({ success: true, assignments, bannedCount: banned.length });
 });
 

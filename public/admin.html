@@ -52,31 +52,17 @@
         .section-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.2rem;margin-top:1.5rem;}
         .section-title{font-size:1.05rem;font-weight:700;margin-bottom:.3rem;}
         .section-sub{color:var(--muted);font-size:.82rem;margin-bottom:.85rem;}
-        .ban-chip{display:inline-flex;align-items:center;gap:.3rem;background:#2a0a0a;border:1px solid var(--accent);border-radius:20px;padding:.25rem .65rem;font-size:.82rem;color:var(--accent);}
-        .ban-chip-x{cursor:pointer;opacity:.7;line-height:1;font-size:.9rem;}
-        .ban-chip-x:hover{opacity:1;}
-        .ban-pick-char{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:.3rem .4rem;font-size:.78rem;cursor:pointer;text-align:center;transition:border-color .1s;user-select:none;}
-        .ban-pick-char:hover{border-color:var(--accent);}
 
         /* ── 추가 관리 ── */
         .mgmt-group{margin-bottom:1.1rem;padding-bottom:1.1rem;border-bottom:1px solid var(--border);}
         .mgmt-group:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none;}
         .mgmt-label{font-size:.9rem;font-weight:600;margin-bottom:.5rem;}
 
-        /* ── 드래프트 ── */
-        .captain-row{display:flex;align-items:center;gap:.6rem;margin-bottom:.45rem;}
-        .captain-label{min-width:36px;font-size:.85rem;color:var(--muted);}
-        .draft-link-item{display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:7px;margin-bottom:.35rem;flex-wrap:wrap;}
-        .draft-link-name{font-size:.85rem;white-space:nowrap;}
-        .draft-link-url{flex:1;font-size:.78rem;color:var(--muted);word-break:break-all;min-width:0;}
-        .draft-progress-bar{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-bottom:.75rem;font-size:.9rem;}
-        .pick-log-item{padding:.3rem 0;border-bottom:1px solid var(--border);font-size:.85rem;}
-        .pick-log-item:last-child{border-bottom:none;}
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>⚙️ 내전 관리자</h1>
+    <h1>내전 관리자</h1>
     <p class="subtitle" id="subtitle">로딩 중...</p>
 
     <div class="stats-row">
@@ -86,20 +72,23 @@
     </div>
 
     <div class="actions">
-        <button class="btn btn-primary" id="shuffle-btn">🎲 자동 배정</button>
-        <button class="btn btn-primary" id="shuffle-tier-btn">⚖️ 팀 섞기(티어)</button>
-        <button class="btn btn-secondary" id="char-btn">🃏 실험체 랜덤 배정</button>
-        <button class="btn btn-success" id="send-btn">📤 디스코드에 결과 전송</button>
-        <button class="btn btn-secondary" id="notify-btn">📣 내전 시작 알림</button>
-        <button class="btn btn-danger" id="close-btn">🗑️ 모집 종료</button>
+        <button class="btn btn-primary" id="shuffle-btn">자동 배정</button>
+        <button class="btn btn-primary" id="shuffle-tier-btn">팀 섞기(티어)</button>
+        <button class="btn btn-secondary" id="char-btn">실험체 랜덤 배정</button>
+        <label id="chars-per-player-wrap" style="display:none;align-items:center;gap:.4rem;font-size:.85rem;color:var(--muted)">인당
+            <input type="number" id="chars-per-player" min="1" max="10" value="3" style="width:52px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:.4rem .5rem;font-size:.85rem;outline:none">캐릭
+        </label>
+        <button class="btn btn-success" id="send-btn">디스코드에 결과 전송</button>
+        <button class="btn btn-secondary" id="notify-btn">내전 시작 알림</button>
+        <button class="btn btn-danger" id="close-btn">모집 종료</button>
     </div>
 
     <!-- 룰 공지 섹션 -->
     <div class="section-card" id="rule-section" style="margin-bottom:1rem;display:none">
-        <div class="section-title">📋 내전 룰 공지</div>
+        <div class="section-title">내전 룰 공지</div>
         <div class="section-sub">저장하면 참가 신청 페이지 상단에 표시됩니다</div>
         <textarea id="rule-textarea" placeholder="내전 룰을 입력하세요..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:.75rem 1rem;font-size:.88rem;min-height:80px;resize:vertical;font-family:inherit;outline:none;box-sizing:border-box;margin-bottom:.5rem"></textarea>
-        <button class="btn btn-secondary btn-sm" id="rule-save-btn">💾 저장</button>
+        <button class="btn btn-secondary btn-sm" id="rule-save-btn">저장</button>
     </div>
 
     <div class="tabs">
@@ -121,39 +110,27 @@
 
     <!-- 실험체 배정 결과 -->
     <div id="char-results" style="display:none;margin-top:1.5rem">
-        <h2 style="font-size:1.1rem;margin-bottom:.75rem">🃏 실험체 배정 결과</h2>
+        <h2 style="font-size:1.1rem;margin-bottom:.75rem">실험체 배정 결과</h2>
         <div class="teams-grid" id="char-grid"></div>
     </div>
 
-    <!-- 캐릭터 밴 섹션 -->
-    <div id="ban-section" class="section-card" style="display:none">
-        <div class="section-title">🚫 캐릭터 밴</div>
-        <div class="section-sub">밴된 캐릭터는 실험체 랜덤 배정에서 제외돼요 · 선택 사항</div>
-        <div id="ban-chips" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem;min-height:1.8rem;align-items:center"></div>
-        <button class="btn btn-secondary btn-sm" id="ban-add-btn" onclick="toggleBanPicker()">+ 캐릭터 밴 추가</button>
-        <div id="ban-picker" style="display:none;margin-top:.6rem">
-            <input type="text" id="ban-search" placeholder="캐릭터 이름 검색..." oninput="renderBanCharList(this.value)"
-                   style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:.5rem .75rem;font-size:.85rem;outline:none;margin-bottom:.5rem;box-sizing:border-box">
-            <div id="ban-char-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:.3rem;max-height:200px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.5rem"></div>
-        </div>
-    </div>
 
     <!-- 추가 관리 섹션 -->
     <div id="extra-section" class="section-card" style="display:none">
-        <div class="section-title">⚙️ 추가 관리</div>
+        <div class="section-title">추가 관리</div>
 
         <div class="mgmt-group">
-            <div class="mgmt-label">🗺️ 맵/모드 변경</div>
+            <div class="mgmt-label">맵/모드 변경</div>
             <div id="current-map-badge" style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem"></div>
             <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-                <button class="btn btn-secondary btn-sm" onclick="changeMap('루미아 섬')"><img src="/icons/map-lumia.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain" onerror="this.replaceWith(document.createTextNode('🏝️ '))">루미아 섬</button>
-                <button class="btn btn-secondary btn-sm" onclick="changeMap('코발트')"><img src="/icons/map-cobalt.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain" onerror="this.replaceWith(document.createTextNode('🌊 '))">코발트</button>
-                <button class="btn btn-secondary btn-sm" onclick="changeMap('론울프')"><img src="/icons/mode-lonewolf.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain" onerror="this.replaceWith(document.createTextNode('🐺 '))">론울프</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('루미아 섬')"><img src="/icons/map-lumia.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain">루미아 섬</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('코발트')"><img src="/icons/map-cobalt.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain">코발트</button>
+                <button class="btn btn-secondary btn-sm" onclick="changeMap('론울프')"><img src="/icons/mode-lonewolf.png" alt="" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;object-fit:contain">론울프</button>
             </div>
         </div>
 
         <div class="mgmt-group">
-            <div class="mgmt-label">👑 방장 양도</div>
+            <div class="mgmt-label">방장 양도</div>
             <div style="display:flex;gap:.5rem;align-items:center">
                 <select id="transfer-select" class="team-select" style="flex:1">
                     <option value="">-- 새 방장 선택 --</option>
@@ -163,35 +140,16 @@
         </div>
 
         <div class="mgmt-group" id="voice-group">
-            <div class="mgmt-label">🔊 음성 채널 이동</div>
+            <div class="mgmt-label">음성 채널 이동</div>
             <div style="font-size:.82rem;color:var(--muted);margin-bottom:.5rem">팀별로 이동할 채널 지정 · 음성 채널에 있는 참가자만 이동됩니다</div>
             <div id="voice-rows" style="margin-bottom:.6rem"></div>
             <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-                <button class="btn btn-secondary btn-sm" id="move-exec-btn" onclick="executeVoiceMove()">🚀 이동 실행</button>
-                <button class="btn btn-secondary btn-sm" onclick="returnVoices()">↩️ 원래 채널로</button>
+                <button class="btn btn-secondary btn-sm" id="move-exec-btn" onclick="executeVoiceMove()">이동 실행</button>
+                <button class="btn btn-secondary btn-sm" onclick="returnVoices()">원래 채널로</button>
             </div>
         </div>
     </div>
 
-    <!-- 드래프트 섹션 -->
-    <div id="draft-section" class="section-card" style="display:none">
-        <div class="section-title">🎯 팀경매(드래프트)</div>
-        <div class="section-sub">팀별 팀장을 지정하면 각자 픽 링크를 받아요</div>
-
-        <!-- 팀장 선택 UI -->
-        <div id="draft-setup">
-            <div id="captain-rows" style="margin-bottom:.75rem"></div>
-            <button class="btn btn-secondary" id="draft-start-btn">🎯 드래프트 시작</button>
-        </div>
-
-        <!-- 진행 상황 -->
-        <div id="draft-status" style="display:none">
-            <div class="draft-progress-bar" id="draft-progress-text">로딩 중...</div>
-            <div style="font-size:.9rem;font-weight:600;margin:.75rem 0 .4rem">🔗 팀장 픽 링크</div>
-            <div id="draft-links"></div>
-            <div style="font-size:.9rem;font-weight:600;margin:.75rem 0 .4rem">📋 픽 기록</div>
-            <div id="draft-pick-log" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;min-height:3rem"></div>
-        </div>
     </div>
 </div>
 
@@ -205,24 +163,23 @@ const EVENT  = params.get('event');
 const TOKEN  = params.get('token');
 const POS_ICON = { '탱커':'tank','전사':'warrior','암살자':'assassin','스킬 딜러':'skill','원거리 딜러':'range','지원가':'support' };
 const TEAM_COLORS = ['#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22','#95a5a6','#1abc9c'];
-const EMOJIS = ['🟦','🟥','🟩','🟨','🟪','🟧','⬜','🟫'];
 const TIER_IMG = {'아이언':'https://cdn.dak.gg/er/images/tier/full/1.png','브론즈':'https://cdn.dak.gg/er/images/tier/full/2.png','실버':'https://cdn.dak.gg/er/images/tier/full/3.png','골드':'https://cdn.dak.gg/er/images/tier/full/4.png','플래티넘':'https://cdn.dak.gg/er/images/tier/full/5.png','다이아몬드':'https://cdn.dak.gg/er/images/tier/full/6.png','메테오라이트':'https://cdn.dak.gg/er/images/tier/full/63.png','미스릴':'https://cdn.dak.gg/er/images/tier/full/66.png','데미갓':'https://cdn.dak.gg/er/images/tier/full/7.png','이터니티':'https://cdn.dak.gg/er/images/tier/full/8.png'};
 const TIER_NAMES = ['언랭크','아이언','브론즈','실버','골드','플래티넘','다이아몬드','메테오라이트','미스릴','데미갓','이터니티'];
-// 맵/모드 아이콘 — public/icons/ 에 이미지가 있으면 사용, 없으면 이모지로 폴백
+// 맵/모드 아이콘 — public/icons/ 이미지 사용
 const MAP_ICON = {
-    '루미아 섬': { img: '/icons/map-lumia.png',     emoji: '🏝️' },
-    '코발트':   { img: '/icons/map-cobalt.png',    emoji: '🌊' },
-    '론울프':   { img: '/icons/mode-lonewolf.png', emoji: '🐺' },
+    '루미아 섬': { img: '/icons/map-lumia.png' },
+    '코발트':   { img: '/icons/map-cobalt.png' },
+    '론울프':   { img: '/icons/mode-lonewolf.png' },
 };
 function mapIconImg(key, size = 20) {
     const m = MAP_ICON[key];
     if (!m) return '';
-    return `<img src="${m.img}" alt="" style="width:${size}px;height:${size}px;vertical-align:middle;margin-right:5px;object-fit:contain;border-radius:4px" onerror="this.replaceWith(document.createTextNode('${m.emoji} '))">`;
+    return `<img src="${m.img}" alt="" style="width:${size}px;height:${size}px;vertical-align:middle;margin-right:5px;object-fit:contain;border-radius:4px">`;
 }
 function tierImg(tier) {
     return TIER_IMG[tier]
         ? `<img src="${TIER_IMG[tier]}" style="width:18px;height:18px;vertical-align:middle;margin-right:3px;" onerror="this.style.display='none'">`
-        : '⬜ ';
+        : '';
 }
 const CHARACTERS = ['재키','아야','현우','매그너스','피오라','나딘','자히르','하트','아이솔','리 다이린','유키','혜진','쇼우','시셀라','키아라','아드리아나','쇼이치','실비아','엘마','레녹스','로지','루크','캐시','아델라','버니스','바바라','알렉스','수아','레온','일레븐','리오','윌리엄','니키','나타폰','안','이바','다니엘','제니','카밀로','클로에','요한','비앙카','셀린','에키온','마이','에이든','라우라','띠아','펠릭스','엘레나','프리야','아디나','마커스','칼라','에스텔','피올로','마르티나','헤이즈','아이작','타지아','이렘','테오도르','이안','바냐','데비&마를렌','아르다','아비게일','알론소','레니','초바메','케네스','카티야','샬럿','다르코','르노어','가넷','유민','히스이','유스티나','아슈트반','니아','슈린','헨리','블레어','미르카','펜리르','코렐라인','비형'];
 
@@ -262,8 +219,6 @@ function charImg(name, size=32) {
 
 let eventData = null;
 let participants = [];
-let bannedCharacters = [];
-let draftPoll = null;
 
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -288,36 +243,16 @@ async function load(){
     if(data.error){ document.getElementById('subtitle').textContent='오류: '+data.error; return; }
     eventData = data.event;
     participants = data.participants;
-    bannedCharacters = eventData?.bannedCharacters || [];
 
     const isTeamMode = eventData?.gameType === '내전';
     document.getElementById('shuffle-btn').style.display = isTeamMode ? '' : 'none';
     document.getElementById('shuffle-tier-btn').style.display = isTeamMode ? '' : 'none';
-    document.getElementById('ban-section').style.display = isTeamMode ? '' : 'none';
-    document.getElementById('draft-section').style.display = isTeamMode ? '' : 'none';
     document.getElementById('extra-section').style.display = '';
     document.getElementById('voice-group').style.display = isTeamMode ? '' : 'none';
+    document.getElementById('chars-per-player-wrap').style.display = (isTeamMode && eventData?.mapType === '코발트') ? 'inline-flex' : 'none';
     updateMapBadge();
     populateTransferSelect();
     loadVoiceChannels();
-
-    if(isTeamMode){
-        renderBanChips();
-        renderCaptainRows();
-
-        // 드래프트 이미 진행 중이면 바로 상태 패널 표시
-        const ds = await api(`/api/admin/draft/status?event=${EVENT}&token=${TOKEN}`);
-        if(ds.status === 'in_progress' || ds.status === 'completed'){
-            document.getElementById('draft-setup').style.display='none';
-            document.getElementById('draft-status').style.display='block';
-            if(ds.captainLinks) renderDraftLinks(ds.captainLinks);
-            renderPickLog(ds.picks||[]);
-            updateDraftProgress(ds);
-            if(ds.status === 'in_progress'){
-                draftPoll = setInterval(pollDraftStatus, 3000);
-            }
-        }
-    }
 
     // 룰 섹션 초기화
     document.getElementById('rule-section').style.display = '';
@@ -366,7 +301,7 @@ function renderTable(){
                     <select class="team-select" onchange="changeTier('${esc(p.cancel_token)}', this.value)" title="티어 수정">${tierOptions(p.tier)}</select>
                 </div>
                 ${p.position?`<span class="pos-badge">${posImg(p.position)}${esc(p.position)}</span>`:''}
-                ${p.main_characters?.length?`<div style="margin-top:.3rem;font-size:.78rem;color:var(--muted)">🎮 ${p.main_characters.map(c=>esc(c)).join(' · ')}</div>`:''}
+                ${p.main_characters?.length?`<div style="margin-top:.3rem;font-size:.78rem;color:var(--muted)">${p.main_characters.map(c=>esc(c)).join(' · ')}</div>`:''}
             </td>
             <td>
                 ${isTeamMode
@@ -400,12 +335,12 @@ function renderTeams(){
             <div class="member-item">
                 <div class="member-name">${esc(p.discord_nickname)}</div>
                 <div class="member-sub">${esc(p.ingame_nickname)}${p.tier?` · ${tierImg(p.tier)}${esc(p.tier)}`:''}${p.position?` · ${posImg(p.position)}${esc(p.position)}`:''}</div>
-                ${p.main_characters?.length?`<div style="font-size:.76rem;color:var(--muted);margin-top:.15rem">🎮 ${p.main_characters.map(c=>esc(c)).join(' · ')}</div>`:''}
+                ${p.main_characters?.length?`<div style="font-size:.76rem;color:var(--muted);margin-top:.15rem">${p.main_characters.map(c=>esc(c)).join(' · ')}</div>`:''}
             </div>`;
         html+='</div>';
     }
     if(unassigned.length){
-        html+=`<div class="team-card unassigned"><h3 style="color:var(--muted)">❓ 미배정 (${unassigned.length}명)</h3>`;
+        html+=`<div class="team-card unassigned"><h3 style="color:var(--muted)">미배정 (${unassigned.length}명)</h3>`;
         for(const p of unassigned) html+=`<div class="member-item"><div class="member-name">${esc(p.discord_nickname)}</div></div>`;
         html+='</div>';
     }
@@ -436,64 +371,6 @@ async function removeMember(cancelToken){
     participants = participants.filter(p=>p.cancel_token!==cancelToken);
     render();
     toast('삭제됐어요');
-}
-
-// ── 캐릭터 밴 ────────────────────────────────────────────
-function renderBanChips(){
-    const el = document.getElementById('ban-chips');
-    if(!bannedCharacters.length){
-        el.innerHTML = '<span style="color:var(--muted);font-size:.85rem">밴 없음 · 모든 캐릭터 사용됨</span>';
-        return;
-    }
-    el.innerHTML = bannedCharacters.map(c=>`
-        <span class="ban-chip">
-            ${CHAR_EN[c] ? `<img src="https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharCommunity_${CHAR_EN[c]}_S000.png" style="width:18px;height:18px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:.2rem" onerror="this.remove()">` : ''}
-            ${esc(c)}<span class="ban-chip-x" onclick="removeBan('${esc(c)}')" title="밴 취소">✕</span>
-        </span>
-    `).join('');
-}
-
-function toggleBanPicker(){
-    const picker = document.getElementById('ban-picker');
-    const shown = picker.style.display !== 'none';
-    picker.style.display = shown ? 'none' : 'block';
-    if(!shown){
-        const inp = document.getElementById('ban-search');
-        inp.value = '';
-        renderBanCharList('');
-        inp.focus();
-    }
-}
-
-function renderBanCharList(query){
-    const filtered = CHARACTERS.filter(c => !bannedCharacters.includes(c) && c.includes(query));
-    const el = document.getElementById('ban-char-list');
-    if(!filtered.length){
-        el.innerHTML = '<div style="color:var(--muted);font-size:.82rem;grid-column:1/-1;text-align:center;padding:.5rem">검색 결과 없음</div>';
-        return;
-    }
-    el.innerHTML = filtered.map(c=>`
-        <div class="ban-pick-char" onclick="addBan('${esc(c)}')">${charImg(c)}${esc(c)}</div>
-    `).join('');
-}
-
-async function addBan(character){
-    const data = await api('/api/admin/char-ban', { event:EVENT, token:TOKEN, character, action:'ban' });
-    if(data.success){
-        bannedCharacters = data.bannedCharacters;
-        renderBanChips();
-        renderBanCharList(document.getElementById('ban-search').value);
-    }
-}
-
-async function removeBan(character){
-    const data = await api('/api/admin/char-ban', { event:EVENT, token:TOKEN, character, action:'unban' });
-    if(data.success){
-        bannedCharacters = data.bannedCharacters;
-        renderBanChips();
-        const s = document.getElementById('ban-search');
-        if(s) renderBanCharList(s.value);
-    }
 }
 
 // ── 추가 관리 ────────────────────────────────────────────
@@ -550,7 +427,7 @@ async function changeMap(newMap) {
 
     const data = await api('/api/admin/change-map', { event: EVENT, token: TOKEN, newMap, perTeam, maxPlayers });
     if (data.error) { toast(data.error, true); return; }
-    toast(`✅ ${data.gameType} / ${data.mapType} (${data.teamCount}팀)으로 변경!`);
+    toast(`${data.gameType} / ${data.mapType} (${data.teamCount}팀)으로 변경!`);
     setTimeout(() => location.reload(), 1000);
 }
 
@@ -561,7 +438,7 @@ async function transferHost() {
     if (!confirm(`"${name}"에게 방장을 양도할까요?`)) return;
     const data = await api('/api/admin/transfer-host', { event: EVENT, token: TOKEN, newHostDiscordId: sel.value });
     if (data.error) { toast(data.error, true); return; }
-    const msg = data.dmSent ? '👑 방장이 양도됐어요! 새 방장에게 링크를 DM으로 전송했어요.' : '👑 방장이 양도됐어요! (DM 전송 실패 — 상대방이 DM을 차단했을 수 있어요)';
+    const msg = data.dmSent ? '방장이 양도됐어요! 새 방장에게 링크를 DM으로 전송했어요.' : '방장이 양도됐어요! (DM 전송 실패 — 상대방이 DM을 차단했을 수 있어요)';
     toast(msg);
     // 토큰이 교체됐으므로 현재 페이지는 더 이상 유효하지 않음 — 3초 후 이탈
     setTimeout(() => { location.href = '/'; }, 3000);
@@ -583,7 +460,7 @@ function renderVoiceRows() {
     const opts = voiceChannels.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
     el.innerHTML = Array.from({ length: tc }, (_, i) => `
         <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
-            <span style="min-width:38px;font-size:.85rem;color:var(--muted)">${EMOJIS[i%EMOJIS.length]} ${i+1}팀</span>
+            <span style="min-width:38px;font-size:.85rem;color:var(--muted)">${i+1}팀</span>
             <select class="team-select" id="voice-ch-${i+1}" style="flex:1">
                 <option value="">-- 채널 선택 --</option>
                 ${opts}
@@ -611,105 +488,15 @@ async function executeVoiceMove() {
     }
     const errDetail = data.errors?.length ? ` (${data.errors[0]})` : '';
     const failMsg = data.failed ? ` · ${data.failed}명 실패${errDetail}` : '';
-    toast(`🚀 ${data.moved}명 이동 완료!${failMsg}`, !!data.failed);
+    toast(`${data.moved}명 이동 완료!${failMsg}`, !!data.failed);
 }
 
 async function returnVoices() {
     if (!confirm('모든 참가자를 원래 채널로 복구할까요?')) return;
     const data = await api('/api/admin/return-voices', { event: EVENT, token: TOKEN });
     if (data.error) { toast(data.error, true); return; }
-    toast(`↩️ ${data.moved}명 복구 완료!`);
+    toast(`${data.moved}명 복구 완료!`);
 }
-
-// ── 드래프트 ─────────────────────────────────────────────
-function renderCaptainRows(){
-    const tc = eventData?.teamCount || 2;
-    const rows = document.getElementById('captain-rows');
-    rows.innerHTML = '';
-    for(let i=1; i<=tc; i++){
-        const row = document.createElement('div');
-        row.className = 'captain-row';
-        const opts = participants.map(p=>`<option value="${esc(p.cancel_token)}">${esc(p.discord_nickname)} (${esc(p.ingame_nickname)})</option>`).join('');
-        row.innerHTML = `
-            <span class="captain-label">${EMOJIS[(i-1)%EMOJIS.length]} ${i}팀</span>
-            <select class="team-select" id="captain-${i}" style="flex:1">
-                <option value="">-- 팀장 선택 --</option>
-                ${opts}
-            </select>`;
-        rows.appendChild(row);
-    }
-}
-
-function renderDraftLinks(links){
-    document.getElementById('draft-links').innerHTML = links.map(l=>`
-        <div class="draft-link-item">
-            <span class="draft-link-name">${EMOJIS[(l.teamNum-1)%EMOJIS.length]} <strong>${l.teamNum}팀</strong> · ${esc(l.discordNickname)}</span>
-            <span class="draft-link-url">${esc(l.draftUrl)}</span>
-            <button class="btn btn-secondary btn-sm" onclick="copyUrl('${esc(l.draftUrl)}')">복사</button>
-        </div>`).join('');
-}
-
-function renderPickLog(picks){
-    const el = document.getElementById('draft-pick-log');
-    if(!picks.length){ el.innerHTML='<span style="color:var(--muted);font-size:.85rem">아직 픽이 없어요</span>'; return; }
-    el.innerHTML = picks.map(p=>`
-        <div class="pick-log-item">
-            ${EMOJIS[(p.teamNum-1)%EMOJIS.length]} <strong>${p.teamNum}팀</strong>
-            → ${esc(p.discordNickname)} (${esc(p.ingameNickname)})
-        </div>`).join('');
-}
-
-function updateDraftProgress(ds){
-    const el = document.getElementById('draft-progress-text');
-    if(ds.status === 'completed'){
-        el.innerHTML = `✅ 드래프트 완료! (총 ${ds.donePicks}픽)`;
-        el.style.color = 'var(--green)';
-    } else if(ds.currentTeam != null) {
-        el.innerHTML = `⏳ 진행 중: ${ds.donePicks}/${ds.totalPicks}픽 · 현재 <strong>${EMOJIS[(ds.currentTeam-1)%EMOJIS.length]} ${ds.currentTeam}팀</strong> 차례`;
-    } else {
-        el.innerHTML = `⏳ 진행 중: ${ds.donePicks}/${ds.totalPicks}픽`;
-    }
-}
-
-function copyUrl(url){
-    navigator.clipboard.writeText(url).then(()=>toast('링크 복사됨!')).catch(()=>toast('복사 실패', true));
-}
-
-async function pollDraftStatus(){
-    const data = await api(`/api/admin/draft/status?event=${EVENT}&token=${TOKEN}`);
-    if(data.error || data.status==='idle') return;
-    updateDraftProgress(data);
-    if(data.captainLinks) renderDraftLinks(data.captainLinks);
-    renderPickLog(data.picks||[]);
-    if(data.status==='completed'){ clearInterval(draftPoll); draftPoll=null; }
-}
-
-document.getElementById('draft-start-btn').addEventListener('click', async ()=>{
-    const tc = eventData?.teamCount || 2;
-    const captains = [];
-    for(let i=1;i<=tc;i++){
-        const sel = document.getElementById(`captain-${i}`);
-        if(!sel?.value){ toast(`${i}팀 팀장을 선택해주세요`, true); return; }
-        captains.push({ teamNum: i, participantToken: sel.value });
-    }
-    const tokenSet = captains.map(c=>c.participantToken);
-    if(new Set(tokenSet).size !== tokenSet.length){ toast('같은 사람을 여러 팀 팀장으로 지정할 수 없어요', true); return; }
-
-    const btn = document.getElementById('draft-start-btn');
-    btn.disabled=true;
-    const data = await api('/api/admin/draft/start', { event:EVENT, token:TOKEN, captains });
-    btn.disabled=false;
-    if(data.error){ toast('드래프트 시작 실패: '+data.error, true); return; }
-
-    document.getElementById('draft-setup').style.display='none';
-    document.getElementById('draft-status').style.display='block';
-    renderDraftLinks(data.captainLinks);
-    document.getElementById('draft-pick-log').innerHTML='<span style="color:var(--muted);font-size:.85rem">아직 픽이 없어요</span>';
-    document.getElementById('draft-progress-text').textContent='⏳ 드래프트 시작됨';
-    toast('드래프트 시작!');
-    if(draftPoll) clearInterval(draftPoll);
-    draftPoll = setInterval(pollDraftStatus, 3000);
-});
 
 // ── 기존 버튼들 ──────────────────────────────────────────
 document.getElementById('shuffle-btn').addEventListener('click', async ()=>{
@@ -739,7 +526,9 @@ document.getElementById('char-btn').addEventListener('click', async ()=>{
     if(!assigned.length){ toast('팀 배정 먼저 해주세요!', true); return; }
     const btn = document.getElementById('char-btn');
     btn.disabled=true;
-    const data = await api('/api/admin/random-chars', { event:EVENT, token:TOKEN });
+    const isCobalt = eventData?.mapType === '코발트';
+    const charsPerPlayer = isCobalt ? Math.max(1, Number(document.getElementById('chars-per-player').value) || 1) : 0;
+    const data = await api('/api/admin/random-chars', { event:EVENT, token:TOKEN, charsPerPlayer });
     btn.disabled=false;
     if(data.error){ toast('오류: '+data.error, true); return; }
 
@@ -753,21 +542,28 @@ document.getElementById('char-btn').addEventListener('click', async ()=>{
     for(let i=1;i<=tc;i++){
         if(!teams[i].length) continue;
         const color = TEAM_COLORS[(i-1)%TEAM_COLORS.length];
+        if(data.charsPerPlayer){
+            // 코발트: 팀 공용 캐릭터 풀 — 사람 구분 없이 팀별 목록만 표시
+            const chars = teams[i].flatMap(a=>a.characters||[a.character]);
+            html+=`<div class="team-card"><h3 style="color:${color}">${i}팀 (${chars.length}캐릭)</h3>
+                <div style="display:flex;flex-wrap:wrap;gap:.35rem">${chars.map(c=>`<span style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.25rem .55rem;font-size:.82rem">${esc(c)}</span>`).join('')}</div>
+            </div>`;
+            continue;
+        }
         html+=`<div class="team-card"><h3 style="color:${color}">${i}팀</h3>`;
         for(const a of teams[i]){
             html+=`<div class="member-item">
                 <div class="member-name">${esc(a.discord_nickname)}</div>
-                <div class="member-sub">${esc(a.ingame_nickname)} → <strong style="color:#e0e0f0">${esc(a.character)}</strong></div>
+                <div class="member-sub">${esc(a.ingame_nickname)} <strong style="color:#e0e0f0">${esc(a.character)}</strong></div>
             </div>`;
         }
         html+='</div>';
     }
     const charResults = document.getElementById('char-results');
     document.getElementById('char-grid').innerHTML = html;
-    const msg = data.bannedCount ? ` (밴 ${data.bannedCount}개 제외)` : '';
     charResults.style.display='block';
     charResults.scrollIntoView({ behavior:'smooth' });
-    toast(`실험체 배정 완료!${msg}`);
+    toast('실험체 배정 완료!');
 });
 
 document.getElementById('send-btn').addEventListener('click', async ()=>{
@@ -805,11 +601,11 @@ document.getElementById('notify-btn').addEventListener('click', async ()=>{
     btn.disabled=false;
     if(data.error){ toast('알림 실패: '+data.error, true); return; }
     const skip = data.skippedCount ? ` (ID 없는 ${data.skippedCount}명 제외)` : '';
-    toast(`📣 ${data.mentionedCount}명에게 알림 전송 완료!${skip}`);
+    toast(`${data.mentionedCount}명에게 알림 전송 완료!${skip}`);
     // 쿨타임 30초
     btn.disabled=true;
-    btn.textContent='📣 알림 전송됨 (30초 대기)';
-    setTimeout(()=>{ btn.disabled=false; btn.textContent='📣 내전 시작 알림'; }, 30000);
+    btn.textContent='알림 전송됨 (30초 대기)';
+    setTimeout(()=>{ btn.disabled=false; btn.textContent='내전 시작 알림'; }, 30000);
 });
 
 document.getElementById('close-btn').addEventListener('click', async ()=>{
@@ -818,7 +614,7 @@ document.getElementById('close-btn').addEventListener('click', async ()=>{
     btn.disabled=true;
     const data = await api('/api/admin/close', { event:EVENT, token:TOKEN });
     if(data.success){
-        document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0f0f1a;color:#e0e0f0;font-family:sans-serif;font-size:1.2rem">✅ 모집이 종료됐어요.</div>';
+        document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0f0f1a;color:#e0e0f0;font-family:sans-serif;font-size:1.2rem">모집이 종료됐어요.</div>';
     } else {
         toast('종료 실패: '+(data.error||'알 수 없는 오류'), true);
         btn.disabled=false;
@@ -834,7 +630,7 @@ async function silentRefresh(){
         const oldCount = participants.length;
         participants = data.participants;
         eventData = data.event;
-        bannedCharacters = eventData?.bannedCharacters || [];
+
         render();
         populateTransferSelect();
         if(newCount !== oldCount) toast(`참가자 업데이트: ${newCount}명`);
