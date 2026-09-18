@@ -407,9 +407,10 @@ async function generateCharPoolCard(title, groups) {
     await initPromise;
     const F = fontLoaded ? '"CardFont",sans-serif' : 'sans-serif';
 
-    const TILE_W = 138, TILE_H = 186, GAP = 10, PAD = 24, TITLE_H = 64, GROUP_HDR = 44, GROUP_GAP = 26;
+    // CharResult 원본(336×266)을 그대로 써서 화질 유지 — 가로형 타일 4열
+    const TILE_W = 336, TILE_H = 266, GAP = 12, PAD = 28, TITLE_H = 80, GROUP_HDR = 56, GROUP_GAP = 34;
     const maxChars = Math.max(...groups.map(g => g.chars.length), 1);
-    const COLS = Math.min(maxChars, 6);
+    const COLS = Math.min(maxChars, 4);
     const W = PAD * 2 + COLS * TILE_W + (COLS - 1) * GAP;
     const groupH = g => GROUP_HDR + Math.ceil(g.chars.length / COLS) * (TILE_H + GAP);
     const H = TITLE_H + groups.reduce((h, g) => h + groupH(g) + GROUP_GAP, 0) + PAD - GROUP_GAP;
@@ -419,18 +420,18 @@ async function generateCharPoolCard(title, groups) {
     ctx.fillStyle = '#0f0f1a';
     ctx.fillRect(0, 0, W, H);
 
-    ctx.font = `bold 26px ${F}`;
+    ctx.font = `bold 36px ${F}`;
     ctx.fillStyle = '#e0e0f0';
-    ctx.fillText(title, PAD, TITLE_H - 22);
+    ctx.fillText(title, PAD, TITLE_H - 26);
 
     let y = TITLE_H;
     for (const g of groups) {
         // 그룹 헤더 (팀 색상 바 + 라벨)
         ctx.fillStyle = g.color || '#8888aa';
-        ctx.fillRect(PAD, y + 8, 6, 24);
-        ctx.font = `bold 22px ${F}`;
+        ctx.fillRect(PAD, y + 10, 8, 30);
+        ctx.font = `bold 30px ${F}`;
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(`${g.label}  (${g.chars.length}개)`, PAD + 16, y + 28);
+        ctx.fillText(`${g.label}  (${g.chars.length}개)`, PAD + 20, y + 36);
         y += GROUP_HDR;
 
         for (let i = 0; i < g.chars.length; i++) {
@@ -442,26 +443,26 @@ async function generateCharPoolCard(title, groups) {
             ctx.fillStyle = '#1a1a2e';
             roundedRect(ctx, tx, ty, TILE_W, TILE_H, 6); ctx.fill();
 
-            // 일러스트 (CharProfile 138×186 — 타일과 동일 비율)
+            // 일러스트 (CharResult 336×266 — 타일과 동일 크기, 리샘플링 없음)
             const en = CHAR_EN[name];
-            const img = en ? await cachedImg(`profile_${en}`, `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharProfile_${en}_S000.png`) : null;
+            const img = en ? await cachedImg(`result_${en}`, `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharResult_${en}_S000.png`) : null;
             ctx.save();
             roundedRect(ctx, tx, ty, TILE_W, TILE_H, 6); ctx.clip();
             if (img) ctx.drawImage(img, tx, ty, TILE_W, TILE_H);
             // 하단 그라데이션 + 이름
-            const grad = ctx.createLinearGradient(0, ty + TILE_H - 60, 0, ty + TILE_H);
+            const grad = ctx.createLinearGradient(0, ty + TILE_H - 90, 0, ty + TILE_H);
             grad.addColorStop(0, 'rgba(0,0,0,0)');
             grad.addColorStop(1, 'rgba(0,0,0,0.85)');
             ctx.fillStyle = grad;
-            ctx.fillRect(tx, ty + TILE_H - 60, TILE_W, 60);
-            ctx.font = `bold 16px ${F}`;
+            ctx.fillRect(tx, ty + TILE_H - 90, TILE_W, 90);
+            ctx.font = `bold 28px ${F}`;
             ctx.fillStyle = '#ffffff';
-            ctx.fillText(fitText(ctx, name, TILE_W - 16), tx + 8, ty + TILE_H - 10);
+            ctx.fillText(fitText(ctx, name, TILE_W - 24), tx + 14, ty + TILE_H - 16);
             ctx.restore();
 
             // 테두리 (팀 색상)
             ctx.strokeStyle = g.color || '#2a2a4a';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 3;
             roundedRect(ctx, tx, ty, TILE_W, TILE_H, 6); ctx.stroke();
         }
         y += Math.ceil(g.chars.length / COLS) * (TILE_H + GAP) + GROUP_GAP;
