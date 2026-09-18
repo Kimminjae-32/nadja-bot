@@ -408,7 +408,9 @@ async function generateCharPoolCard(title, groups) {
     const F = fontLoaded ? '"CardFont",sans-serif' : 'sans-serif';
 
     // CharResult 원본(336×266)을 그대로 써서 화질 유지 — 가로형 타일 4열
-    const TILE_W = 336, TILE_H = 266, GAP = 12, PAD = 28, TITLE_H = 80, GROUP_HDR = 56, GROUP_GAP = 34;
+    // title/label이 비어 있으면 헤더 없이 타일만 — 디스코드 미리보기(약 550×350)에 맞춰 팀당 한 장씩 보낼 때 사용
+    const TILE_W = 336, TILE_H = 266, GAP = 12, PAD = 16;
+    const TITLE_H = title ? 80 : PAD, GROUP_HDR = groups.some(g => g.label) ? 56 : 0, GROUP_GAP = 34;
     const maxChars = Math.max(...groups.map(g => g.chars.length), 1);
     const COLS = Math.min(maxChars, 4);
     const W = PAD * 2 + COLS * TILE_W + (COLS - 1) * GAP;
@@ -422,16 +424,18 @@ async function generateCharPoolCard(title, groups) {
 
     ctx.font = `bold 36px ${F}`;
     ctx.fillStyle = '#e0e0f0';
-    ctx.fillText(title, PAD, TITLE_H - 26);
+    if (title) ctx.fillText(title, PAD, TITLE_H - 26);
 
     let y = TITLE_H;
     for (const g of groups) {
         // 그룹 헤더 (팀 색상 바 + 라벨)
+        if (GROUP_HDR) {
         ctx.fillStyle = g.color || '#8888aa';
         ctx.fillRect(PAD, y + 10, 8, 30);
         ctx.font = `bold 30px ${F}`;
         ctx.fillStyle = '#ffffff';
         ctx.fillText(`${g.label}  (${g.chars.length}개)`, PAD + 20, y + 36);
+        }
         y += GROUP_HDR;
 
         for (let i = 0; i < g.chars.length; i++) {

@@ -520,19 +520,33 @@ async function sendCharPoolAnnouncement(ev, title, groups, footer) {
     if (!channel) throw new Error('채널을 찾을 수 없습니다.');
     const participants = db.getParticipants(ev.id);
     const members = tn => participants.filter(p => p.team_num === tn).map(p => p.discord_nickname).join(', ') || '-';
-    const embed = new EmbedBuilder().setTitle(title).setColor(0xFF0000).setTimestamp();
-    for (const g of groups) embed.addFields({ name: `${TEAM_EMOJIS[g.teamNum - 1] || ''} ${g.label} 팀원`, value: members(g.teamNum), inline: true });
-    if (footer) embed.setFooter({ text: footer });
+    const colorInt = hex => parseInt(hex.slice(1), 16);
 
+    // 디스코드 미리보기는 폭·높이가 제한되므로 팀당 임베드 한 장씩 (한 메시지에 묶음) → 타일이 크게 보임
     if (generateCharPoolCard) {
         try {
-            const imgBuf = await generateCharPoolCard(title, groups);
-            embed.setImage('attachment://chars.png');
-            await channel.send({ embeds: [embed], files: [new AttachmentBuilder(imgBuf, { name: 'chars.png' })] });
+            const embeds = [], files = [];
+            for (let i = 0; i < groups.length; i++) {
+                const g = groups[i];
+                const imgBuf = await generateCharPoolCard('', [{ ...g, label: '' }]);
+                const fname = `chars${i}.png`;
+                files.push(new AttachmentBuilder(imgBuf, { name: fname }));
+                const e = new EmbedBuilder()
+                    .setTitle(i === 0 ? `${title} — ${g.label}` : g.label)
+                    .setColor(colorInt(g.color))
+                    .addFields({ name: `${TEAM_EMOJIS[g.teamNum - 1] || ''} 팀원`, value: members(g.teamNum) })
+                    .setImage(`attachment://${fname}`);
+                if (i === groups.length - 1) { if (footer) e.setFooter({ text: footer }); e.setTimestamp(); }
+                embeds.push(e);
+            }
+            await channel.send({ embeds, files });
             return;
         } catch (e) { console.error('[char-card] 이미지 생성 실패, 텍스트 폴백:', e.message); }
     }
+    const embed = new EmbedBuilder().setTitle(title).setColor(0xFF0000).setTimestamp();
+    for (const g of groups) embed.addFields({ name: `${TEAM_EMOJIS[g.teamNum - 1] || ''} ${g.label} 팀원`, value: members(g.teamNum), inline: true });
     for (const g of groups) embed.addFields({ name: `${g.label} 실험체`, value: g.chars.join(' · ') || '-' });
+    if (footer) embed.setFooter({ text: footer });
     await channel.send({ embeds: [embed] });
 }
 
