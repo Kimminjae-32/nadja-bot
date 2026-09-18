@@ -41,6 +41,11 @@
         .team-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1rem;}
         .team-card h3{font-size:.95rem;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--border);}
         .member-item{padding:.4rem 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.85rem;}
+        .member-item[draggable="true"]{cursor:grab;padding-left:.4rem;padding-right:.4rem;border-radius:6px;transition:background .1s;}
+        .member-item[draggable="true"]:hover{background:rgba(255,255,255,.05);}
+        .member-item.dragging{opacity:.4;cursor:grabbing;}
+        .team-card.drag-over{border-color:var(--accent);background:#221a33;}
+        .teams-hint{color:var(--muted);font-size:.8rem;margin-bottom:.6rem;}
         .member-item:last-child{border-bottom:none;}
         .member-name{font-weight:600;}
         .member-sub{color:var(--muted);font-size:.78rem;}
@@ -143,6 +148,7 @@
     </div>
 
     <div id="view-teams" style="display:none">
+        <div class="teams-hint">참가자를 끌어서 다른 팀 카드에 놓으면 팀이 바뀝니다</div>
         <div class="teams-grid" id="teams-grid"></div>
     </div>
 
@@ -387,29 +393,64 @@ function renderTeams(){
     let html='';
     for(let i=1;i<=tc;i++){
         const color = TEAM_COLORS[(i-1)%TEAM_COLORS.length];
-        html+=`<div class="team-card"><h3 style="color:${color}">${i}팀 (${teams[i].length}명)</h3>`;
+        html+=`<div class="team-card" data-team="${i}"><h3 style="color:${color}">${i}팀 (${teams[i].length}명)</h3>`;
         if(!teams[i].length) html+='<p style="color:var(--muted);font-size:.85rem">없음</p>';
         for(const p of teams[i]) html+=`
-            <div class="member-item">
+            <div class="member-item" draggable="true" data-token="${esc(p.cancel_token)}">
                 <div class="member-name">${esc(p.discord_nickname)}</div>
                 <div class="member-sub">${esc(p.ingame_nickname)}${p.tier?` · ${tierImg(p.tier)}${esc(p.tier)}`:''}${p.position?` · ${posImg(p.position)}${esc(p.position)}`:''}</div>
                 ${p.main_characters?.length?`<div style="font-size:.76rem;color:var(--muted);margin-top:.15rem">${p.main_characters.map(c=>esc(c)).join(' · ')}</div>`:''}
             </div>`;
         html+='</div>';
     }
-    if(unassigned.length){
-        html+=`<div class="team-card unassigned"><h3 style="color:var(--muted)">미배정 (${unassigned.length}명)</h3>`;
-        for(const p of unassigned) html+=`<div class="member-item"><div class="member-name">${esc(p.discord_nickname)}</div></div>`;
-        html+='</div>';
-    }
+    // 미배정 카드는 항상 표시 — 드롭해서 배정 해제 가능
+    html+=`<div class="team-card unassigned" data-team=""><h3 style="color:var(--muted)">미배정 (${unassigned.length}명)</h3>`;
+    if(!unassigned.length) html+='<p style="color:var(--muted);font-size:.85rem">없음</p>';
+    for(const p of unassigned) html+=`<div class="member-item" draggable="true" data-token="${esc(p.cancel_token)}"><div class="member-name">${esc(p.discord_nickname)}</div></div>`;
+    html+='</div>';
     grid.innerHTML = html || '<p style="color:var(--muted)">참가자가 없어요</p>';
+    bindTeamDragDrop();
+}
+
+// ── 팀별 보기 드래그&드롭 ──
+let _dragToken = null;
+function bindTeamDragDrop(){
+    const grid = document.getElementById('teams-grid');
+    grid.querySelectorAll('.member-item[draggable="true"]').forEach(el=>{
+        el.addEventListener('dragstart', e=>{
+            _dragToken = el.dataset.token;
+            el.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', _dragToken);
+        });
+        el.addEventListener('dragend', ()=>{
+            el.classList.remove('dragging');
+            grid.querySelectorAll('.team-card.drag-over').forEach(c=>c.classList.remove('drag-over'));
+        });
+    });
+    grid.querySelectorAll('.team-card').forEach(card=>{
+        card.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; card.classList.add('drag-over'); });
+        card.addEventListener('dragleave', e=>{ if(!card.contains(e.relatedTarget)) card.classList.remove('drag-over'); });
+        card.addEventListener('drop', async e=>{
+            e.preventDefault();
+            card.classList.remove('drag-over');
+            const token = _dragToken || e.dataTransfer.getData('text/plain');
+            _dragToken = null;
+            if(!token) return;
+            const p = participants.find(x=>x.cancel_token===token);
+            const target = card.dataset.team;          // '' = 미배정
+            const targetNum = target==='' ? null : Number(target);
+            if(!p || (p.team_num ?? null) === targetNum) return;
+            await assignTeam(token, target);
+        });
+    });
 }
 
 async function assignTeam(cancelToken, teamNum){
     await api('/api/admin/assign', { event:EVENT, token:TOKEN, cancel_token:cancelToken, team_num:teamNum });
     const p = participants.find(x=>x.cancel_token===cancelToken);
     if(p) p.team_num = teamNum===''? null : Number(teamNum);
-    renderTeams();
+    render();
     toast('팀 배정 저장됨');
 }
 
