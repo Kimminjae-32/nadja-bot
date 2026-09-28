@@ -100,7 +100,7 @@ function pokeColor(p) {
 
 // state: null(대기) | 'caught' | 'fled' | 'released'
 function buildPokeEmbed(displayName, p, state, roll) {
-    const rarity = p.isMythical ? ' 🌈 **환상의 포켓몬!**' : p.isLegendary ? ' 👑 **전설의 포켓몬!**' : '';
+    const rarity = p.isMythical ? ' ☁️ **환상의 포켓몬!**' : p.isLegendary ? ' 👑 **전설의 포켓몬!**' : '';
     const lines = [
         `짜잔! 오늘의 포켓몬은 전국도감 **${p.dexNo}**번의 **${p.name}** 입니다!${rarity}`,
         '',
