@@ -99,33 +99,38 @@ function pokeColor(p) {
 }
 
 // state: null(대기) | 'caught' | 'fled' | 'released'
-function buildPokeEmbed(displayName, p, state, roll) {
+// 결과 문구는 임베드 위 본문에 표시 (포획 확률 포함)
+function pokeContent(p, state) {
+    const lines = {
+        caught:   `🎉 앗! ${p.name}(을)를 포획했다!`,
+        fled:     `❌ 앗! ${p.name}(이)가 도망가버렸다...`,
+        released: `👋 ${p.name}(을)를 놓아주었다.`,
+    };
+    if (!state) return `🎁 야생의 **${p.name}**(이)가 나타났다! (포획 확률: **${p.chance}%**)`;
+    return state === 'released' ? lines[state] : `${lines[state]} (포획 확률: **${p.chance}%**)`;
+}
+
+function buildPokeEmbed(displayName, p, state) {
     const rarity = p.isMythical ? ' ☁️ **환상의 포켓몬!**' : p.isLegendary ? ' 👑 **전설의 포켓몬!**' : '';
     const lines = [
         `짜잔! 오늘의 포켓몬은 전국도감 **${p.dexNo}**번의 **${p.name}** 입니다!${rarity}`,
         '',
         '**속성(타입)**',
-        `이 포켓몬은 [${p.types.join(', ')}] 타입이고,${p.genus ? ` \`${p.genus}\` 이에요.` : ''}`,
+        `이 포켓몬은 [${p.types.join(', ')}] 타입이고,`,
     ];
     if (p.flavor) lines.push('', '**도감 설명**', `*"${p.flavor}"*`, '', '...라는 특징을 가지고 있어요! ✨');
 
-    const titles = {
-        caught:   `🎉 앗! ${p.name}(을)를 포획했다!`,
-        fled:     `❌ 앗! ${p.name}(이)가 도망가버렸다...`,
-        released: `👋 ${p.name}(을)를 놓아주었다.`,
-    };
-    const rollTxt = roll != null ? ` · 판정 ${roll}` : '';
     const footers = {
-        caught:   `포획 성공! (포획 확률: ${p.chance}%${rollTxt})`,
-        fled:     `포획 실패... (포획 확률: ${p.chance}%${rollTxt})`,
-        released: '오늘은 그냥 보내줬어요',
+        caught:   `🎒 포획 성공! (포획 확률: ${p.chance}%)`,
+        fled:     `🎒 포획 실패... (포획 확률: ${p.chance}%)`,
+        released: '👋 오늘은 그냥 보내줬어요',
     };
 
     const embed = new EmbedBuilder()
-        .setTitle(state ? titles[state] : `✨ ${displayName}의 오늘의 포켓몬!`)
+        .setTitle(`✨ ${displayName}의 오늘의 포켓몬!`)
         .setDescription(lines.join('\n'))
         .setColor(state === 'fled' ? 0x95A5A6 : pokeColor(p))
-        .setFooter({ text: state ? footers[state] : `포획 확률: ${p.chance}% · Pokédex data provided by PokéAPI` })
+        .setFooter({ text: state ? footers[state] : 'Pokédex data provided by PokéAPI' })
         .setTimestamp();
     if (p.image) embed.setImage(p.image);
     return embed;
@@ -510,6 +515,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const p    = await poke.getDailyPokemon(userId);
                 const done = poke.todayResult(userId);   // 오늘 이미 시도했으면 그 결과
                 await interaction.editReply({
+                    content: pokeContent(p, done),
                     embeds: [buildPokeEmbed(pokeDisplayName(interaction), p, done)],
                     components: [pokeButtons(userId, !!done)],
                 });
@@ -594,11 +600,12 @@ client.on(Events.InteractionCreate, async interaction => {
                 const r = action === 'pokeCatch' ? poke.tryCatch(ownerId, p) : poke.release(ownerId);
                 const name = pokeDisplayName(interaction);
                 if (r.result === 'already') {
-                    await interaction.update({ embeds: [buildPokeEmbed(name, p, r.previous)], components: [pokeButtons(ownerId, true)] });
+                    await interaction.update({ content: pokeContent(p, r.previous), embeds: [buildPokeEmbed(name, p, r.previous)], components: [pokeButtons(ownerId, true)] });
                     return await interaction.followUp({ content: '⚠️ 오늘은 이미 시도했어요. 내일 다시 만나요!', ephemeral: true });
                 }
                 return await interaction.update({
-                    embeds: [buildPokeEmbed(name, p, r.result, r.roll)],
+                    content: pokeContent(p, r.result),
+                    embeds: [buildPokeEmbed(name, p, r.result)],
                     components: [pokeButtons(ownerId, true)],
                 });
             } catch (err) {
