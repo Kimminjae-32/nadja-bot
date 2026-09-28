@@ -10,6 +10,7 @@ require('dotenv').config();
 const db        = require('./db');
 const webServer = require('./server');
 const { TEAM_EMOJIS, TEAM_NAMES, CHARACTERS, CHAR_CODE } = require('./constants');
+const poke = require('./pokemon');
 webServer.start(Number(process.env.WEB_PORT) || 3000);
 
 const client = new Client({
@@ -88,6 +89,57 @@ webServer.setCreateEmbedFn(createRecruitEmbed);
 
 function getCharName(code) {
     return CHAR_CODE[code] || `실험체(${code})`;
+}
+
+// =====================================================
+// 오늘의 포켓몬
+// =====================================================
+function pokeColor(p) {
+    return p.isMythical ? 0xE91E63 : p.isLegendary ? 0xF1C40F : 0x5865F2;
+}
+
+// state: null(대기) | 'caught' | 'fled' | 'released'
+function buildPokeEmbed(displayName, p, state, roll) {
+    const rarity = p.isMythical ? ' 🌈 **환상의 포켓몬!**' : p.isLegendary ? ' 👑 **전설의 포켓몬!**' : '';
+    const lines = [
+        `짜잔! 오늘의 포켓몬은 전국도감 **${p.dexNo}**번의 **${p.name}** 입니다!${rarity}`,
+        '',
+        '**속성(타입)**',
+        `이 포켓몬은 [${p.types.join(', ')}] 타입이고,${p.genus ? ` \`${p.genus}\` 이에요.` : ''}`,
+    ];
+    if (p.flavor) lines.push('', '**도감 설명**', `*"${p.flavor}"*`, '', '...라는 특징을 가지고 있어요! ✨');
+
+    const titles = {
+        caught:   `🎉 앗! ${p.name}(을)를 포획했다!`,
+        fled:     `❌ 앗! ${p.name}(이)가 도망가버렸다...`,
+        released: `👋 ${p.name}(을)를 놓아주었다.`,
+    };
+    const rollTxt = roll != null ? ` · 판정 ${roll}` : '';
+    const footers = {
+        caught:   `포획 성공! (포획 확률: ${p.chance}%${rollTxt})`,
+        fled:     `포획 실패... (포획 확률: ${p.chance}%${rollTxt})`,
+        released: '오늘은 그냥 보내줬어요',
+    };
+
+    const embed = new EmbedBuilder()
+        .setTitle(state ? titles[state] : `✨ ${displayName}의 오늘의 포켓몬!`)
+        .setDescription(lines.join('\n'))
+        .setColor(state === 'fled' ? 0x95A5A6 : pokeColor(p))
+        .setFooter({ text: state ? footers[state] : `포획 확률: ${p.chance}% · Pokédex data provided by PokéAPI` })
+        .setTimestamp();
+    if (p.image) embed.setImage(p.image);
+    return embed;
+}
+
+function pokeButtons(userId, disabled = false) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`pokeCatch_${userId}`).setLabel('포획하기').setEmoji('🎁').setStyle(ButtonStyle.Success).setDisabled(disabled),
+        new ButtonBuilder().setCustomId(`pokeRelease_${userId}`).setLabel('놓아주기').setEmoji('👋').setStyle(ButtonStyle.Secondary).setDisabled(disabled),
+    );
+}
+
+function pokeDisplayName(interaction) {
+    return interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
 }
 
 // =====================================================
@@ -376,7 +428,9 @@ client.on(Events.InteractionCreate, async interaction => {
                         { name: '✅ 참가/취소 버튼',   value: '웹 폼 링크로 참가 신청\n닉네임·티어·포지션 입력 (론울프는 포지션 제외)\n이미 신청 시 취소 링크 안내' },
                         { name: '⚙️ 웹 관리 페이지',   value: '참가 신청 후 수정 페이지에서 접근 (방장 전용)\n• 자동/수동 팀 배정\n• 팀경매(드래프트)\n• 캐릭터 밴 · 실험체 랜덤 배정\n• 맵/모드 변경 (디스코드 메시지 자동 업데이트)\n• 음성 채널 이동 · 원래대로\n• 방장 양도\n• 디스코드 결과 전송 · 모집 종료' },
                         { name: '🗓️ /시즌',             value: '현재 시즌 정보 및 종료까지 남은 기간' },
-                        { name: '🆓 /무료실험체',       value: '이번 주 무료 실험체 목록 (모드별)' }
+                        { name: '🆓 /무료실험체',       value: '이번 주 무료 실험체 목록 (모드별)' },
+                        { name: '🎁 /오늘의포켓몬',      value: '하루에 한 번 오늘의 포켓몬을 만나고 포획 도전 (버튼)' },
+                        { name: '📕 /도감',             value: '지금까지 포획한 포켓몬 목록' }
                     )],
                 ephemeral: true
             });
@@ -448,6 +502,58 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         }
 
+        // /오늘의포켓몬
+        if (interaction.commandName === '오늘의포켓몬') {
+            await interaction.deferReply();
+            try {
+                const userId = interaction.user.id;
+                const p    = await poke.getDailyPokemon(userId);
+                const done = poke.todayResult(userId);   // 오늘 이미 시도했으면 그 결과
+                await interaction.editReply({
+                    embeds: [buildPokeEmbed(pokeDisplayName(interaction), p, done)],
+                    components: [pokeButtons(userId, !!done)],
+                });
+            } catch (err) {
+                console.error('오늘의포켓몬 오류:', err);
+                await interaction.editReply({ content: '⚠️ 포켓몬 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.' });
+            }
+        }
+
+        // /도감
+        if (interaction.commandName === '도감') {
+            await interaction.deferReply({ ephemeral: true });
+            try {
+                const { total, entries } = poke.getPokedex(interaction.user.id);
+                const embed = new EmbedBuilder()
+                    .setTitle(`📕 ${pokeDisplayName(interaction)}의 포켓몬 도감`)
+                    .setColor(0x5865F2)
+                    .setFooter({ text: `${total} / ${poke.MAX_DEX} 종 포획` })
+                    .setTimestamp();
+
+                if (!total) {
+                    embed.setDescription('아직 포획한 포켓몬이 없어요. `/오늘의포켓몬` 으로 도전해보세요!');
+                } else {
+                    // 필드 1024자 제한 때문에 나눠서 표시
+                    const items = entries.map(e => `\`#${String(e.dexNo).padStart(4, '0')}\` ${e.name}${e.count > 1 ? ` ×${e.count}` : ''}`);
+                    let buf = [], fieldNo = 0;
+                    const flush = () => {
+                        if (!buf.length) return;
+                        embed.addFields({ name: fieldNo++ === 0 ? '포획한 포켓몬' : '​', value: buf.join('\n') });
+                        buf = [];
+                    };
+                    for (const it of items) {
+                        if (buf.join('\n').length + it.length + 1 > 1000) flush();
+                        buf.push(it);
+                    }
+                    flush();
+                }
+                await interaction.editReply({ embeds: [embed] });
+            } catch (err) {
+                console.error('도감 오류:', err);
+                await interaction.editReply({ content: '⚠️ 도감을 불러오지 못했어요.' });
+            }
+        }
+
     }
 
     // ──────────────────────────────────────────────
@@ -474,6 +580,30 @@ client.on(Events.InteractionCreate, async interaction => {
                 pendingLumia.delete(lumiaKey);
                 await interaction.update({ content: `✅ ${pending.teamCountDown}팀(${pending.adjustedMax}명)으로 구인을 시작합니다!\n${pending.leftover}명은 취소 버튼으로 제외해주세요.`, components: [] });
                 return await createRecruit(interaction, { gameType: '내전', mapType: '루미아 섬', maxPlayers: pending.adjustedMax, teamCount: pending.teamCountDown, timeStr: pending.timeStr, duration: pending.duration });
+            }
+        }
+
+        // 오늘의 포켓몬 — 포획 / 놓아주기
+        if (action === 'pokeCatch' || action === 'pokeRelease') {
+            const ownerId = parts[1];
+            if (interaction.user.id !== ownerId)
+                return await interaction.reply({ content: '⚠️ 본인이 만난 포켓몬만 다룰 수 있어요. `/오늘의포켓몬` 으로 직접 만나보세요!', ephemeral: true });
+
+            try {
+                const p = await poke.getDailyPokemon(ownerId);
+                const r = action === 'pokeCatch' ? poke.tryCatch(ownerId, p) : poke.release(ownerId);
+                const name = pokeDisplayName(interaction);
+                if (r.result === 'already') {
+                    await interaction.update({ embeds: [buildPokeEmbed(name, p, r.previous)], components: [pokeButtons(ownerId, true)] });
+                    return await interaction.followUp({ content: '⚠️ 오늘은 이미 시도했어요. 내일 다시 만나요!', ephemeral: true });
+                }
+                return await interaction.update({
+                    embeds: [buildPokeEmbed(name, p, r.result, r.roll)],
+                    components: [pokeButtons(ownerId, true)],
+                });
+            } catch (err) {
+                console.error('포켓몬 버튼 오류:', err);
+                return await interaction.reply({ content: '⚠️ 처리 중 오류가 발생했어요.', ephemeral: true });
             }
         }
 

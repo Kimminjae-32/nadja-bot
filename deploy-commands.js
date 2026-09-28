@@ -93,6 +93,20 @@ const commands = [
         .setName('무료실험체')
         .setDescription('이번 주 무료 실험체 목록을 표시합니다.'),
 
+    // =====================
+    // /오늘의포켓몬
+    // =====================
+    new SlashCommandBuilder()
+        .setName('오늘의포켓몬')
+        .setDescription('오늘의 포켓몬을 만나고 포획에 도전합니다. (하루 한 번)'),
+
+    // =====================
+    // /도감
+    // =====================
+    new SlashCommandBuilder()
+        .setName('도감')
+        .setDescription('지금까지 포획한 포켓몬 목록을 확인합니다.'),
+
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);

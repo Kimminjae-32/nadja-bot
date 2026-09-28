@@ -2,3 +2,6 @@ node_modules/
 .env
 *.log
 NanumGothic.ttf
+recruits.json
+nadja-events.json
+pokedex.json
