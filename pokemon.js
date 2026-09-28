@@ -72,12 +72,11 @@ async function fetchPokemon(dexNo) {
     return info;
 }
 
-// 포획 확률 (%) — 게임의 capture_rate를 5~90% 로 환산, 전설/환상은 추가 페널티
-function catchChance(info) {
-    let pct = 5 + (info.captureRate / 255) * 85;
-    if (info.isLegendary) pct *= 0.35;
-    if (info.isMythical)  pct *= 0.45;
-    return Math.max(3, Math.min(90, Math.round(pct)));
+// 포획 확률 (%) — 3~10% 사이 랜덤. 사용자+날짜로 정해져서 같은 날에는 값이 바뀌지 않음
+const CHANCE_MIN = 3, CHANCE_MAX = 10;
+function catchChance(userId, date) {
+    const span = CHANCE_MAX - CHANCE_MIN + 1;
+    return CHANCE_MIN + (hash(`${userId}_${date}_chance`) % span);
 }
 
 // 오늘의 포켓몬 (도감 설명도 날짜별로 하나 고정)
@@ -86,7 +85,7 @@ async function getDailyPokemon(userId) {
     const dexNo = (hash(`${userId}_${date}`) % MAX_DEX) + 1;
     const info  = await fetchPokemon(dexNo);
     const idx   = info.flavors.length ? hash(`${userId}_${date}_flavor`) % info.flavors.length : 0;
-    return { ...info, date, flavor: info.flavors[idx] ?? null, chance: catchChance(info) };
+    return { ...info, date, flavor: info.flavors[idx] ?? null, chance: catchChance(userId, date) };
 }
 
 // ── 포획 기록 DB ────────────────────────────────────
@@ -119,7 +118,7 @@ function tryCatch(userId, info) {
     const date = todayKST();
     if (u.daily[date]) return { result: 'already', previous: u.daily[date] };
 
-    const chance = catchChance(info);
+    const chance = info.chance ?? catchChance(userId, date);
     const roll   = Math.random() * 100;
     const ok     = roll < chance;
 
