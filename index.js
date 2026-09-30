@@ -101,14 +101,19 @@ function pokeColor(p) {
 
 // state: null(대기) | 'caught' | 'fled' | 'released'
 // 결과 문구는 임베드 위 본문에 표시 (포획 확률 포함)
+// 포획 확률 표기 — 게임 공식대로라 소수점이 나올 수 있어 정수면 정수로만 표시
+function pokeChanceText(p) {
+    return Number.isInteger(p.chance) ? `${p.chance}%` : `${p.chance.toFixed(1)}%`;
+}
+
 function pokeContent(p, state) {
     const lines = {
         caught:   `🎉 앗! ${p.name}(을)를 포획했다!`,
         fled:     `❌ 앗! ${p.name}(이)가 도망가버렸다...`,
         released: `👋 ${p.name}(을)를 놓아주었다.`,
     };
-    if (!state) return `🎁 야생의 **${p.name}**(이)가 나타났다! (포획 확률: **${p.chance}%**)`;
-    return state === 'released' ? lines[state] : `${lines[state]} (포획 확률: **${p.chance}%**)`;
+    if (!state) return `🎁 야생의 **${p.name}**(이)가 나타났다! (포획 확률: **${pokeChanceText(p)}**)`;
+    return state === 'released' ? lines[state] : `${lines[state]} (포획 확률: **${pokeChanceText(p)}**)`;
 }
 
 function buildPokeEmbed(displayName, p, state) {
@@ -122,8 +127,8 @@ function buildPokeEmbed(displayName, p, state) {
     if (p.flavor) lines.push('', '**도감 설명**', `*"${p.flavor}"*`, '', '...라는 특징을 가지고 있어요! ✨');
 
     const footers = {
-        caught:   `🎒 포획 성공! (포획 확률: ${p.chance}%)`,
-        fled:     `🎒 포획 실패... (포획 확률: ${p.chance}%)`,
+        caught:   `🎒 포획 성공! (포획 확률: ${pokeChanceText(p)} · 포획률 ${p.captureRate})`,
+        fled:     `🎒 포획 실패... (포획 확률: ${pokeChanceText(p)} · 포획률 ${p.captureRate})`,
         released: '👋 오늘은 그냥 보내줬어요',
     };
 

@@ -164,11 +164,36 @@ async function fetchPokemon(dexNo) {
     return info;
 }
 
-// 포획 확률 (%) — 3~10% 사이 랜덤. 사용자+날짜로 정해져서 같은 날에는 값이 바뀌지 않음
-const CHANCE_MIN = 3, CHANCE_MAX = 10;
-function catchChance(userId, date) {
-    const span = CHANCE_MAX - CHANCE_MIN + 1;
-    return CHANCE_MIN + (hash(`${userId}_${date}_chance`) % span);
+// 포획 판정 — 본가 게임(3~4세대) 공식을 그대로 사용
+//   a = (3·maxHP - 2·curHP) × 포획률 × 볼 보정 / (3·maxHP) × 상태이상 보정
+//   b = 1048560 / √√(16711680 / a)          (흔들림 판정값)
+//   4번의 흔들림을 모두 통과하면 포획 성공 → 확률 = (b / 65536)^4
+// 야생 조우 직후 상황을 가정해 체력 만피 · 몬스터볼(×1) · 상태이상 없음으로 계산한다.
+const BALL_BONUS   = 1;      // 몬스터볼
+const STATUS_BONUS = 1;      // 상태이상 없음
+const SHAKES       = 4;
+
+// 포획률(capture_rate 0~255) → { a, b, chance(%) , guaranteed }
+function catchParams(captureRate) {
+    const rate = Number.isFinite(captureRate) ? captureRate : 45;
+    // 체력 만피이므로 (3H - 2H) / 3H = 1/3
+    const a = Math.max(1, Math.floor((rate * BALL_BONUS) / 3) * STATUS_BONUS);
+    if (a >= 255) return { a, b: 65536, chance: 100, guaranteed: true };
+    const b = Math.floor(1048560 / Math.sqrt(Math.sqrt(16711680 / a)));
+    const chance = Math.pow(b / 65536, SHAKES) * 100;
+    return { a, b, chance: Math.round(chance * 10) / 10, guaranteed: false };
+}
+
+// 게임과 동일하게 16비트 난수로 4번 흔들림 판정
+function shakeCheck(b) {
+    for (let i = 0; i < SHAKES; i++) {
+        if (Math.floor(Math.random() * 65536) >= b) return { ok: false, shakes: i };
+    }
+    return { ok: true, shakes: SHAKES };
+}
+
+function catchChance(captureRate) {
+    return catchParams(captureRate).chance;
 }
 
 // 오늘의 포켓몬 (도감 설명도 날짜별로 하나 고정)
@@ -177,7 +202,8 @@ async function getDailyPokemon(userId) {
     const dexNo = (hash(`${userId}_${date}`) % MAX_DEX) + 1;
     const info  = await fetchPokemon(dexNo);
     const idx   = info.flavors.length ? hash(`${userId}_${date}_flavor`) % info.flavors.length : 0;
-    return { ...info, date, flavor: info.flavors[idx] ?? null, chance: catchChance(userId, date) };
+    const cp = catchParams(info.captureRate);
+    return { ...info, date, flavor: info.flavors[idx] ?? null, chance: cp.chance, captureRate: info.captureRate };
 }
 
 // ── 포획 기록 DB ────────────────────────────────────
@@ -203,16 +229,15 @@ function todayResult(userId) {
     return getUser(load(), userId).daily[todayKST()] ?? null;
 }
 
-// 포획 시도 — { result: 'caught'|'fled'|'already', chance, roll }
+// 포획 시도 — { result: 'caught'|'fled'|'already', chance, shakes }
 function tryCatch(userId, info) {
     const data = load();
     const u    = getUser(data, userId);
     const date = todayKST();
     if (u.daily[date]) return { result: 'already', previous: u.daily[date] };
 
-    const chance = info.chance ?? catchChance(userId, date);
-    const roll   = Math.random() * 100;
-    const ok     = roll < chance;
+    const cp = catchParams(info.captureRate);
+    const { ok, shakes } = cp.guaranteed ? { ok: true, shakes: SHAKES } : shakeCheck(cp.b);
 
     u.daily[date] = ok ? 'caught' : 'fled';
     if (ok) {
@@ -221,7 +246,7 @@ function tryCatch(userId, info) {
         rec.count++;
     }
     save(data);
-    return { result: ok ? 'caught' : 'fled', chance, roll: Math.round(roll * 10) / 10 };
+    return { result: ok ? 'caught' : 'fled', chance: cp.chance, shakes };
 }
 
 // 놓아주기 (오늘 시도 소진)
@@ -246,5 +271,5 @@ function getPokedex(userId) {
 
 module.exports = {
     getDailyPokemon, getPokedex, tryCatch, release, todayResult,
-    catchChance, todayKST, MAX_DEX,
+    catchChance, catchParams, todayKST, MAX_DEX,
 };
