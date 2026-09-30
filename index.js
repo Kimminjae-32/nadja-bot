@@ -164,7 +164,7 @@ function scheduleFields(data) {
     const unix = Math.floor(data.eventAt / 1000);
     return [
         { name: '📅 진행 날짜', value: `${schedule.formatDateLabel(data.eventAt)}\n<t:${unix}:R>`, inline: true },
-        { name: '⏰ 시작 시간', value: `${schedule.formatTimeLabel(data.eventAt)}\n<t:${unix}:f>`, inline: true },
+        { name: '⏰ 시작 시간', value: schedule.formatTimeLabel(data.eventAt), inline: true },
     ];
 }
 
@@ -177,7 +177,8 @@ async function createRecruitEmbed(data) {
     const getName = async (id) => {
         if (nameCache.has(id)) return nameCache.get(id);
         const u = await client.users.fetch(id).catch(() => null);
-        const name = u ? (u.globalName || u.username) : id;
+        // 표시 이름(별명·본명)이 아니라 디스코드 아이디(핸들)로 표기
+        const name = u ? (u.username || u.globalName || id) : id;
         nameCache.set(id, name);
         return name;
     };
