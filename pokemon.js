@@ -27,26 +27,118 @@ function hash(str) {
     return h;
 }
 
+// ── 공통 HTTP 유틸 ──────────────────────────────────
+// PokeAPI 호출은 전부 이 함수를 거친다. 실패 시 콘솔에 원인을 상세히 남기고,
+// 일시적인 오류(429/5xx/네트워크/타임아웃)는 1초 → 2초 간격으로 최대 3회까지 재시도한다.
+const TIMEOUT_MS   = 10_000;
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY  = [1000, 2000];              // 1차 실패 후 1초, 2차 실패 후 2초
+const RETRY_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function logFail(kind, url, attempt, extra) {
+    console.error(`[PokeAPI] ${kind}`);
+    console.error(`URL: ${url}`);
+    console.error(`Attempt: ${attempt}/${MAX_ATTEMPTS}`);
+    for (const [k, v] of Object.entries(extra)) {
+        if (v !== undefined && v !== null && v !== '') console.error(`${k}: ${v}`);
+    }
+}
+
+async function fetchJson(url) {
+    let lastErr = null;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+        let res;
+        try {
+            res = await fetch(url, { signal: ac.signal, headers: { 'accept': 'application/json' } });
+        } catch (e) {
+            clearTimeout(timer);
+            const timedOut = e.name === 'AbortError' || e.name === 'TimeoutError';
+            lastErr = new Error(timedOut ? `PokeAPI timeout ${TIMEOUT_MS}ms | ${url}` : `PokeAPI fetch failed | ${url} | ${e.message}`);
+            lastErr.cause = e;
+            logFail(timedOut ? '요청 타임아웃' : '네트워크 오류(fetch failed)', url, attempt, {
+                Error: e.message,
+                Cause: e.cause ? (e.cause.code || e.cause.message || String(e.cause)) : undefined,
+                Code: e.cause?.code || e.code,          // ENOTFOUND / ECONNREFUSED / ETIMEDOUT 등
+                Timeout: timedOut ? `${TIMEOUT_MS}ms 초과` : undefined,
+                Stack: e.stack?.split('\n').slice(0, 3).join(' | '),
+            });
+            if (attempt < MAX_ATTEMPTS) { await sleep(RETRY_DELAY[attempt - 1]); continue; }
+            throw lastErr;
+        }
+        clearTimeout(timer);
+
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            const retriable = RETRY_STATUS.has(res.status);
+            lastErr = new Error(`PokeAPI HTTP ${res.status} ${res.statusText} | ${url} | ${body.slice(0, 300)}`);
+            logFail('요청 실패(HTTP 오류)', url, attempt, {
+                Status: res.status,
+                StatusText: res.statusText,
+                Retriable: retriable ? '예 (재시도함)' : '아니오 (즉시 중단)',
+                Body: body.slice(0, 300),
+            });
+            // 400/404 처럼 재시도해도 결과가 같은 오류는 바로 중단
+            if (!retriable || attempt === MAX_ATTEMPTS) throw lastErr;
+            await sleep(RETRY_DELAY[attempt - 1]);
+            continue;
+        }
+
+        const text = await res.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            const err = new Error(`PokeAPI JSON 파싱 실패 | ${url} | ${e.message}`);
+            err.cause = e;
+            logFail('JSON 파싱 실패', url, attempt, {
+                Status: res.status,
+                ContentType: res.headers.get('content-type'),
+                Error: e.message,
+                Body: text.slice(0, 300),
+            });
+            throw err;   // 응답은 정상 수신했으므로 재시도하지 않음
+        }
+    }
+    throw lastErr ?? new Error(`PokeAPI 요청 실패 | ${url}`);
+}
+
 const ko = (list, key = 'name') => list?.find(x => x.language?.name === 'ko')?.[key] ?? null;
 
 // ── PokeAPI ─────────────────────────────────────────
 async function typeNameKo(enName) {
     if (_typeKo.has(enName)) return _typeKo.get(enName);
     try {
-        const d = await (await fetch(`${API}/type/${enName}`)).json();
+        const d = await fetchJson(`${API}/type/${enName}`);
         const name = ko(d.names) ?? enName;
         _typeKo.set(enName, name);
         return name;
-    } catch { return enName; }
+    } catch (e) {
+        // 타입 이름은 부가 정보이므로 기능 전체를 실패시키지 않고 영문명으로 표시
+        console.warn(`[PokeAPI] 타입 이름 조회 실패 (영문명으로 대체): ${enName} — ${e.message}`);
+        return enName;
+    }
 }
 
 async function fetchPokemon(dexNo) {
     if (_cache.has(dexNo)) return _cache.get(dexNo);
 
     const [species, poke] = await Promise.all([
-        fetch(`${API}/pokemon-species/${dexNo}`).then(r => r.json()),
-        fetch(`${API}/pokemon/${dexNo}`).then(r => r.json()),
+        fetchJson(`${API}/pokemon-species/${dexNo}`),
+        fetchJson(`${API}/pokemon/${dexNo}`),
     ]);
+
+    // 예상과 다른 응답 구조도 원인을 알 수 있게 확인
+    if (!Array.isArray(species?.flavor_text_entries) || !Array.isArray(poke?.types)) {
+        console.error('[PokeAPI] 예상하지 못한 응답 구조');
+        console.error(`dexNo: ${dexNo}`);
+        console.error(`species keys: ${species ? Object.keys(species).slice(0, 10).join(', ') : 'null'}`);
+        console.error(`pokemon keys: ${poke ? Object.keys(poke).slice(0, 10).join(', ') : 'null'}`);
+        throw new Error(`PokeAPI 응답 구조 이상 | dexNo=${dexNo}`);
+    }
 
     // 한국어 도감 설명 (없으면 영어 폴백)
     const hasKo = species.flavor_text_entries.some(f => f.language.name === 'ko');

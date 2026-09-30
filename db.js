@@ -254,6 +254,16 @@ module.exports = {
         if (data.events[eventId]) { data.events[eventId].teamCount = teamCount; save(data); }
     },
 
+    // 구인 일정(게임 시작·만료 시각) 저장 — 보관/복구 시에도 유지되도록 이벤트에 함께 기록
+    setSchedule(eventId, eventAt, expiresAt) {
+        const data = load();
+        if (data.events[eventId]) {
+            data.events[eventId].eventAt   = Number.isFinite(eventAt)   ? eventAt   : null;
+            data.events[eventId].expiresAt = Number.isFinite(expiresAt) ? expiresAt : null;
+            save(data);
+        }
+    },
+
     updateEventMapType(eventId, mapType) {
         const data = load();
         if (data.events[eventId]) { data.events[eventId].mapType = mapType || null; save(data); }

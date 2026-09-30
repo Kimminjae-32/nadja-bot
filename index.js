@@ -11,6 +11,7 @@ const db        = require('./db');
 const webServer = require('./server');
 const { TEAM_EMOJIS, TEAM_NAMES, CHARACTERS, CHAR_CODE } = require('./constants');
 const poke = require('./pokemon');
+const schedule = require('./schedule');
 webServer.start(Number(process.env.WEB_PORT) || 3000);
 
 const client = new Client({
@@ -150,6 +151,18 @@ function pokeDisplayName(interaction) {
 // =====================================================
 // 임베드 생성 (async - 닉네임 직접 조회)
 // =====================================================
+// 일정 필드 — eventAt이 있으면 날짜/시간을 나눠서, 없으면 기존 '시작 시간' 한 줄
+function scheduleFields(data) {
+    if (!Number.isFinite(data.eventAt)) {
+        return [{ name: '⏰ 시작 시간', value: data.time || '즉시', inline: true }];
+    }
+    const unix = Math.floor(data.eventAt / 1000);
+    return [
+        { name: '📅 진행 날짜', value: `${schedule.formatDateLabel(data.eventAt)}\n<t:${unix}:R>`, inline: true },
+        { name: '⏰ 시작 시간', value: `${schedule.formatTimeLabel(data.eventAt)}\n<t:${unix}:f>`, inline: true },
+    ];
+}
+
 async function createRecruitEmbed(data) {
     const colors = { '일반': 0x00FF00, '랭크': 0x5865F2, '내전': 0xFF0000, '론울프': 0xFF8C00 };
     const teamCount = data.teamCount || 2;
@@ -173,8 +186,7 @@ async function createRecruitEmbed(data) {
         : `🎮 [${data.gameType}] 구인 중`;
     const embed = new EmbedBuilder()
         .setTitle(title)
-        .addFields(
-            { name: '⏰ 시작 시간', value: data.time,                                         inline: true },
+        .addFields(...scheduleFields(data),
             { name: '👥 인원',      value: `${data.participants.length} / ${data.maxPlayers}`, inline: true },
             { name: '👑 모집자',    value: creatorName,                                        inline: true },
             { name: '📝 전체 참가자', value: participantsList }
@@ -202,7 +214,7 @@ async function createRecruitEmbed(data) {
 // =====================================================
 // 구인 생성 공통 함수
 // =====================================================
-async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamCount, timeStr, duration, description, isGeneric }) {
+async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamCount, timeStr, duration, description, isGeneric, eventAt, expiresAt }) {
     const user    = interaction.user;
     const guildId = interaction.guildId ?? 'dm';
     const rKey    = `${guildId}_${user.id}`;  // 서버별 유일 키
@@ -225,6 +237,12 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
         description: description || null,
         isGeneric: !!isGeneric,
         time: timeStr,
+        // 신규 구인은 실제 일정 기준 — eventAt(게임 시작) / expiresAt(시작 + 3시간)
+        // 일정 미입력 시에만 기존 방식(createdAt + 24시간)으로 만료 시각을 계산해 둔다
+        eventAt:   Number.isFinite(eventAt) ? eventAt : null,
+        expiresAt: Number.isFinite(expiresAt)
+            ? expiresAt
+            : Date.now() + (duration || schedule.LEGACY_HOURS) * 60 * 60 * 1000,
         durationHours: duration,
         maxPlayers, teamCount,
         teams: Array.from({ length: teamCount }, () => []),
@@ -266,6 +284,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     } else {
         // 이터널 리턴 — DB 이벤트 생성 (웹 폼 참가 + 관리자 페이지 공통)
         db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount, gameType, mapType);
+        db.setSchedule(msgId, newRecruit.eventAt, newRecruit.expiresAt);
         await msg.edit({ components: [
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary)
@@ -303,8 +322,13 @@ webServer.setRestoreCallback(async (archiveId) => {
         mapType:  ev.mapType,
         description: null,
         isGeneric: false,
-        time: '복구됨',
-        durationHours: 24,
+        time: Number.isFinite(ev.eventAt) ? schedule.formatDateLabel(ev.eventAt) + ' ' + schedule.formatTimeLabel(ev.eventAt) : '복구됨',
+        eventAt:   Number.isFinite(ev.eventAt) ? ev.eventAt : null,
+        // 일정이 이미 지났으면 24시간 더 유지해서 바로 사라지지 않게 한다
+        expiresAt: Number.isFinite(ev.expiresAt) && ev.expiresAt > Date.now()
+            ? ev.expiresAt
+            : Date.now() + schedule.LEGACY_HOURS * 60 * 60 * 1000,
+        durationHours: schedule.LEGACY_HOURS,
         maxPlayers: (ev.teamCount || 2) * (ev.mapType === '루미아 섬' ? 3 : 4),
         teamCount: ev.teamCount || 2,
         teams: Array.from({ length: ev.teamCount || 2 }, () => []),
@@ -331,6 +355,7 @@ webServer.setRestoreCallback(async (archiveId) => {
 
     allRecruits.set(newId, restored);
     activeUserRecruits.set(rKey, newId);
+    db.setSchedule(newId, restored.eventAt, restored.expiresAt);
     saveData();
 
     await msg.edit({ components: [new ActionRowBuilder().addComponents(
@@ -360,14 +385,20 @@ cron.schedule('0 * * * *', () => {
 });
 
 // 구인 자동 삭제 (1분마다)
+// 신규: expiresAt(게임 시작 + 3시간) / 구버전: createdAt + durationHours(기본 24시간)
 cron.schedule('* * * * *', async () => {
     const now = Date.now();
     for (const [msgId, data] of allRecruits) {
-        const expireMs = (data.durationHours || 24) * 60 * 60 * 1000;
-        if (data.createdAt && now - data.createdAt > expireMs) {
+        const expiresAt = schedule.resolveExpiresAt(data);
+        if (!Number.isFinite(expiresAt) || now < expiresAt) continue;
+        try {
             await deleteMessage(msgId, data.channelId).catch(() => null);
             await webServer.deleteEventRole(msgId).catch(() => null);
             db.archiveEvent(msgId, 'expired');
+        } catch (e) {
+            console.error(`[자동삭제] ${msgId} 정리 중 오류:`, e.message);
+        } finally {
+            // 메시지/DB/메모리 상태가 어긋나지 않도록 정리는 항상 수행
             allRecruits.delete(msgId);
             activeUserRecruits.delete(`${data.guildId ?? 'dm'}_${data.creatorId}`);
             saveData();
@@ -388,9 +419,13 @@ client.on(Events.InteractionCreate, async interaction => {
         // /구인
         if (interaction.commandName === '구인') {
             const choice      = interaction.options.getString('유형');
-            const timeStr     = interaction.options.getString('시간')      || '즉시';
-            const duration    = interaction.options.getInteger('종료시간') || 24;
             const description = interaction.options.getString('설명') || null;
+
+            const sch = schedule.buildSchedule(interaction.options.getString('날짜'), interaction.options.getString('시간'));
+            if (sch?.error) return await interaction.reply({ content: sch.error, ephemeral: true });
+            const timeStr  = sch ? sch.timeLabel : '즉시';
+            const duration = schedule.LEGACY_HOURS;
+            const eventAt  = sch?.eventAt, expiresAt = sch?.expiresAt;
 
             // 기타(범용) 구인 — 게임 이름·인원 직접 입력, 웹 폼 없이 버튼 참가
             if (choice === '기타') {
@@ -404,7 +439,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 }
                 return await createRecruit(interaction, {
                     gameType: gameName, mapType: null, maxPlayers, teamCount: 2,
-                    timeStr, duration, description, isGeneric: true
+                    timeStr, duration, description, isGeneric: true, eventAt, expiresAt
                 });
             }
 
@@ -414,7 +449,7 @@ client.on(Events.InteractionCreate, async interaction => {
             const maxPlayers = mapType === '코발트' ? 4 : 3;
             await createRecruit(interaction, {
                 gameType, mapType, maxPlayers, teamCount: 2,
-                timeStr, duration, description, isGeneric: true
+                timeStr, duration, description, isGeneric: true, eventAt, expiresAt
             });
         }
 
@@ -424,13 +459,16 @@ client.on(Events.InteractionCreate, async interaction => {
             try { 유형 = interaction.options.getSubcommand(); }
             catch { 유형 = interaction.options.getString('유형') ?? ''; }
             if (!유형) return;
-            const timeStr  = interaction.options.getString('시간')      || '즉시';
-            const duration = interaction.options.getInteger('종료시간') || 24;
+            const sch = schedule.buildSchedule(interaction.options.getString('날짜'), interaction.options.getString('시간'));
+            if (sch?.error) return await interaction.reply({ content: sch.error, ephemeral: true });
+            const timeStr  = sch ? sch.timeLabel : '즉시';
+            const duration = schedule.LEGACY_HOURS;
+            const eventAt  = sch?.eventAt, expiresAt = sch?.expiresAt;
 
             if (유형 === '코발트') {
                 return await createRecruit(interaction, {
                     gameType: '내전', mapType: '코발트',
-                    maxPlayers: 8, teamCount: 2, timeStr, duration
+                    maxPlayers: 8, teamCount: 2, timeStr, duration, eventAt, expiresAt
                 });
             }
 
@@ -439,7 +477,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (maxPlayers % 4 !== 0) return await interaction.reply({ content: '❌ 코발트 토너먼트는 4의 배수 인원만 가능해요 (8~32명).', ephemeral: true });
                 return await createRecruit(interaction, {
                     gameType: '내전', mapType: '코발트 토너먼트',
-                    maxPlayers, teamCount: maxPlayers / 4, timeStr, duration
+                    maxPlayers, teamCount: maxPlayers / 4, timeStr, duration, eventAt, expiresAt
                 });
             }
 
@@ -447,7 +485,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 const maxPlayers = Math.min(interaction.options.getInteger('최대인원') ?? 18, 18);
                 return await createRecruit(interaction, {
                     gameType: '론울프', mapType: '루미아 섬',
-                    maxPlayers, teamCount: maxPlayers, timeStr, duration
+                    maxPlayers, teamCount: maxPlayers, timeStr, duration, eventAt, expiresAt
                 });
             }
 
@@ -461,7 +499,7 @@ client.on(Events.InteractionCreate, async interaction => {
                     if (teamCount > 8) return await interaction.reply({ content: '❌ 팀 수가 너무 많아요 (최대 8팀).', ephemeral: true });
                     return await createRecruit(interaction, {
                         gameType: '내전', mapType: '루미아 섬',
-                        maxPlayers, teamCount, timeStr, duration
+                        maxPlayers, teamCount, timeStr, duration, eventAt, expiresAt
                     });
                 }
 
@@ -473,7 +511,7 @@ client.on(Events.InteractionCreate, async interaction => {
                 if (teamCountUp > 8) return await interaction.reply({ content: '❌ 팀 수가 너무 많아요 (최대 8팀).', ephemeral: true });
 
                 pendingLumia.set(`${interaction.guildId ?? 'dm'}_${interaction.user.id}`, {
-                    maxPlayers, perTeam, timeStr, duration,
+                    maxPlayers, perTeam, timeStr, duration, eventAt, expiresAt,
                     teamCountUp, teamCountDown, leftover, adjustedMax,
                     createdAt: Date.now()
                 });
@@ -587,18 +625,28 @@ client.on(Events.InteractionCreate, async interaction => {
         // /오늘의포켓몬
         if (interaction.commandName === '오늘의포켓몬') {
             await interaction.deferReply();
+            const userId = interaction.user.id;
+            // 실패 지점을 로그만 보고 구분할 수 있게 단계를 기록한다
+            let stage = 'PokeAPI 조회';
             try {
-                const userId = interaction.user.id;
                 const p    = await poke.getDailyPokemon(userId);
+                stage = '도감 기록 조회';
                 const done = poke.todayResult(userId);   // 오늘 이미 시도했으면 그 결과
-                await interaction.editReply({
+                stage = 'Discord 임베드 생성';
+                const payload = {
                     content: pokeContent(p, done),
                     embeds: [buildPokeEmbed(pokeDisplayName(interaction), p, done)],
                     components: [pokeButtons(userId, !!done)],
-                });
+                };
+                stage = 'Discord 메시지 전송';
+                await interaction.editReply(payload);
             } catch (err) {
-                console.error('오늘의포켓몬 오류:', err);
-                await interaction.editReply({ content: '⚠️ 포켓몬 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.' });
+                console.error(`[오늘의포켓몬] 실패 — 단계: ${stage} / user: ${userId}`);
+                console.error(`Error: ${err.message}`);
+                if (err.cause) console.error(`Cause: ${err.cause.code || err.cause.message || String(err.cause)}`);
+                console.error(err.stack);
+                await interaction.editReply({ content: '⚠️ 포켓몬 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.' })
+                    .catch(e2 => console.error('[오늘의포켓몬] 오류 응답 전송도 실패:', e2.message));
             }
         }
 
@@ -657,12 +705,12 @@ client.on(Events.InteractionCreate, async interaction => {
             if (action === 'lumiaKeep') {
                 pendingLumia.delete(lumiaKey);
                 await interaction.update({ content: `✅ ${pending.teamCountUp}팀으로 구인을 시작합니다!`, components: [] });
-                return await createRecruit(interaction, { gameType: '내전', mapType: '루미아 섬', maxPlayers: pending.maxPlayers, teamCount: pending.teamCountUp, timeStr: pending.timeStr, duration: pending.duration });
+                return await createRecruit(interaction, { gameType: '내전', mapType: '루미아 섬', maxPlayers: pending.maxPlayers, teamCount: pending.teamCountUp, timeStr: pending.timeStr, duration: pending.duration, eventAt: pending.eventAt, expiresAt: pending.expiresAt });
             }
             if (action === 'lumiaKick') {
                 pendingLumia.delete(lumiaKey);
                 await interaction.update({ content: `✅ ${pending.teamCountDown}팀(${pending.adjustedMax}명)으로 구인을 시작합니다!\n${pending.leftover}명은 취소 버튼으로 제외해주세요.`, components: [] });
-                return await createRecruit(interaction, { gameType: '내전', mapType: '루미아 섬', maxPlayers: pending.adjustedMax, teamCount: pending.teamCountDown, timeStr: pending.timeStr, duration: pending.duration });
+                return await createRecruit(interaction, { gameType: '내전', mapType: '루미아 섬', maxPlayers: pending.adjustedMax, teamCount: pending.teamCountDown, timeStr: pending.timeStr, duration: pending.duration, eventAt: pending.eventAt, expiresAt: pending.expiresAt });
             }
         }
 
@@ -672,9 +720,12 @@ client.on(Events.InteractionCreate, async interaction => {
             if (interaction.user.id !== ownerId)
                 return await interaction.reply({ content: '⚠️ 본인이 만난 포켓몬만 다룰 수 있어요. `/오늘의포켓몬` 으로 직접 만나보세요!', ephemeral: true });
 
+            let stage = 'PokeAPI 조회';
             try {
                 const p = await poke.getDailyPokemon(ownerId);
+                stage = action === 'pokeCatch' ? '포획 판정' : '놓아주기 처리';
                 const r = action === 'pokeCatch' ? poke.tryCatch(ownerId, p) : poke.release(ownerId);
+                stage = 'Discord 메시지 갱신';
                 const name = pokeDisplayName(interaction);
                 if (r.result === 'already') {
                     await interaction.update({ content: pokeContent(p, r.previous), embeds: [buildPokeEmbed(name, p, r.previous)], components: [pokeButtons(ownerId, true)] });
@@ -686,8 +737,11 @@ client.on(Events.InteractionCreate, async interaction => {
                     components: [pokeButtons(ownerId, true)],
                 });
             } catch (err) {
-                console.error('포켓몬 버튼 오류:', err);
-                return await interaction.reply({ content: '⚠️ 처리 중 오류가 발생했어요.', ephemeral: true });
+                console.error(`[포켓몬 버튼] 실패 — 단계: ${stage} / action: ${action} / user: ${ownerId}`);
+                console.error(`Error: ${err.message}`);
+                if (err.cause) console.error(`Cause: ${err.cause.code || err.cause.message || String(err.cause)}`);
+                console.error(err.stack);
+                return await interaction.reply({ content: '⚠️ 처리 중 오류가 발생했어요.', ephemeral: true }).catch(() => null);
             }
         }
 

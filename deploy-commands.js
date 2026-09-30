@@ -33,12 +33,12 @@ const commands = [
                 .setDescription('구인 조건·메모 (선택, 예: 오버 이상 / 마이크 필수)')
                 .setRequired(false))
         .addStringOption(option =>
-            option.setName('시간')
-                .setDescription('시작 시간 (예: 22시 30분 / 미입력 시 즉시)')
+            option.setName('날짜')
+                .setDescription('진행 날짜 (YYYY-MM-DD, 예: 2026-10-02 / 미입력 시 오늘)')
                 .setRequired(false))
-        .addIntegerOption(option =>
-            option.setName('종료시간')
-                .setDescription('삭제 대기 시간 (숫자만 입력, 기본 24시간)')
+        .addStringOption(option =>
+            option.setName('시간')
+                .setDescription('시작 시간 (HH:mm, 예: 20:00 / 미입력 시 즉시)')
                 .setRequired(false)),
 
     // =====================
@@ -52,25 +52,25 @@ const commands = [
             .setDescription('루미아 섬 내전 (팀당인원/최대인원 자유)')
             .addIntegerOption(opt => opt.setName('팀당인원').setDescription('한 팀 인원 수 (기본 3명)').setRequired(false).setMinValue(1).setMaxValue(10))
             .addIntegerOption(opt => opt.setName('최대인원').setDescription('최대 참가 인원 (기본 24명)').setRequired(false).setMinValue(2).setMaxValue(24))
-            .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (예: 22시 30분)').setRequired(false))
-            .addIntegerOption(opt => opt.setName('종료시간').setDescription('삭제 대기 시간 (기본 24시간)').setRequired(false)))
+            .addStringOption(opt => opt.setName('날짜').setDescription('진행 날짜 (YYYY-MM-DD, 예: 2026-10-02 / 미입력 시 오늘)').setRequired(false))
+            .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (HH:mm, 예: 20:00)').setRequired(false)))
         .addSubcommand(sub => sub
             .setName('코발트')
             .setDescription('코발트 내전 (4vs4 고정)')
-            .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (예: 22시 30분)').setRequired(false))
-            .addIntegerOption(opt => opt.setName('종료시간').setDescription('삭제 대기 시간 (기본 24시간)').setRequired(false)))
+            .addStringOption(opt => opt.setName('날짜').setDescription('진행 날짜 (YYYY-MM-DD, 예: 2026-10-02 / 미입력 시 오늘)').setRequired(false))
+            .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (HH:mm, 예: 20:00)').setRequired(false)))
         .addSubcommand(sub => sub
             .setName('코발트토너먼트')
             .setDescription('코발트 토너먼트 (4인 팀 × N팀, 싱글 엘리미네이션)')
             .addIntegerOption(opt => opt.setName('최대인원').setDescription('최대 참가 인원 (4의 배수, 8~32명, 기본 16명)').setRequired(false).setMinValue(8).setMaxValue(32))
-            .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (예: 22시 30분)').setRequired(false))
-            .addIntegerOption(opt => opt.setName('종료시간').setDescription('삭제 대기 시간 (기본 24시간)').setRequired(false)))
+            .addStringOption(opt => opt.setName('날짜').setDescription('진행 날짜 (YYYY-MM-DD, 예: 2026-10-02 / 미입력 시 오늘)').setRequired(false))
+            .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (HH:mm, 예: 20:00)').setRequired(false)))
         .addSubcommand(sub => sub
             .setName('론울프')
             .setDescription('론울프 개인전 (최대 18명)')
             .addIntegerOption(opt => opt.setName('최대인원').setDescription('최대 참가 인원 (기본 18명)').setRequired(false).setMinValue(2).setMaxValue(18))
-            .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (예: 22시 30분)').setRequired(false))
-            .addIntegerOption(opt => opt.setName('종료시간').setDescription('삭제 대기 시간 (기본 24시간)').setRequired(false))),
+            .addStringOption(opt => opt.setName('날짜').setDescription('진행 날짜 (YYYY-MM-DD, 예: 2026-10-02 / 미입력 시 오늘)').setRequired(false))
+            .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (HH:mm, 예: 20:00)').setRequired(false))),
 
     // =====================
     // /사용법
