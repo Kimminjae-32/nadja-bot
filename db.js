@@ -290,6 +290,88 @@ module.exports = {
         if (data.events[eventId]) { data.events[eventId].rule = rule || null; save(data); }
     },
 
+    // ── 보관함 (종료·만료된 내전을 7일간 보관) ────────
+    // data.archive[id] = { event, participants, archivedAt, reason }
+    ARCHIVE_DAYS: 7,
+
+    archiveEvent(id, reason) {
+        const data = load();
+        const ev = data.events[id];
+        if (!ev) return false;
+        const participants = Object.values(data.participants).filter(p => p.event_id === id);
+        (data.archive ??= {})[id] = {
+            event: ev,
+            participants,
+            archivedAt: Date.now(),
+            reason: reason || 'closed',
+        };
+        delete data.events[id];
+        for (const p of participants) delete data.participants[p.cancel_token];
+        save(data);
+        return true;
+    },
+
+    getArchives() {
+        const data = load();
+        return Object.entries(data.archive || {})
+            .map(([id, a]) => ({ id, ...a }))
+            .sort((a, b) => b.archivedAt - a.archivedAt);
+    },
+
+    getArchive(id) {
+        return load().archive?.[id] || null;
+    },
+
+    deleteArchive(id) {
+        const data = load();
+        if (!data.archive?.[id]) return false;
+        delete data.archive[id];
+        save(data);
+        return true;
+    },
+
+    // 보관된 내전을 새 메시지 ID로 되살림 (참가자·팀 배정·밴·룰 그대로)
+    restoreArchive(archiveId, newEventId, channelId, guildId) {
+        const data = load();
+        const a = data.archive?.[archiveId];
+        if (!a) return null;
+
+        const adminToken = crypto.randomBytes(12).toString('hex');
+        const ev = {
+            ...a.event,
+            id: newEventId,
+            channelId: channelId ?? a.event.channelId,
+            guildId:   guildId   ?? a.event.guildId,
+            adminToken,
+            roleId: null, roleName: null,      // 역할은 이미 삭제됐으므로 초기화
+            restoredFrom: archiveId,
+            restoredAt: Date.now(),
+        };
+        data.events[newEventId] = ev;
+
+        for (const p of a.participants) {
+            const token = crypto.randomBytes(8).toString('hex');
+            data.participants[token] = { ...p, event_id: newEventId, cancel_token: token };
+        }
+        delete data.archive[archiveId];
+        save(data);
+        return { adminToken, participantCount: a.participants.length, event: ev };
+    },
+
+    // 보관 기간 지난 항목 정리 — 삭제한 개수 반환
+    purgeArchives(days) {
+        const data = load();
+        if (!data.archive) return 0;
+        const limit = (days || 7) * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        let n = 0;
+        for (const [id, a] of Object.entries(data.archive)) {
+            if (now - (a.archivedAt || 0) > limit) { delete data.archive[id]; n++; }
+        }
+        if (n) save(data);
+        return n;
+    },
+
     getRule(eventId) {
         return load().events[eventId]?.rule || null;
     },

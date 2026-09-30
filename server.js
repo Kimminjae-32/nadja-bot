@@ -21,6 +21,7 @@ let closeRecruitCallback = null;
 let recruitMap           = null;
 let activeUserMap        = null;
 let saveDataFn           = null;
+let restoreCallback      = null;
 let createEmbedFn        = null;
 
 const VALID_POSITIONS = ['탱커', '전사', '암살자', '스킬 딜러', '원거리 딜러', '지원가'];
@@ -1201,6 +1202,53 @@ app.post('/api/dev/close-event', async (req, res) => {
     res.json({ success: true });
 });
 
+
+// ── 보관함 (종료·만료된 내전, 7일 보관) ─────────────
+app.get('/api/dev/archives', (req, res) => {
+    if (!verifyDev(req.query.devToken)) return res.status(403).json({ error: 'Forbidden' });
+    const days = db.ARCHIVE_DAYS || 7;
+    const archives = db.getArchives().map(a => ({
+        id: a.id,
+        archivedAt: a.archivedAt,
+        reason: a.reason,
+        expiresAt: a.archivedAt + days * 24 * 60 * 60 * 1000,
+        gameType: a.event?.gameType,
+        mapType: a.event?.mapType,
+        teamCount: a.event?.teamCount,
+        createdBy: a.event?.createdBy,
+        channelId: a.event?.channelId,
+        guildId: a.event?.guildId,
+        participantCount: a.participants?.length || 0,
+        participants: (a.participants || []).map(p => ({
+            discord_nickname: p.discord_nickname, ingame_nickname: p.ingame_nickname,
+            tier: p.tier, position: p.position, team_num: p.team_num,
+        })),
+    }));
+    res.json({ archives, days });
+});
+
+// 보관된 내전을 채널에 새 구인 메시지로 되살림
+app.post('/api/dev/restore', async (req, res) => {
+    const { devToken, archiveId } = req.body;
+    if (!verifyDev(devToken)) return res.status(403).json({ error: 'Forbidden' });
+    if (!restoreCallback) return res.status(500).json({ error: '봇 콜백이 없습니다.' });
+    if (!db.getArchive(archiveId)) return res.status(404).json({ error: '보관된 내전이 없어요.' });
+    try {
+        const r = await restoreCallback(archiveId);
+        if (r?.error) return res.status(400).json(r);
+        res.json({ success: true, ...r });
+    } catch (e) {
+        console.error('[restore]', e);
+        res.status(500).json({ error: '복구 실패: ' + e.message });
+    }
+});
+
+app.post('/api/dev/archive-delete', (req, res) => {
+    const { devToken, archiveId } = req.body;
+    if (!verifyDev(devToken)) return res.status(403).json({ error: 'Forbidden' });
+    db.deleteArchive(archiveId) ? res.json({ success: true }) : res.status(404).json({ error: '보관된 내전이 없어요.' });
+});
+
 app.post('/api/dev/kick-participant', (req, res) => {
     const { devToken, cancelToken } = req.body;
     if (!verifyDev(devToken)) return res.status(403).json({ error: 'Forbidden' });
@@ -1237,6 +1285,7 @@ module.exports = {
     },
     setClient(client)          { discordClient = client; },
     setCloseCallback(fn)       { closeRecruitCallback = fn; },
+    setRestoreCallback(fn)     { restoreCallback = fn; },
     setRecruitMap(map)         { recruitMap = map; },
     setActiveUserMap(map)      { activeUserMap = map; },
     setSaveDataFn(fn)          { saveDataFn = fn; },

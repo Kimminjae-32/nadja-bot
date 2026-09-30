@@ -48,6 +48,7 @@
         .toast.show { opacity: 1; }
         .toast.err { background: var(--accent); }
         .loading { text-align: center; color: var(--muted); padding: 2rem; }
+        .row { display:flex; align-items:center; gap:.6rem; padding:.6rem .75rem; border:1px solid var(--border); border-radius:8px; margin-bottom:.4rem; flex-wrap:wrap; }
         .empty { color: var(--muted); font-size: .85rem; text-align: center; padding: 1.5rem; }
         .stat-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
         .stat { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: .6rem 1rem; min-width: 100px; }
@@ -65,6 +66,10 @@
     <div class="section">
         <div class="section-title">진행 중인 내전</div>
         <div id="event-list"><div class="empty">내전이 없어요.</div></div>
+    </div>
+    <div class="section">
+        <div class="section-title">보관함 <span style="text-transform:none;font-weight:400">— 종료·만료된 내전을 <span id="archive-days">7</span>일간 보관, 복구 가능</span></div>
+        <div id="archive-list"><div class="empty">보관된 내전이 없어요.</div></div>
     </div>
 </div>
 
@@ -95,6 +100,7 @@ async function devApi(path, body=null) {
 }
 
 let allEvents = [];
+let archives = [];
 let openDetail = null;
 
 async function load() {
@@ -105,7 +111,56 @@ async function load() {
     allEvents = data.events || [];
     renderStats();
     renderEvents();
+
+    const arc = await devApi('/api/dev/archives').catch(() => ({ archives: [] }));
+    archives = arc.archives || [];
+    if (arc.days) document.getElementById('archive-days').textContent = arc.days;
+    renderArchives();
 }
+function reasonLabel(r) {
+    return { closed: '모집 종료', expired: '시간 만료', replaced: '새 구인으로 교체', dev: '관리자 종료' }[r] || r || '-';
+}
+
+function renderArchives() {
+    const el = document.getElementById('archive-list');
+    if (!archives.length) { el.innerHTML = '<div class="empty">보관된 내전이 없어요.</div>'; return; }
+    el.innerHTML = archives.map(a => {
+        const left = Math.max(0, Math.ceil((a.expiresAt - Date.now()) / (24*60*60*1000)));
+        const names = a.participants.map(p => esc(p.discord_nickname)).join(', ') || '참가자 없음';
+        return `
+        <div class="row">
+            <div style="flex:1;min-width:0">
+                <div style="font-size:.85rem;font-weight:600">
+                    ${esc(a.mapType || a.gameType || '내전')} · ${a.teamCount || 2}팀 · 참가자 ${a.participantCount}명
+                    <span style="color:var(--muted);font-weight:400;font-size:.75rem">#${shortId(a.id)}</span>
+                </div>
+                <div style="font-size:.74rem;color:var(--muted);margin-top:.15rem">
+                    ${reasonLabel(a.reason)} · ${ts(a.archivedAt)} · ${left}일 후 자동 삭제
+                </div>
+                <div style="font-size:.74rem;color:var(--muted);margin-top:.2rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${names}</div>
+            </div>
+            <button class="btn btn-green" onclick="restoreArchive('${esc(a.id)}')">♻️ 복구</button>
+            <button class="btn btn-danger" onclick="deleteArchive('${esc(a.id)}')">삭제</button>
+        </div>`;
+    }).join('');
+}
+
+async function restoreArchive(archiveId) {
+    if (!confirm('이 내전을 원래 채널에 다시 올릴까요?\n참가자와 팀 배정이 그대로 복구됩니다.')) return;
+    const data = await devApi('/api/dev/restore', { archiveId });
+    if (data.error) { toast(data.error, true); return; }
+    toast(`복구 완료! 참가자 ${data.participantCount}명 · 방장에게 관리 링크 DM 전송`);
+    load();
+}
+
+async function deleteArchive(archiveId) {
+    if (!confirm('보관된 내전을 영구 삭제할까요? 되돌릴 수 없어요.')) return;
+    const data = await devApi('/api/dev/archive-delete', { archiveId });
+    if (data.error) { toast(data.error, true); return; }
+    toast('삭제됨');
+    load();
+}
+
 
 function renderStats() {
     const total = allEvents.length;

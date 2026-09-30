@@ -29,7 +29,7 @@ webServer.setCloseCallback(async (msgId) => {
         await deleteMessage(msgId, data.channelId);
     } catch (e) { /* 무시 */ }
     await webServer.deleteEventRole(msgId).catch(() => null);
-    db.deleteEvent(msgId);
+    db.archiveEvent(msgId, 'closed');
     allRecruits.delete(msgId);
     activeUserRecruits.delete(`${data.guildId ?? 'dm'}_${data.creatorId}`);
     saveData();
@@ -212,7 +212,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
         const oldData  = allRecruits.get(oldMsgId);
         await deleteMessage(oldMsgId, oldData?.channelId).catch(() => null);
         await webServer.deleteEventRole(oldMsgId).catch(() => null);
-        db.deleteEvent(oldMsgId);
+        db.archiveEvent(oldMsgId, 'replaced');
         allRecruits.delete(oldMsgId);
     }
 
@@ -274,6 +274,77 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     }
 }
 
+// 보관된 내전 복구 — 채널에 새 구인 메시지를 올리고 참가자·팀 배정을 그대로 되살림
+webServer.setRestoreCallback(async (archiveId) => {
+    const a = db.getArchive(archiveId);
+    if (!a) return { error: '보관된 내전이 없어요.' };
+
+    const ev = a.event;
+    const channel = await client.channels.fetch(ev.channelId).catch(() => null);
+    if (!channel) return { error: '원래 채널을 찾을 수 없어요. (채널이 삭제됐거나 봇이 접근할 수 없음)' };
+
+    // 방장이 다른 구인을 진행 중이면 그것부터 정리
+    const rKey = `${ev.guildId ?? 'dm'}_${ev.createdBy}`;
+    if (activeUserRecruits.has(rKey)) {
+        const oldId = activeUserRecruits.get(rKey);
+        const oldData = allRecruits.get(oldId);
+        await deleteMessage(oldId, oldData?.channelId).catch(() => null);
+        await webServer.deleteEventRole(oldId).catch(() => null);
+        db.archiveEvent(oldId, 'replaced');
+        allRecruits.delete(oldId);
+    }
+
+    const restored = {
+        creatorId: ev.createdBy,
+        guildId:   ev.guildId ?? 'dm',
+        channelId: ev.channelId,
+        participants: a.participants.filter(p => p.discord_id).map(p => p.discord_id),
+        gameType: ev.gameType,
+        mapType:  ev.mapType,
+        description: null,
+        isGeneric: false,
+        time: '복구됨',
+        durationHours: 24,
+        maxPlayers: (ev.teamCount || 2) * (ev.mapType === '루미아 섬' ? 3 : 4),
+        teamCount: ev.teamCount || 2,
+        teams: Array.from({ length: ev.teamCount || 2 }, () => []),
+        team1: [], team2: [],
+        originalVoiceChannelId: null,
+        createdAt: Date.now(),
+    };
+
+    let msg;
+    try {
+        msg = await channel.send({
+            embeds: [await createRecruitEmbed(restored)],
+            components: [new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('join_temp').setLabel('참가').setStyle(ButtonStyle.Primary)
+            )],
+        });
+    } catch (e) {
+        return { error: '메시지 전송 실패: ' + e.message };
+    }
+
+    const newId = msg.id;
+    const r = db.restoreArchive(archiveId, newId, ev.channelId, ev.guildId);
+    if (!r) { await msg.delete().catch(() => null); return { error: '복구 중 오류가 발생했어요.' }; }
+
+    allRecruits.set(newId, restored);
+    activeUserRecruits.set(rKey, newId);
+    saveData();
+
+    await msg.edit({ components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`join_${newId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary)
+    )]}).catch(() => null);
+
+    const BASE = process.env.WEB_URL || 'http://localhost:3000';
+    const adminUrl = `${BASE}/admin?event=${newId}&token=${r.adminToken}`;
+    const creator = await client.users.fetch(ev.createdBy).catch(() => null);
+    if (creator) creator.send(`♻️ 내전이 복구됐어요! 참가자 ${r.participantCount}명\n관리 페이지: ${adminUrl}`).catch(() => null);
+
+    return { eventId: newId, adminUrl, participantCount: r.participantCount };
+});
+
 // pendingLumia 만료 (5분)
 setInterval(() => {
     const now = Date.now();
@@ -281,6 +352,12 @@ setInterval(() => {
         if (now - p.createdAt > 5 * 60 * 1000) pendingLumia.delete(userId);
     }
 }, 60 * 1000);
+
+// 보관함 정리 (매시 정각, 7일 경과분 삭제)
+cron.schedule('0 * * * *', () => {
+    const n = db.purgeArchives(db.ARCHIVE_DAYS);
+    if (n) console.log(`[보관함] 기간 만료 ${n}건 삭제`);
+});
 
 // 구인 자동 삭제 (1분마다)
 cron.schedule('* * * * *', async () => {
@@ -290,7 +367,7 @@ cron.schedule('* * * * *', async () => {
         if (data.createdAt && now - data.createdAt > expireMs) {
             await deleteMessage(msgId, data.channelId).catch(() => null);
             await webServer.deleteEventRole(msgId).catch(() => null);
-            db.deleteEvent(msgId);
+            db.archiveEvent(msgId, 'expired');
             allRecruits.delete(msgId);
             activeUserRecruits.delete(`${data.guildId ?? 'dm'}_${data.creatorId}`);
             saveData();
