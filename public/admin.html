@@ -101,6 +101,7 @@
                 <button class="btn btn-primary" id="shuffle-btn">자동 배정</button>
                 <button class="btn btn-primary" id="shuffle-tier-btn">팀 섞기(티어)</button>
             </div>
+            <div id="team-plan" style="font-size:.76rem;color:var(--muted)"></div>
         </div>
         <div class="action-group" id="group-char">
             <div class="action-group-label">실험체 (선택)</div>
@@ -142,6 +143,14 @@
     </div>
 
     <div id="view-list">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
+            <span style="font-size:.8rem;color:var(--muted)">정렬</span>
+            <select class="team-select" id="sort-select" onchange="renderTable()">
+                <option value="default">기본순 (신청 순서)</option>
+                <option value="tier-desc">티어 높은 순</option>
+                <option value="tier-asc">티어 낮은 순</option>
+            </select>
+        </div>
         <div class="loading" id="list-loading">불러오는 중...</div>
         <table id="participants-table" style="display:none">
             <thead><tr><th>디스코드</th><th>인게임</th><th>포지션 / 주 캐릭터</th><th>팀 배정</th><th>삭제</th></tr></thead>
@@ -246,6 +255,34 @@ const POS_ICON = { '탱커':'tank','전사':'warrior','암살자':'assassin','�
 const TEAM_COLORS = ['#3498db','#e74c3c','#2ecc71','#f1c40f','#9b59b6','#e67e22','#95a5a6','#1abc9c'];
 const TIER_IMG = {'아이언':'https://cdn.dak.gg/er/images/tier/full/1.png','브론즈':'https://cdn.dak.gg/er/images/tier/full/2.png','실버':'https://cdn.dak.gg/er/images/tier/full/3.png','골드':'https://cdn.dak.gg/er/images/tier/full/4.png','플래티넘':'https://cdn.dak.gg/er/images/tier/full/5.png','다이아몬드':'https://cdn.dak.gg/er/images/tier/full/6.png','메테오라이트':'https://cdn.dak.gg/er/images/tier/full/63.png','미스릴':'https://cdn.dak.gg/er/images/tier/full/66.png','데미갓':'https://cdn.dak.gg/er/images/tier/full/7.png','이터니티':'https://cdn.dak.gg/er/images/tier/full/8.png'};
 const TIER_NAMES = ['언랭크','아이언','브론즈','실버','골드','플래티넘','다이아몬드','메테오라이트','미스릴','데미갓','이터니티'];
+// 티어 이름 → 숫자 (TIER_NAMES 순서가 곧 티어 등급. 가나다순 정렬 금지)
+function tierValue(tier) {
+    const i = TIER_NAMES.indexOf(tier);
+    return i >= 0 ? i : null;
+}
+
+// 티어 미설정자는 상·하위로 쏠리지 않도록 전체 평균으로 취급
+function avgTierValue(list) {
+    const vals = list.map(p => tierValue(p.tier)).filter(v => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : (TIER_NAMES.length - 1) / 2;
+}
+
+function sortedParticipants() {
+    const mode = document.getElementById('sort-select')?.value || 'default';
+    if (mode === 'default') return participants;
+    const fallback = avgTierValue(participants);
+    const score = p => (tierValue(p.tier) ?? fallback) * 100 + (Number(p.mmr) || 0) / 100;
+    const dir = mode === 'tier-desc' ? -1 : 1;
+    return [...participants].sort((a, b) => (score(a) - score(b)) * dir);
+}
+
+// 팀 평균 티어 이름 (표시용)
+function teamTierLabel(members, fallback) {
+    if (!members.length) return '';
+    const avg = members.reduce((s, p) => s + (tierValue(p.tier) ?? fallback), 0) / members.length;
+    return TIER_NAMES[Math.round(avg)] || '';
+}
+
 function tierImg(tier) {
     return TIER_IMG[tier]
         ? `<img src="${TIER_IMG[tier]}" style="width:18px;height:18px;vertical-align:middle;margin-right:3px;" onerror="this.style.display='none'">`
@@ -331,6 +368,7 @@ async function load(){
     loadVoiceChannels();
 
     renderRoleInfo();
+    refreshTeamPlan();
 
     // 룰 섹션 초기화
     document.getElementById('rule-section').style.display = '';
@@ -369,7 +407,7 @@ function renderTable(){
     const tc = eventData?.teamCount || 2;
     const isTeamMode = eventData?.gameType === '내전';
     const tbody = document.getElementById('table-body');
-    tbody.innerHTML = participants.map(p=>`
+    tbody.innerHTML = sortedParticipants().map(p=>`
         <tr data-token="${esc(p.cancel_token)}">
             <td><strong>${esc(p.discord_nickname)}</strong></td>
             <td>${esc(p.ingame_nickname)}</td>
@@ -404,10 +442,12 @@ function renderTeams(){
         else unassigned.push(p);
     }
     const grid = document.getElementById('teams-grid');
+    const fallbackTier = avgTierValue(participants);
     let html='';
     for(let i=1;i<=tc;i++){
         const color = TEAM_COLORS[(i-1)%TEAM_COLORS.length];
-        html+=`<div class="team-card" data-team="${i}"><h3 style="color:${color}">${i}팀 (${teams[i].length}명)</h3>`;
+        const avgLabel = teamTierLabel(teams[i], fallbackTier);
+        html+=`<div class="team-card" data-team="${i}"><h3 style="color:${color}">${i}팀 (${teams[i].length}명)${avgLabel?`<span style="float:right;font-size:.72rem;font-weight:400;color:var(--muted)">평균 ${esc(avgLabel)}</span>`:''}</h3>`;
         if(!teams[i].length) html+='<p style="color:var(--muted);font-size:.85rem">없음</p>';
         for(const p of teams[i]) html+=`
             <div class="member-item" draggable="true" data-token="${esc(p.cancel_token)}">
@@ -462,7 +502,8 @@ function bindTeamDragDrop(){
 }
 
 async function assignTeam(cancelToken, teamNum){
-    await api('/api/admin/assign', { event:EVENT, token:TOKEN, cancel_token:cancelToken, team_num:teamNum });
+    const data = await api('/api/admin/assign', { event:EVENT, token:TOKEN, cancel_token:cancelToken, team_num:teamNum });
+    if(data?.error){ toast(data.error, true); render(); return; }   // 최대 인원 초과 등
     const p = participants.find(x=>x.cancel_token===cancelToken);
     if(p) p.team_num = teamNum===''? null : Number(teamNum);
     render();
@@ -521,6 +562,16 @@ async function toggleRole(){
         toast(`역할 "${data.roleName}" 생성 · ${data.added}명에게 부여`);
     }
     renderRoleInfo();
+}
+
+// 지금 인원이면 몇 팀 × 몇 명이 되는지 안내
+async function refreshTeamPlan(){
+    const el = document.getElementById('team-plan');
+    if(!el || document.getElementById('group-team').style.display === 'none'){ if(el) el.textContent=''; return; }
+    const d = await api(`/api/admin/team-plan?event=${EVENT}&token=${TOKEN}`).catch(()=>null);
+    if(!d || d.error){ el.textContent=''; return; }
+    const warn = d.noTierCount ? ` · 티어 미설정 ${d.noTierCount}명` : '';
+    el.textContent = d.count ? `${d.text}${warn}` : '참가자가 없어요';
 }
 
 function isCobaltMode(){ return (eventData?.mapType || '').startsWith('코발트'); }
@@ -793,27 +844,39 @@ async function returnVoices() {
 }
 
 // ── 기존 버튼들 ──────────────────────────────────────────
-document.getElementById('shuffle-btn').addEventListener('click', async ()=>{
-    if(!confirm(`참가자 ${participants.length}명을 ${eventData?.teamCount||2}팀으로 자동 배정할까요?`)) return;
-    const btn = document.getElementById('shuffle-btn');
-    btn.disabled=true;
-    const data = await api('/api/admin/shuffle', { event:EVENT, token:TOKEN });
-    participants = data.participants;
-    render();
-    btn.disabled=false;
-    toast('자동 배정 완료!');
-});
+// 배정 결과 안내 문구
+function shuffleResultMsg(data, label){
+    const sizes = data.sizes || [];
+    const uniform = sizes.length && sizes.every(x=>x===sizes[0]);
+    const detail = uniform ? `${sizes.length}팀 × ${sizes[0]}명` : `${sizes.length}팀 (${sizes.join('/')})`;
+    const warn = data.noTierCount ? ` · 티어 미설정 ${data.noTierCount}명은 평균으로 계산` : '';
+    return `${label} 완료 — ${detail}${warn}`;
+}
 
-document.getElementById('shuffle-tier-btn').addEventListener('click', async ()=>{
-    if(!confirm(`MMR 기준으로 ${eventData?.teamCount||2}팀을 밸런스 배정할까요?\n(상위권이 각 팀에 고루 분배됩니다)`)) return;
-    const btn = document.getElementById('shuffle-tier-btn');
+async function runShuffle(kind){
+    if(!participants.length){ toast('참가자가 없어요', true); return; }
+    const plan = await api(`/api/admin/team-plan?event=${EVENT}&token=${TOKEN}`).catch(()=>null);
+    const planText = plan && !plan.error ? plan.text : `참가자 ${participants.length}명`;
+    const warn = plan?.noTierCount ? `\n티어 미설정 ${plan.noTierCount}명은 평균 티어로 계산합니다.` : '';
+    const label = kind==='tier' ? '티어 밸런스 배정' : '자동 배정';
+    const extra = kind==='tier' ? '\n(실력이 한쪽에 몰리지 않도록 나눕니다)' : '';
+    if(!confirm(`${planText} 으로 ${label}할까요?${extra}${kind==='tier'?warn:''}`)) return;
+
+    const btn = document.getElementById(kind==='tier' ? 'shuffle-tier-btn' : 'shuffle-btn');
     btn.disabled=true;
-    const data = await api('/api/admin/shuffle-tier', { event:EVENT, token:TOKEN });
-    participants = data.participants;
-    render();
+    const data = await api(kind==='tier' ? '/api/admin/shuffle-tier' : '/api/admin/shuffle', { event:EVENT, token:TOKEN });
     btn.disabled=false;
-    toast('티어 밸런스 배정 완료!');
-});
+    if(data.error){ toast(data.error, true); return; }
+    participants = data.participants;
+    if(data.event) eventData = data.event;      // 팀 수가 바뀌었을 수 있음
+    render();
+    refreshTeamPlan();
+    if(data.valid === false) toast('배정 결과에 문제가 있어요. 서버 로그를 확인해주세요.', true);
+    else toast(shuffleResultMsg(data, label));
+}
+
+document.getElementById('shuffle-btn').addEventListener('click', ()=>runShuffle('random'));
+document.getElementById('shuffle-tier-btn').addEventListener('click', ()=>runShuffle('tier'));
 
 document.getElementById('char-btn').addEventListener('click', async ()=>{
     const assigned = participants.filter(p=>p.team_num);
@@ -946,6 +1009,7 @@ async function silentRefresh(){
         render();
         renderTournament();
         renderRoleInfo();
+        if(newCount !== oldCount) refreshTeamPlan();
         populateTransferSelect();
         if(newCount !== oldCount) toast(`참가자 업데이트: ${newCount}명`);
         const now = new Date();

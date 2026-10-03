@@ -2,6 +2,7 @@ const express = require('express');
 const path    = require('path');
 const db      = require('./db');
 const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES, TIERS, TIER_BY_MMR } = require('./constants');
+const teamUtil = require('./teams');
 const VALID_TIERS = TIERS.map(t => t.name);
 
 let generateResultCard = null, generateBracketCard = null, generateCharPoolCard = null;
@@ -299,25 +300,41 @@ app.get('/api/admin/data', (req, res) => {
 app.post('/api/admin/shuffle', (req, res) => {
     const { event, token } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
-    const ev = db.getEvent(event);
-    db.shuffleTeams(event, ev.teamCount || 2);
-    res.json({ success: true, participants: db.getParticipants(event) });
+    const r = db.shuffleTeams(event);
+    res.json({ success: true, participants: db.getParticipants(event), event: db.getEvent(event), ...r });
 });
 
-// POST /api/admin/shuffle-tier — MMR 기준 스네이크 드래프트 배정
+// POST /api/admin/shuffle-tier — 티어 밸런스 배정 (강한 참가자가 한 팀에 몰리지 않도록)
 app.post('/api/admin/shuffle-tier', (req, res) => {
     const { event, token } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const r = db.shuffleByTier(event);
+    res.json({ success: true, participants: db.getParticipants(event), event: db.getEvent(event), ...r });
+});
+
+// GET /api/admin/team-plan — 지금 인원이면 몇 팀 × 몇 명이 되는지 미리 보기
+app.get('/api/admin/team-plan', (req, res) => {
+    const { event, token } = req.query;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
     const ev = db.getEvent(event);
-    db.shuffleByTier(event, ev.teamCount || 2);
-    res.json({ success: true, participants: db.getParticipants(event) });
+    const participants = db.getParticipants(event);
+    const sizes = teamUtil.getTeamDistribution(participants.length, ev);
+    res.json({
+        count: participants.length,
+        sizes,
+        teamCount: sizes.length,
+        maxTeamSize: teamUtil.maxTeamSize(ev),
+        noTierCount: participants.filter(p => !p.tier).length,
+        text: teamUtil.describeDistribution(sizes, participants.length),
+    });
 });
 
 // POST /api/admin/assign  { event, token, cancel_token, team_num }
 app.post('/api/admin/assign', (req, res) => {
     const { event, token, cancel_token, team_num } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
-    db.assignTeam(cancel_token, team_num === '' ? null : Number(team_num));
+    const r = db.assignTeam(cancel_token, team_num === '' ? null : Number(team_num));
+    if (r?.error) return res.status(400).json(r);
     res.json({ success: true });
 });
 
@@ -400,10 +417,10 @@ app.post('/api/admin/fill-dummy', (req, res) => {
         const tok = db.addParticipant(event, null, `테스트${n}`, `test_${n}`, '전사', null, [], 0);
         db.markDummy(tok);
     }
-    // 전원 팀 재배정 (순서대로 고르게)
+    // 전원 팀 재배정 — 공통 분배 로직 사용 (맵별 최대 인원 준수)
     db.resetTeamAssignments(event);
-    db.getParticipants(event).forEach((p, i) => db.assignTeam(p.cancel_token, (i % teamCount) + 1));
-    res.json({ success: true, added: need, participants: db.getParticipants(event) });
+    const r = db.shuffleTeams(event);
+    res.json({ success: true, added: need, participants: db.getParticipants(event), event: db.getEvent(event), ...r });
 });
 
 // POST /api/admin/clear-dummy — 테스트 참가자 전부 삭제

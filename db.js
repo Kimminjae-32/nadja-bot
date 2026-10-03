@@ -1,5 +1,6 @@
 const fs     = require('fs');
 const crypto = require('crypto');
+const teamUtil = require('./teams');
 
 const DB_PATH = './nadja-events.json';
 
@@ -90,9 +91,23 @@ module.exports = {
         }
     },
 
+    // 수동 배정 (드롭다운·드래그) — 맵별 최대 인원을 넘으면 거부
     assignTeam(token, teamNum) {
         const data = load();
-        if (data.participants[token]) { data.participants[token].team_num = teamNum; save(data); }
+        const p = data.participants[token];
+        if (!p) return { error: '참가자를 찾을 수 없어요.' };
+
+        if (teamNum != null) {
+            const ev = data.events[p.event_id];
+            const max = teamUtil.maxTeamSize(ev);
+            const current = Object.values(data.participants)
+                .filter(x => x.event_id === p.event_id && x.team_num === teamNum && x.cancel_token !== token).length;
+            if (current >= max)
+                return { error: `${teamNum}팀은 이미 ${max}명이에요. (${ev?.mapType || ev?.gameType} 최대 ${max}명)` };
+        }
+        p.team_num = teamNum;
+        save(data);
+        return { success: true };
     },
 
     // 관리자가 참가자 티어 수정 (허위 신고 정정용)
@@ -101,33 +116,37 @@ module.exports = {
         if (data.participants[token]) { data.participants[token].tier = tier || null; save(data); }
     },
 
-    shuffleTeams(eventId, teamCount) {
+    // 팀 배정 공통 — mode: 'random' | 'tier'
+    // 팀 수와 팀별 인원은 teams.js가 정하고(맵별 최대 인원 준수), 결과는 검증까지 거친다.
+    assignTeams(eventId, mode) {
         const data = load();
+        const ev   = data.events[eventId];
         const list = Object.values(data.participants).filter(p => p.event_id === eventId);
-        const shuffled = [...list].sort(() => Math.random() - 0.5);
-        shuffled.forEach((p, i) => { data.participants[p.cancel_token].team_num = (i % teamCount) + 1; });
+        if (!list.length) return { teamCount: 0, sizes: [], noTierCount: 0, valid: true };
+
+        const sizes = teamUtil.getTeamDistribution(list.length, ev);
+        const teams = mode === 'tier'
+            ? teamUtil.distributeByTier(list, sizes)
+            : teamUtil.distributeRandom(list, sizes);
+
+        const valid = teamUtil.validateTeamDistribution(teams, list, ev, sizes);
+
+        teams.forEach((team, i) => {
+            for (const p of team) data.participants[p.cancel_token].team_num = i + 1;
+        });
+        if (ev && ev.teamCount !== teams.length) ev.teamCount = teams.length;   // 실제 팀 수로 맞춤
         save(data);
+
+        return {
+            teamCount: teams.length,
+            sizes,
+            noTierCount: list.filter(p => !p.tier).length,
+            valid,
+        };
     },
 
-    // MMR 기준 스네이크 드래프트 배정 — 상위권이 각 팀에 고루 분배
-    // 예) 6명 2팀: 1위→팀1, 2위→팀2, 3위→팀2, 4위→팀1, 5위→팀1, 6위→팀2
-    shuffleByTier(eventId, teamCount) {
-        const data = load();
-        const list = Object.values(data.participants).filter(p => p.event_id === eventId);
-        const numTeams = teamCount || 2;
-        // MMR 내림차순 정렬, 동점은 랜덤
-        const sorted = [...list].sort((a, b) => (b.mmr || 0) - (a.mmr || 0) || Math.random() - 0.5);
-        // 스네이크 드래프트: 0→1→...→N-1→N-1→...→1→0→0→...
-        let teamIdx = 0, dir = 1;
-        for (const p of sorted) {
-            data.participants[p.cancel_token].team_num = teamIdx + 1;
-            const next = teamIdx + dir;
-            if (next >= numTeams)      { dir = -1; }
-            else if (next < 0)         { dir = 1; }
-            teamIdx += dir;
-        }
-        save(data);
-    },
+    shuffleTeams(eventId)  { return this.assignTeams(eventId, 'random'); },
+    shuffleByTier(eventId) { return this.assignTeams(eventId, 'tier'); },
 
     // 참가자 임시 역할 (roleId=null 이면 해제)
     setEventRole(eventId, roleId, roleName) {
