@@ -12,7 +12,16 @@ function load() {
 }
 
 function save(data) {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+    // 임시 파일에 먼저 기록한 뒤 교체한다. 쓰기 도중 중단돼도 기존 파일이 손상되지 않는다.
+    const tmp = DB_PATH + '.tmp';
+    try {
+        fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+        fs.renameSync(tmp, DB_PATH);
+    } catch (e) {
+        console.error('[db] 저장 실패:', e.message);
+        try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
+        throw e;
+    }
 }
 
 module.exports = {
@@ -399,6 +408,36 @@ module.exports = {
         }
         if (n) save(data);
         return n;
+    },
+
+    // ── 「저쪽 신사분이 주신 겁니다」 이벤트 ──────────
+    // 읽기-수정-쓰기를 한 번에 끝내는 트랜잭션. 동시 요청이 서로의 변경을 덮어쓰지 않도록 한다.
+    // fn(gentlemanState, event, participants) 가 반환한 값을 그대로 돌려주며,
+    // fn 안에서 state를 직접 수정하면 저장된다. fn이 false를 반환하면 저장하지 않는다.
+    withGentleman(eventId, fn) {
+        const data = load();
+        const ev = data.events[eventId];
+        if (!ev) return { error: '이벤트를 찾을 수 없어요.' };
+        const participants = Object.values(data.participants).filter(p => p.event_id === eventId);
+        // 이벤트 전체를 비교한다. fn 안에서 gentleman 외의 필드를 바꿔도 저장되도록 하기 위함이다.
+        const before = JSON.stringify(ev);
+        const result = fn(ev.gentleman ?? null, ev, participants, state => { ev.gentleman = state; });
+        if (result && result.__noSave) { delete result.__noSave; return result; }
+        if (JSON.stringify(ev) !== before) save(data);
+        return result;
+    },
+
+    getGentleman(eventId) {
+        return load().events[eventId]?.gentleman ?? null;
+    },
+
+    setGentleman(eventId, state) {
+        const data = load();
+        if (!data.events[eventId]) return false;
+        if (state === null) delete data.events[eventId].gentleman;
+        else data.events[eventId].gentleman = state;
+        save(data);
+        return true;
     },
 
     getRule(eventId) {

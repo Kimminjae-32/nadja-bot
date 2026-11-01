@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>불행상 투표 · 저쪽 신사분이 주신 겁니다</title>
+<style>
+    :root{
+        --bg:#0f0f1a; --card:#1a1a2e; --border:#2a2a4a; --accent:#e94560;
+        --text:#e0e0f0; --muted:#8888aa; --green:#2ecc71; --gold:#f1c40f;
+        --ease:cubic-bezier(.22,.9,.28,1);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Segoe UI',sans-serif;
+        min-height:100vh;padding:1.2rem 1rem 7.5rem;overflow-x:hidden;animation:bgIn .6s var(--ease) both;}
+    body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+        background:radial-gradient(900px 520px at 20% -10%, rgba(233,69,96,.18), transparent 60%),
+                   radial-gradient(700px 420px at 95% 5%, rgba(15,52,96,.45), transparent 60%);}
+    .wrap{max-width:980px;margin:0 auto;position:relative;z-index:1;}
+
+    @keyframes bgIn{from{opacity:0}to{opacity:1}}
+    @keyframes dropIn{from{opacity:0;transform:translateY(-18px)}to{opacity:1;transform:none}}
+    @keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:none}}
+    @keyframes popIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+    @keyframes checkPop{0%{transform:scale(0) rotate(-18deg)}60%{transform:scale(1.16)}100%{transform:scale(1)}}
+    @keyframes shake{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(4px)}50%{transform:translateX(-5px)}}
+
+    header{margin-bottom:1.1rem;animation:dropIn .55s var(--ease) both;}
+    .eyebrow{color:var(--accent);font-size:.78rem;letter-spacing:.14em;font-weight:700;margin-bottom:.3rem;}
+    h1{font-size:1.5rem;}
+    .sub{color:var(--muted);font-size:.86rem;margin-top:.35rem;line-height:1.5;}
+
+    .panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1rem 1.1rem;
+        margin-bottom:1rem;animation:slideIn .5s var(--ease) both;}
+
+    .group-title{font-size:.84rem;font-weight:700;color:var(--muted);margin:1.2rem 0 .6rem;
+        display:flex;align-items:center;gap:.5rem;animation:slideIn .45s var(--ease) both;}
+    .group-title::after{content:'';flex:1;height:1px;background:var(--border);}
+
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;}
+    @media(max-width:780px){ .grid{grid-template-columns:repeat(2,1fr);} }
+
+    .cand{position:relative;background:var(--card);border:2px solid var(--border);border-radius:12px;
+        overflow:hidden;cursor:pointer;user-select:none;
+        transition:transform .22s var(--ease),border-color .22s var(--ease),box-shadow .22s var(--ease);
+        animation:popIn .4s var(--ease) both;}
+    .cand .ph{position:relative;aspect-ratio:4/3.1;background:var(--bg);}
+    .cand img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s var(--ease);}
+    .cand .meta{padding:.55rem .65rem .7rem;}
+    .cand .nick{font-weight:700;font-size:.92rem;}
+    .cand .info{color:var(--muted);font-size:.76rem;margin-top:.2rem;}
+    .cand:hover{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 10px 24px rgba(0,0,0,.45);}
+    .cand:hover img{transform:scale(1.06);}
+    .cand.sel{border-color:var(--gold);box-shadow:0 0 0 2px rgba(241,196,15,.25),0 10px 24px rgba(0,0,0,.5);}
+    .cand.sel::after{content:'선택';position:absolute;top:.5rem;right:.5rem;background:var(--gold);color:#1a1a0a;
+        font-size:.7rem;font-weight:800;padding:.18rem .45rem;border-radius:6px;animation:popIn .25s var(--ease) both;}
+    .cand.mine{border-color:var(--green);}
+    .cand.mine::after{content:'내 표';background:var(--green);color:#06240f;}
+    .cand.locked{cursor:default;}
+    .cand.locked:hover{transform:none;border-color:var(--border);box-shadow:none;}
+    .cand.locked:hover img{transform:none;}
+
+    .dock{position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(15,15,26,.94);
+        backdrop-filter:blur(10px);border-top:1px solid var(--border);
+        padding:.75rem 1rem calc(.75rem + env(safe-area-inset-bottom));animation:dropIn .5s var(--ease) both;}
+    .dock-in{max-width:980px;margin:0 auto;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;}
+    .pick-info{flex:1;min-width:0;font-size:.88rem;}
+    .pick-info b{color:var(--gold);}
+
+    .btn{border:none;border-radius:9px;padding:.72rem 1.3rem;font-size:.92rem;font-weight:700;cursor:pointer;
+        transition:transform .18s var(--ease),opacity .18s,box-shadow .18s;}
+    .btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.4);}
+    .btn:disabled{opacity:.4;cursor:not-allowed;}
+    .btn-primary{background:var(--accent);color:#fff;}
+    .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border);}
+
+    .mask{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;display:none;align-items:center;justify-content:center;padding:1rem;}
+    .mask.on{display:flex;animation:bgIn .22s both;}
+    .modal{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.4rem;max-width:460px;width:100%;
+        animation:popIn .3s var(--ease) both;text-align:center;}
+    .modal h2{font-size:1.1rem;margin-bottom:.5rem;}
+    .modal p{color:var(--muted);font-size:.88rem;line-height:1.6;}
+    .modal-btns{display:flex;gap:.55rem;justify-content:center;margin-top:1rem;flex-wrap:wrap;}
+    .modal .pv{width:150px;margin:.9rem auto;border-radius:11px;overflow:hidden;border:2px solid var(--gold);}
+    .modal .pv img{width:100%;display:block;}
+
+    .done-mark{width:60px;height:60px;border-radius:50%;background:var(--green);display:flex;align-items:center;
+        justify-content:center;margin:0 auto .7rem;animation:checkPop .5s var(--ease) both;}
+    .done-mark svg{width:30px;height:30px;stroke:#fff;stroke-width:3.4;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+
+    .toast{position:fixed;left:50%;transform:translateX(-50%) translateY(18px);bottom:6.5rem;z-index:60;
+        background:#1f2937;color:#fff;padding:.6rem 1.1rem;border-radius:10px;font-size:.86rem;opacity:0;
+        transition:opacity .25s,transform .25s var(--ease);pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast.err{background:var(--accent);}
+    .center-msg{text-align:center;padding:3.5rem 1rem;color:var(--muted);animation:popIn .4s var(--ease) both;}
+    .shake{animation:shake .4s both;}
+
+    @media (prefers-reduced-motion:reduce){
+        *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;}
+    }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <div class="eyebrow">저쪽 신사분이 주신 겁니다</div>
+        <h1>불행상 투표</h1>
+        <p class="sub" id="subtitle">불러오는 중...</p>
+    </header>
+    <div id="main"></div>
+</div>
+
+<div class="dock" id="dock" style="display:none">
+    <div class="dock-in">
+        <div class="pick-info" id="pick-info">후보를 골라주세요</div>
+        <button class="btn btn-primary" id="submit-btn" disabled>투표 제출</button>
+    </div>
+</div>
+
+<div class="mask" id="mask"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const EVENT = params.get('event');
+const TOKEN = params.get('token');
+const DAK_VER = '12.4.0';
+
+let view = null;       // 서버 상태
+let selected = null;   // 화면에서 고른 후보
+let charEn = {};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const charImg = n => charEn[n] ? `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharResult_${charEn[n]}_S000.png` : null;
+
+function toast(msg, isErr){
+    const el = $('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (isErr ? ' err' : '');
+    clearTimeout(el._t);
+    el._t = setTimeout(()=>el.classList.remove('show'), 2600);
+}
+
+async function api(path, body){
+    const opt = body ? { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ event:EVENT, token:TOKEN, ...body }) } : {};
+    const url = body ? path : `${path}?event=${encodeURIComponent(EVENT)}&token=${encodeURIComponent(TOKEN)}`;
+    const res = await fetch(url, opt);
+    return res.json().catch(()=>({ error:'응답을 해석할 수 없어요.' }));
+}
+
+function showCenter(title, desc){
+    $('dock').style.display = 'none';
+    $('main').innerHTML = `<div class="panel"><div class="center-msg">
+        <div style="font-size:1.05rem;color:var(--text);font-weight:700;margin-bottom:.4rem">${esc(title)}</div>
+        <div>${esc(desc ?? '')}</div></div></div>`;
+}
+
+function render(){
+    const closed = view.closed;
+    // 선물을 보낸 팀별로 묶어서 보여준다
+    const groups = {};
+    for (const c of view.candidates) (groups[c.fromTeam ?? '-'] ??= []).push(c);
+
+    let html = '';
+    if (view.myVote) {
+        const mine = view.candidates.find(c => c.token === view.myVote);
+        html += `<div class="panel" style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+            <div class="done-mark" style="width:42px;height:42px;margin:0"><svg viewBox="0 0 24 24"><polyline points="4 12.5 9.5 18 20 6.5"/></svg></div>
+            <div><div style="font-weight:800">투표를 마쳤어요</div>
+            <div style="color:var(--muted);font-size:.84rem">내 선택: <b style="color:var(--gold)">${esc(mine?.nickname ?? '알 수 없음')}</b>
+            ${closed ? ' · 투표가 마감되어 더 이상 바꿀 수 없어요' : ' · 마감 전까지 바꿀 수 있어요'}</div></div>
+        </div>`;
+    }
+    if (closed && !view.myVote) {
+        html += `<div class="panel"><div style="font-weight:700">투표가 마감됐어요</div>
+            <div style="color:var(--muted);font-size:.85rem;margin-top:.3rem">결과는 관리자가 발표하면 공개됩니다.</div></div>`;
+    }
+
+    let delay = 0;
+    for (const [team, list] of Object.entries(groups).sort((a,b)=>Number(a[0])-Number(b[0]))) {
+        html += `<div class="group-title" style="animation-delay:${delay}ms">${esc(team)}팀이 보낸 선물</div><div class="grid">`;
+        for (const c of list) {
+            const src = charImg(c.character);
+            const cls = [ 'cand', closed ? 'locked' : '', view.myVote === c.token ? 'mine' : (selected === c.token ? 'sel' : '') ].filter(Boolean).join(' ');
+            html += `<div class="${cls}" data-token="${esc(c.token)}" style="animation-delay:${Math.min(delay,420)}ms">
+                <div class="ph">${src?`<img src="${src}" alt="" loading="lazy" onerror="this.style.display='none'">`:''}</div>
+                <div class="meta"><div class="nick">${esc(c.nickname)}</div>
+                <div class="info">${esc(c.character ?? '실험체 없음')} · ${esc(c.fromTeam)}팀의 선물</div></div>
+            </div>`;
+            delay += 26;
+        }
+        html += `</div>`;
+    }
+    $('main').innerHTML = html;
+
+    if (!closed) {
+        $('main').querySelectorAll('.cand').forEach(el => el.addEventListener('click', () => {
+            selected = el.dataset.token;
+            $('main').querySelectorAll('.cand').forEach(x => x.classList.remove('sel'));
+            if (view.myVote !== selected) el.classList.add('sel');
+            updateDock();
+        }));
+    }
+    updateDock();
+}
+
+function updateDock(){
+    const closed = view.closed;
+    $('dock').style.display = closed ? 'none' : '';
+    const btn = $('submit-btn');
+    const info = $('pick-info');
+    const cand = view.candidates.find(c => c.token === selected);
+    const changed = selected && selected !== view.myVote;
+
+    info.innerHTML = cand
+        ? `선택: <b>${esc(cand.nickname)}</b> (${esc(cand.character ?? '-')})`
+        : (view.myVote ? '다른 후보를 고르면 표를 바꿀 수 있어요' : '후보를 골라주세요');
+    btn.disabled = !changed;
+    btn.textContent = view.myVote ? '투표 변경' : '투표 제출';
+}
+
+$('submit-btn').addEventListener('click', () => {
+    const cand = view.candidates.find(c => c.token === selected);
+    if (!cand) return;
+    const src = charImg(cand.character);
+    $('modal').innerHTML = `
+        <h2>${view.myVote ? '이 분으로 바꿀까요?' : '이 분에게 투표할까요?'}</h2>
+        ${src?`<div class="pv"><img src="${src}" onerror="this.remove()"></div>`:''}
+        <p><b style="color:var(--text)">${esc(cand.nickname)}</b><br>${esc(cand.character ?? '-')} · ${esc(cand.fromTeam)}팀의 선물</p>
+        <p style="margin-top:.5rem;font-size:.8rem">투표는 익명이며, 마감 전까지 언제든 바꿀 수 있어요.</p>
+        <div class="modal-btns">
+            <button class="btn btn-ghost" id="cancel">다시 고를게요</button>
+            <button class="btn btn-primary" id="ok">${view.myVote ? '바꾸기' : '투표하기'}</button>
+        </div>`;
+    $('mask').classList.add('on');
+    $('cancel').addEventListener('click', ()=>$('mask').classList.remove('on'));
+    $('ok').addEventListener('click', doVote);
+});
+
+async function doVote(){
+    const btn = $('ok');
+    btn.disabled = true; btn.textContent = '처리 중...';
+    const r = await api('/api/gentleman/me/vote', { candidate: selected });
+    $('mask').classList.remove('on');
+    if (r.error) { toast(r.error, true); return; }
+    toast(r.changed ? '표를 바꿨어요!' : '투표했어요!');
+    await load();
+}
+
+async function load(){
+    const data = await api('/api/gentleman/me/vote');
+    if (!data.available) { showCenter('지금은 투표할 수 없어요', data.error); return; }
+    view = data;
+    selected = data.myVote ?? selected;
+    $('subtitle').textContent = `${data.nickname}님 · 가장 불운한 선물을 받은 분에게 한 표를 주세요 `
+        + `(${data.votedCount}/${data.totalVoters}명 참여)`;
+    render();
+}
+
+async function boot(){
+    if (!EVENT || !TOKEN) { showCenter('링크가 올바르지 않아요', '디스코드의 투표 버튼을 눌러 다시 들어와주세요.'); return; }
+    try { charEn = (await (await fetch('/api/gentleman/chars')).json()).charEn ?? {}; } catch {}
+    await load();
+    setInterval(load, 5000);
+}
+boot();
+</script>
+</body>
+</html>

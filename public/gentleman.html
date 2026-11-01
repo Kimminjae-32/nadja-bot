@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>실험체 선택 · 저쪽 신사분이 주신 겁니다</title>
+<style>
+    :root{
+        --bg:#0f0f1a; --card:#1a1a2e; --border:#2a2a4a; --accent:#e94560; --accent2:#0f3460;
+        --text:#e0e0f0; --muted:#8888aa; --green:#2ecc71; --gold:#f1c40f;
+        --ease:cubic-bezier(.22,.9,.28,1);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{
+        background:var(--bg); color:var(--text); font-family:'Segoe UI',sans-serif;
+        min-height:100vh; padding:1.2rem 1rem 9rem; overflow-x:hidden;
+        animation:bgIn .6s var(--ease) both;
+    }
+    /* 은은한 배경 광원 — 이벤트 분위기를 내되 내용을 가리지 않는다 */
+    body::before{
+        content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+        background:radial-gradient(900px 500px at 15% -10%, rgba(233,69,96,.16), transparent 60%),
+                   radial-gradient(700px 450px at 90% 0%, rgba(15,52,96,.5), transparent 60%);
+    }
+    .wrap{max-width:1040px;margin:0 auto;position:relative;z-index:1;}
+
+    @keyframes bgIn{from{opacity:0}to{opacity:1}}
+    @keyframes dropIn{from{opacity:0;transform:translateY(-18px)}to{opacity:1;transform:none}}
+    @keyframes slideIn{from{opacity:0;transform:translateX(-22px)}to{opacity:1;transform:none}}
+    @keyframes slideInRight{from{opacity:0;transform:translateX(22px)}to{opacity:1;transform:none}}
+    @keyframes popIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes checkPop{0%{transform:scale(0) rotate(-20deg)}60%{transform:scale(1.18) rotate(4deg)}100%{transform:scale(1) rotate(0)}}
+    @keyframes shake{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(4px)}50%{transform:translateX(-5px)}}
+
+    header{margin-bottom:1.1rem;animation:dropIn .55s var(--ease) both;}
+    .eyebrow{color:var(--accent);font-size:.78rem;letter-spacing:.14em;font-weight:700;margin-bottom:.3rem;}
+    h1{font-size:1.5rem;line-height:1.3;}
+    .sub{color:var(--muted);font-size:.86rem;margin-top:.35rem;}
+
+    .panel{
+        background:var(--card);border:1px solid var(--border);border-radius:14px;
+        padding:1rem 1.1rem;margin-bottom:1rem;animation:slideIn .5s var(--ease) both;
+    }
+    .panel.right{animation-name:slideInRight;}
+
+    .status-row{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;}
+    .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none;}
+    .dot.live{background:var(--green);animation:pulse 1.8s infinite;}
+    .dot.wait{background:var(--gold);animation:pulse 1.8s infinite;}
+    .status-text{font-weight:700;font-size:.95rem;}
+    .status-sub{color:var(--muted);font-size:.8rem;}
+
+    .progress{height:7px;background:var(--bg);border-radius:99px;overflow:hidden;margin-top:.7rem;border:1px solid var(--border);}
+    .progress span{display:block;height:100%;width:0;border-radius:99px;
+        background:linear-gradient(90deg,var(--accent),var(--gold));transition:width .55s var(--ease);}
+
+    /* 후보 카드 격자 — PC 4열, 모바일 2열 */
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;}
+    @media(max-width:720px){ .grid{grid-template-columns:repeat(2,1fr);} }
+
+    .char{
+        position:relative;background:var(--card);border:2px solid var(--border);border-radius:12px;
+        overflow:hidden;cursor:pointer;user-select:none;aspect-ratio:4/3.2;
+        transition:transform .22s var(--ease),border-color .22s var(--ease),box-shadow .22s var(--ease);
+        animation:popIn .4s var(--ease) both;
+    }
+    .char img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s var(--ease);}
+    .char .nm{
+        position:absolute;left:0;right:0;bottom:0;padding:1.6rem .6rem .5rem;
+        background:linear-gradient(transparent,rgba(0,0,0,.9));font-weight:700;font-size:.88rem;
+    }
+    .char .no-img{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.8rem;}
+    .char:hover{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 10px 24px rgba(0,0,0,.45);}
+    .char:hover img{transform:scale(1.06);}
+    .char.picked{border-color:var(--gold);box-shadow:0 0 0 2px rgba(241,196,15,.25),0 10px 24px rgba(0,0,0,.5);}
+    .char.picked::after{
+        content:'선택됨';position:absolute;top:.5rem;right:.5rem;background:var(--gold);color:#1a1a0a;
+        font-size:.7rem;font-weight:800;padding:.18rem .45rem;border-radius:6px;animation:popIn .25s var(--ease) both;
+    }
+    .char.disabled{opacity:.42;cursor:not-allowed;}
+    .char.disabled:hover{transform:none;border-color:var(--border);box-shadow:none;}
+    .char.disabled:hover img{transform:none;}
+    .char.bump{animation:popIn .3s var(--ease);}
+
+    /* 화면 아래 고정 선택 슬롯 */
+    .dock{
+        position:fixed;left:0;right:0;bottom:0;z-index:20;
+        background:rgba(15,15,26,.94);backdrop-filter:blur(10px);
+        border-top:1px solid var(--border);padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom));
+        animation:dropIn .5s var(--ease) both;
+    }
+    .dock-in{max-width:1040px;margin:0 auto;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;}
+    .slots{display:flex;gap:.5rem;flex:1;min-width:0;}
+    .slot{
+        flex:1;max-width:98px;aspect-ratio:1/1;border-radius:10px;border:2px dashed var(--border);
+        background:var(--card);display:flex;align-items:center;justify-content:center;
+        color:var(--muted);font-size:.74rem;overflow:hidden;position:relative;
+        transition:border-color .25s var(--ease),transform .25s var(--ease);
+    }
+    .slot.filled{border-style:solid;border-color:var(--gold);animation:popIn .32s var(--ease);}
+    .slot img{width:100%;height:100%;object-fit:cover;}
+    .slot .sn{position:absolute;left:0;right:0;bottom:0;padding:.7rem .3rem .2rem;font-size:.68rem;font-weight:700;
+        color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.92));text-align:center;}
+
+    .btn{
+        border:none;border-radius:9px;padding:.72rem 1.3rem;font-size:.92rem;font-weight:700;cursor:pointer;
+        transition:transform .18s var(--ease),opacity .18s,box-shadow .18s;flex:none;
+    }
+    .btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.4);}
+    .btn:active:not(:disabled){transform:translateY(0);}
+    .btn:disabled{opacity:.4;cursor:not-allowed;}
+    .btn-primary{background:var(--accent);color:#fff;}
+    .btn-gold{background:var(--gold);color:#1a1a0a;}
+    .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border);}
+
+    .save-state{font-size:.76rem;color:var(--muted);display:flex;align-items:center;gap:.35rem;min-height:1.1rem;}
+    .save-state.ok{color:var(--green);}
+    .save-state.err{color:var(--accent);}
+    .spinner{width:11px;height:11px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+
+    /* 모달 */
+    .mask{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:50;display:none;align-items:center;justify-content:center;padding:1rem;}
+    .mask.on{display:flex;animation:bgIn .22s both;}
+    .modal{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.4rem;max-width:520px;width:100%;
+        animation:popIn .3s var(--ease) both;max-height:88vh;overflow:auto;}
+    .modal h2{font-size:1.15rem;margin-bottom:.5rem;}
+    .modal p{color:var(--muted);font-size:.88rem;line-height:1.6;}
+    .modal-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin:1rem 0;}
+    @media(max-width:520px){ .modal-grid{grid-template-columns:repeat(2,1fr);} }
+    .modal-grid .mc{border-radius:9px;overflow:hidden;border:2px solid var(--gold);background:var(--bg);position:relative;aspect-ratio:1/1;}
+    .modal-grid .mc img{width:100%;height:100%;object-fit:cover;}
+    .modal-grid .mc span{position:absolute;left:0;right:0;bottom:0;font-size:.7rem;font-weight:700;text-align:center;
+        padding:.6rem .2rem .2rem;background:linear-gradient(transparent,rgba(0,0,0,.92));}
+    .modal-grid .mc.auto{border-color:var(--accent);}
+    .modal-grid .mc.auto::after{content:'자동';position:absolute;top:.25rem;left:.25rem;background:var(--accent);color:#fff;
+        font-size:.6rem;font-weight:800;padding:.1rem .3rem;border-radius:4px;}
+    .modal-btns{display:flex;gap:.55rem;justify-content:flex-end;flex-wrap:wrap;margin-top:.9rem;}
+
+    .done-mark{width:62px;height:62px;border-radius:50%;background:var(--green);display:flex;align-items:center;
+        justify-content:center;margin:0 auto .8rem;animation:checkPop .5s var(--ease) both;}
+    .done-mark svg{width:32px;height:32px;stroke:#fff;stroke-width:3.4;fill:none;stroke-linecap:round;stroke-linejoin:round;}
+
+    .toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:7.5rem;z-index:60;
+        background:#1f2937;color:#fff;padding:.6rem 1.1rem;border-radius:10px;font-size:.86rem;
+        opacity:0;transition:opacity .25s,transform .25s var(--ease);pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+    .toast.err{background:var(--accent);}
+    .shake{animation:shake .4s both;}
+
+    .center-msg{text-align:center;padding:3.5rem 1rem;color:var(--muted);animation:popIn .4s var(--ease) both;}
+
+    /* 움직임을 줄이도록 설정한 기기에서는 연출을 끈다 */
+    @media (prefers-reduced-motion:reduce){
+        *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;}
+    }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <div class="eyebrow">저쪽 신사분이 주신 겁니다</div>
+        <h1 id="title">실험체 선택</h1>
+        <p class="sub" id="subtitle">불러오는 중...</p>
+    </header>
+
+    <div class="panel" id="status-panel" style="display:none">
+        <div class="status-row">
+            <span class="dot" id="dot"></span>
+            <span class="status-text" id="status-text">상태 확인 중</span>
+            <span class="status-sub" id="status-sub"></span>
+            <span style="flex:1"></span>
+            <span class="save-state" id="save-state"></span>
+        </div>
+        <div class="progress"><span id="bar"></span></div>
+    </div>
+
+    <div id="main"></div>
+</div>
+
+<!-- 선택 슬롯 -->
+<div class="dock" id="dock" style="display:none">
+    <div class="dock-in">
+        <div class="slots" id="slots"></div>
+        <button class="btn btn-ghost" id="stop-btn">선택 중단</button>
+        <button class="btn btn-gold" id="confirm-btn" disabled>최종 확정</button>
+    </div>
+</div>
+
+<div class="mask" id="mask"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const EVENT = params.get('event');
+const TOKEN = params.get('token');
+const DAK_VER = '12.4.0';
+
+let state = null;          // 서버에서 받은 최신 상태
+let picks = [];            // 화면에 보이는 선택 (낙관적 갱신)
+let rev = 0;               // 서버 저장 버전
+let dirty = false;         // 저장되지 않은 변경이 있는지
+let saving = false;
+let saveTimer = null;
+let pollTimer = null;
+let charEn = {};           // 한국어 이름 → 영문 파일명
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const charImg = n => charEn[n] ? `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharResult_${charEn[n]}_S000.png` : null;
+
+function toast(msg, isErr){
+    const el = $('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (isErr ? ' err' : '');
+    clearTimeout(el._t);
+    el._t = setTimeout(()=>el.classList.remove('show'), 2600);
+}
+
+async function api(path, body){
+    const opt = body ? { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ event:EVENT, token:TOKEN, ...body }) } : {};
+    const url = body ? path : `${path}?event=${encodeURIComponent(EVENT)}&token=${encodeURIComponent(TOKEN)}`;
+    const res = await fetch(url, opt);
+    return { status: res.status, data: await res.json().catch(()=>({ error:'응답을 해석할 수 없어요.' })) };
+}
+
+// ── 화면 그리기 ──────────────────────────────────────
+function renderStatus(){
+    $('status-panel').style.display = '';
+    const dot = $('dot'), txt = $('status-text'), sub = $('status-sub');
+    dot.className = 'dot';
+    if (state.confirmed)      { txt.textContent = '확정 완료'; sub.textContent = '우리 팀의 선물이 정해졌어요'; dot.classList.add('live'); }
+    else if (state.role === 'editor') { txt.textContent = '내가 선택 중'; sub.textContent = '고른 즉시 자동으로 저장돼요'; dot.classList.add('live'); }
+    else                      { txt.textContent = '다른 팀원이 선택 중입니다'; sub.textContent = '잠시만 기다려주세요'; dot.classList.add('wait'); }
+
+    const count = state.role === 'editor' ? picks.length : state.pickedCount;
+    $('bar').style.width = `${(count / state.picksRequired) * 100}%`;
+    sub.textContent += ` · ${count}/${state.picksRequired}명`;
+}
+
+function renderSlots(){
+    const el = $('slots');
+    const want = state.picksRequired;
+    el.innerHTML = Array.from({length: want}, (_, i) => {
+        const name = picks[i];
+        if (!name) return `<div class="slot">${i+1}</div>`;
+        const src = charImg(name);
+        return `<div class="slot filled">${src?`<img src="${src}" alt="" onerror="this.remove()">`:''}<span class="sn">${esc(name)}</span></div>`;
+    }).join('');
+    $('confirm-btn').disabled = !(picks.length === want && !dirty && state.role === 'editor');
+}
+
+function renderGrid(){
+    const editable = state.role === 'editor' && !state.confirmed;
+    $('main').innerHTML = `<div class="panel right" style="padding:.85rem"><div class="grid" id="grid"></div></div>`;
+    const grid = $('grid');
+    grid.innerHTML = state.candidates.map((c, i) => {
+        const src = charImg(c);
+        const on = picks.includes(c);
+        return `<div class="char${on?' picked':''}${editable?'':' disabled'}" data-name="${esc(c)}" style="animation-delay:${Math.min(i*28,420)}ms">
+            ${src?`<img src="${src}" alt="" loading="lazy" onerror="this.style.display='none'">`:''}
+            ${src?'':`<div class="no-img">이미지 없음</div>`}
+            <div class="nm">${esc(c)}</div>
+        </div>`;
+    }).join('');
+    if (editable) grid.querySelectorAll('.char').forEach(el => el.addEventListener('click', () => toggle(el.dataset.name, el)));
+}
+
+function renderWaiting(){
+    $('dock').style.display = 'none';
+    $('main').innerHTML = `
+        <div class="panel">
+            <div class="center-msg">
+                <div style="font-size:2rem;margin-bottom:.6rem">⏳</div>
+                <div style="font-size:1.05rem;color:var(--text);font-weight:700;margin-bottom:.4rem">다른 팀원이 선택 중입니다</div>
+                <div>저장된 진행률 ${state.pickedCount}/${state.picksRequired}명</div>
+                <div style="margin-top:.9rem;font-size:.82rem">먼저 기다린 분부터 차례가 돌아갑니다. 이 화면은 자동으로 갱신돼요.</div>
+            </div>
+        </div>`;
+}
+
+function renderConfirmed(){
+    $('dock').style.display = 'none';
+    const auto = new Set(state.autoFilled ?? []);
+    $('main').innerHTML = `
+        <div class="panel">
+            <div class="done-mark"><svg viewBox="0 0 24 24"><polyline points="4 12.5 9.5 18 20 6.5"/></svg></div>
+            <div style="text-align:center;font-size:1.1rem;font-weight:800;margin-bottom:.3rem">선물할 실험체가 확정됐어요</div>
+            <p style="text-align:center">이 4명은 다른 팀에게 전달됩니다. 어느 팀에 가는지는 결과 발표 때 공개돼요.</p>
+            <div class="modal-grid" style="margin-top:1.1rem">
+                ${state.picks.map(n=>{
+                    const src=charImg(n);
+                    return `<div class="mc${auto.has(n)?' auto':''}">${src?`<img src="${src}" onerror="this.remove()">`:''}<span>${esc(n)}</span></div>`;
+                }).join('')}
+            </div>
+            ${auto.size?`<p style="text-align:center;color:var(--accent);font-size:.82rem">관리자가 확정해서 '자동' 표시된 실험체가 무작위로 채워졌어요.</p>`:''}
+        </div>`;
+}
+
+function render(){
+    if (!state) return;
+    renderStatus();
+    if (state.confirmed)            { renderConfirmed(); return; }
+    if (state.role !== 'editor')    { renderWaiting(); return; }
+    $('dock').style.display = '';
+    renderGrid();
+    renderSlots();
+}
+
+// ── 선택 동작 ────────────────────────────────────────
+function toggle(name, el){
+    if (state.role !== 'editor' || state.confirmed) return;
+    const i = picks.indexOf(name);
+    if (i >= 0) {
+        picks.splice(i, 1);
+        el?.classList.remove('picked');
+    } else {
+        if (picks.length >= state.picksRequired) { toast(`${state.picksRequired}명까지만 고를 수 있어요`, true); el?.classList.add('shake'); setTimeout(()=>el?.classList.remove('shake'),420); return; }
+        picks.push(name);
+        el?.classList.add('picked','bump');
+        setTimeout(()=>el?.classList.remove('bump'), 320);
+    }
+    dirty = true;
+    renderSlots();
+    renderStatus();
+    scheduleSave();
+}
+
+function setSaveState(kind, text){
+    const el = $('save-state');
+    el.className = 'save-state' + (kind==='ok'?' ok':kind==='err'?' err':'');
+    el.innerHTML = kind==='saving' ? `<span class="spinner"></span>저장 중` : esc(text ?? '');
+}
+
+function scheduleSave(){
+    clearTimeout(saveTimer);
+    setSaveState('saving');
+    saveTimer = setTimeout(savePicks, 280);      // 연속 클릭을 묶어서 보낸다
+}
+
+async function savePicks(){
+    if (saving) { scheduleSave(); return false; }
+    saving = true;
+    const sending = [...picks];
+    const { status, data } = await api('/api/gentleman/me/picks', { picks: sending, rev });
+    saving = false;
+
+    if (data.error) {
+        if (status === 409) {
+            // 권한을 잃었거나 오래된 요청이면 서버 상태를 따른다
+            rev = data.rev ?? rev;
+            setSaveState('err', data.error);
+            await refresh(true);
+        } else {
+            setSaveState('err', '저장 실패 · 자동으로 다시 시도합니다');
+            setTimeout(()=>{ if (dirty) savePicks(); }, 2500);   // 연결이 돌아오면 다시 저장
+        }
+        return false;
+    }
+    rev = data.rev;
+    if (JSON.stringify(sending) === JSON.stringify(picks)) {
+        dirty = false;
+        setSaveState('ok', '저장됨');
+    }
+    renderSlots();
+    return true;
+}
+
+// ── 확정 / 중단 ──────────────────────────────────────
+function openModal(html){ $('modal').innerHTML = html; $('mask').classList.add('on'); }
+function closeModal(){ $('mask').classList.remove('on'); }
+$('mask').addEventListener('click', e => { if (e.target === $('mask')) closeModal(); });
+
+$('confirm-btn').addEventListener('click', () => {
+    if (picks.length !== state.picksRequired || dirty) return;
+    openModal(`
+        <h2>이 4명을 선물할까요?</h2>
+        <p>확정하면 더 이상 바꿀 수 없어요. 어느 팀에게 가는지는 결과 발표 때 공개됩니다.</p>
+        <div class="modal-grid">
+            ${picks.map(n=>{const s=charImg(n);return `<div class="mc">${s?`<img src="${s}" onerror="this.remove()">`:''}<span>${esc(n)}</span></div>`;}).join('')}
+        </div>
+        <div class="modal-btns">
+            <button class="btn btn-ghost" onclick="closeModal()">다시 고를게요</button>
+            <button class="btn btn-gold" id="do-confirm">확정하기</button>
+        </div>`);
+    $('do-confirm').addEventListener('click', doConfirm);
+});
+
+async function doConfirm(){
+    const btn = $('do-confirm');
+    btn.disabled = true; btn.textContent = '확정 중...';
+    const { data } = await api('/api/gentleman/me/confirm', {});
+    if (data.error) { btn.disabled = false; btn.textContent = '확정하기'; toast(data.error, true); return; }
+    closeModal();
+    toast('확정됐어요!');
+    await refresh(true);
+}
+
+$('stop-btn').addEventListener('click', async () => {
+    if (!dirty) { await releaseAndRefresh(); return; }
+    openModal(`
+        <h2>저장되지 않은 선택이 있어요</h2>
+        <p>지금 중단하면 저장되지 않은 변경은 사라집니다. 먼저 저장을 다시 시도해볼까요?</p>
+        <div class="modal-btns">
+            <button class="btn btn-ghost" onclick="closeModal()">계속 선택하기</button>
+            <button class="btn btn-ghost" id="discard">버리고 중단</button>
+            <button class="btn btn-primary" id="retry">저장 재시도</button>
+        </div>`);
+    $('retry').addEventListener('click', async () => {
+        const ok = await savePicks();
+        if (!ok) { toast('아직 저장하지 못했어요. 잠시 뒤 다시 시도해주세요.', true); return; }
+        closeModal(); await releaseAndRefresh();
+    });
+    $('discard').addEventListener('click', async () => { dirty = false; closeModal(); await releaseAndRefresh(); });
+});
+
+async function releaseAndRefresh(){
+    await api('/api/gentleman/me/unlock', {});
+    toast('선택 권한을 반납했어요');
+    await refresh(true);
+}
+
+// ── 상태 동기화 ──────────────────────────────────────
+async function heartbeat(){
+    // 권한 유지 신호 겸 권한 획득 요청
+    const { data } = await api('/api/gentleman/me/lock', {});
+    return data;
+}
+
+let lastSignature = '';
+async function refresh(force){
+    const { data } = await api('/api/gentleman/me/state');
+    if (!data.started) { showCenter('아직 드래프트가 시작되지 않았어요', '관리자가 시작하면 이 화면에서 바로 고를 수 있어요.'); return; }
+    if (data.noTeam)   { showCenter('팀이 배정되지 않았어요', '관리자에게 팀 배정을 요청해주세요.'); return; }
+    if (data.error)    { showCenter('참여할 수 없어요', data.error); return; }
+
+    const wasEditor = state?.role === 'editor';
+    state = data;
+    $('title').textContent = `${data.teamNum}팀 실험체 선택`;
+    $('subtitle').textContent = `${data.nickname}님 · 후보 ${data.candidates.length}명 중 ${data.picksRequired}명을 골라 다른 팀에 선물합니다`;
+
+    // 권한을 새로 얻었거나 잃었으면 화면의 선택 내용을 서버 기준으로 되돌린다
+    if (!wasEditor || force || !dirty) {
+        if (!dirty || force || state.role !== 'editor') { picks = [...(data.picks ?? [])]; dirty = false; }
+    }
+    rev = data.rev;
+
+    const sig = JSON.stringify([data.role, data.confirmed, data.pickedCount, data.holderNickname, data.candidates.length, picks]);
+    if (sig !== lastSignature || force) { lastSignature = sig; render(); }
+
+    if (!wasEditor && state.role === 'editor' && !state.confirmed) toast('선택 차례가 됐어요!');
+    if (state.role === 'editor' && !dirty) setSaveState('', picks.length ? '저장됨' : '');
+}
+
+function showCenter(title, desc){
+    $('status-panel').style.display = 'none';
+    $('dock').style.display = 'none';
+    $('main').innerHTML = `<div class="panel"><div class="center-msg">
+        <div style="font-size:1.05rem;color:var(--text);font-weight:700;margin-bottom:.4rem">${esc(title)}</div>
+        <div>${esc(desc)}</div></div></div>`;
+}
+
+async function loop(){
+    try {
+        if (state && !state.confirmed) await heartbeat();    // 90초 만료를 막는다
+        await refresh(false);
+    } catch (e) {
+        setSaveState('err', '연결이 끊겼어요 · 다시 시도 중');
+    }
+}
+
+async function boot(){
+    if (!EVENT || !TOKEN) { showCenter('링크가 올바르지 않아요', '디스코드의 실험체 선택 버튼을 눌러 다시 들어와주세요.'); return; }
+    try {
+        const r = await fetch('/api/gentleman/chars');       // 실험체 영문명 매핑
+        charEn = (await r.json()).charEn ?? {};
+    } catch {}
+    await heartbeat();
+    await refresh(true);
+    pollTimer = setInterval(loop, 3000);
+}
+
+// 페이지를 닫으면 권한을 돌려준다 (유령 세션 방지)
+window.addEventListener('pagehide', () => {
+    if (state?.role === 'editor' && !state.confirmed) {
+        navigator.sendBeacon?.('/api/gentleman/me/unlock',
+            new Blob([JSON.stringify({ event:EVENT, token:TOKEN })], { type:'application/json' }));
+    }
+});
+
+boot();
+</script>
+</body>
+</html>

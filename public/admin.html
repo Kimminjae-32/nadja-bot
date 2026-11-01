@@ -56,6 +56,28 @@
         .toast.error{background:var(--accent);}
         select option{background:#1a1a2e;}
 
+        /* ── 저쪽 신사분이 주신 겁니다 ── */
+        .gm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.6rem;}
+        .gm-team{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:.6rem .7rem;
+            transition:border-color .25s ease;}
+        .gm-team.confirmed{border-color:var(--green);}
+        .gm-team.active{border-color:var(--accent);}
+        .gm-team-head{display:flex;align-items:center;gap:.4rem;font-weight:700;font-size:.9rem;margin-bottom:.35rem;}
+        .gm-badge{font-size:.66rem;padding:.1rem .35rem;border-radius:5px;font-weight:800;}
+        .gm-badge.wait{background:var(--border);color:var(--muted);}
+        .gm-badge.live{background:#1a4a2a;color:var(--green);}
+        .gm-badge.done{background:var(--accent2);color:#cfe3ff;}
+        .gm-bar{height:6px;background:var(--card);border:1px solid var(--border);border-radius:99px;overflow:hidden;margin:.35rem 0;}
+        .gm-bar span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#f1c40f);
+            width:0;transition:width .6s cubic-bezier(.22,.9,.28,1);}
+        .gm-team-sub{font-size:.72rem;color:var(--muted);}
+        .gm-team-btns{display:flex;gap:.3rem;margin-top:.45rem;flex-wrap:wrap;}
+        .gm-step{display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap;}
+        .gm-step-label{font-size:.74rem;color:var(--muted);font-weight:700;min-width:62px;}
+        .gm-note{font-size:.76rem;color:var(--muted);margin-top:.4rem;line-height:1.5;}
+        .gm-pay{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+            padding:.35rem .5rem;border:1px solid var(--border);border-radius:7px;margin-bottom:.3rem;font-size:.82rem;}
+
         /* ── 토너먼트 ── */
         .bracket{display:flex;gap:1.2rem;overflow-x:auto;padding-bottom:.5rem;}
         .bracket-round{min-width:230px;display:flex;flex-direction:column;justify-content:space-around;gap:.6rem;}
@@ -192,6 +214,69 @@
                 <button class="btn btn-success btn-sm" onclick="sendTournament()">디스코드에 대진표 전송</button>
                 <button class="btn btn-danger btn-sm" onclick="resetTournament()">토너먼트 초기화</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 저쪽 신사분이 주신 겁니다 -->
+    <div id="gm-section" class="section-card" style="display:none">
+        <div class="section-title">저쪽 신사분이 주신 겁니다</div>
+        <div class="section-sub">팀마다 실험체 4명을 골라 다른 팀에 선물하고, 받은 실험체를 팀원에게 나눠주는 이벤트입니다.</div>
+
+        <div class="gm-step">
+            <span class="gm-step-label">회차</span>
+            <span id="gm-round-info" style="font-size:.85rem">-</span>
+            <select class="team-select" id="gm-type" style="width:auto" onchange="gmSetType()">
+                <option value="normal">일반 회차</option>
+                <option value="prize">상품 회차</option>
+            </select>
+            <button class="btn btn-primary btn-sm" id="gm-start" onclick="gmStart()">실험체 드래프트 시작</button>
+            <button class="btn btn-secondary btn-sm" id="gm-redraw" onclick="gmRedraw()">후보 재추첨</button>
+            <button class="btn btn-danger btn-sm" id="gm-close" onclick="gmCloseDraft()">드래프트 종료</button>
+        </div>
+        <div class="gm-note" id="gm-note"></div>
+
+        <div class="gm-grid" id="gm-teams" style="margin-top:.8rem"></div>
+
+        <div class="gm-step" style="margin-top:.8rem">
+            <button class="btn btn-secondary btn-sm" id="gm-finalize" onclick="gmFinalize()">선물 교환·배정</button>
+            <button class="btn btn-success btn-sm" id="gm-publish" onclick="gmPublish()">실험체 결과 공지</button>
+            <span class="gm-note" id="gm-publish-state"></span>
+        </div>
+
+        <!-- 상품 회차 전용 -->
+        <div id="gm-prize" style="display:none;border-top:1px solid var(--border);margin-top:.9rem;padding-top:.8rem">
+            <div class="gm-step">
+                <span class="gm-step-label">우승팀</span>
+                <select class="team-select" id="gm-winner" style="width:auto"></select>
+                <button class="btn btn-secondary btn-sm" onclick="gmSetWinner()">지정</button>
+                <button class="btn btn-secondary btn-sm" onclick="gmSuggestWinner()">토너먼트 결과 가져오기</button>
+                <button class="btn btn-success btn-sm" onclick="gmPublishWinner()">우승팀 공지</button>
+            </div>
+            <div class="gm-step">
+                <span class="gm-step-label">불행상</span>
+                <button class="btn btn-secondary btn-sm" onclick="gmVote('open')">투표 시작</button>
+                <button class="btn btn-secondary btn-sm" onclick="gmVote('remind')">투표 독려</button>
+                <button class="btn btn-secondary btn-sm" onclick="gmVote('close')">투표 마감</button>
+                <button class="btn btn-secondary btn-sm" onclick="gmVote('reopen')">다시 열기</button>
+                <button class="btn btn-danger btn-sm" onclick="gmVote('cancel')">투표 취소</button>
+                <button class="btn btn-success btn-sm" onclick="gmPublishUnlucky()">불행상 공지</button>
+            </div>
+            <div class="gm-note" id="gm-vote-state"></div>
+            <div id="gm-tally" style="margin-top:.5rem"></div>
+            <div id="gm-payouts" style="margin-top:.6rem"></div>
+        </div>
+
+        <div class="gm-step" style="margin-top:.9rem;border-top:1px solid var(--border);padding-top:.8rem">
+            <span class="gm-step-label">다음 회차</span>
+            <label style="font-size:.78rem;color:var(--muted);display:inline-flex;align-items:center;gap:.25rem">
+                <input type="checkbox" id="gm-keep-teams" checked> 현재 팀 유지</label>
+            <label style="font-size:.78rem;color:var(--muted);display:inline-flex;align-items:center;gap:.25rem">
+                <input type="checkbox" id="gm-keep-bans" checked> 밴 목록 유지</label>
+            <select class="team-select" id="gm-next-type" style="width:auto">
+                <option value="normal">일반 회차</option>
+                <option value="prize">상품 회차</option>
+            </select>
+            <button class="btn btn-danger btn-sm" onclick="gmNextRound()">다음 회차 시작</button>
         </div>
     </div>
 
@@ -362,6 +447,8 @@ async function load(){
     document.getElementById('chars-per-player-wrap').style.display = isPlainCobalt ? 'inline-flex' : 'none';
     if (!isPlainCobalt) document.getElementById('char-results').style.display = 'none';
     document.getElementById('tourney-section').style.display = (isTeamMode && eventData?.mapType === '코발트 토너먼트') ? '' : 'none';
+    document.getElementById('gm-section').style.display = isTeamMode ? '' : 'none';
+    gmRefresh();
     renderTournament();
     updateMapBadge();
     populateTransferSelect();
@@ -572,6 +659,242 @@ async function refreshTeamPlan(){
     if(!d || d.error){ el.textContent=''; return; }
     const warn = d.noTierCount ? ` · 티어 미설정 ${d.noTierCount}명` : '';
     el.textContent = d.count ? `${d.text}${warn}` : '참가자가 없어요';
+}
+
+// ── 저쪽 신사분이 주신 겁니다 ──────────────────────────
+let gmState = null;
+
+async function gmApi(path, body){
+    const url = `/api/gentleman/admin/${path}`;
+    const opt = body
+        ? { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ event:EVENT, token:TOKEN, ...body }) }
+        : { method:'GET' };
+    const res = await fetch(body ? url : `${url}?event=${EVENT}&token=${TOKEN}`, opt);
+    return res.json().catch(()=>({ error:'응답을 해석할 수 없어요.' }));
+}
+
+const GM_PHASE = { idle:'시작 전', drafting:'선택 중', assigned:'배정 완료', published:'결과 공지함', closed:'종료' };
+const GM_VOTE  = { none:'없음', open:'진행 중', closed:'마감', cancelled:'취소됨' };
+
+async function gmRefresh(){
+    if (document.getElementById('gm-section').style.display === 'none') return;
+    const s = await gmApi('state');
+    if (s.error) return;
+    gmState = s;
+
+    document.getElementById('gm-round-info').textContent =
+        s.exists ? `${s.round}회차 · ${GM_PHASE[s.phase] ?? s.phase}` : '아직 시작하지 않음';
+    document.getElementById('gm-type').value = s.type ?? 'normal';
+    document.getElementById('gm-prize').style.display = s.type === 'prize' ? '' : 'none';
+
+    const drafting = s.phase === 'drafting';
+    document.getElementById('gm-start').disabled    = drafting || s.phase === 'assigned' || s.phase === 'published';
+    document.getElementById('gm-redraw').disabled   = !drafting;
+    document.getElementById('gm-close').disabled    = !s.exists || s.phase === 'idle' || s.phase === 'closed';
+    document.getElementById('gm-finalize').disabled = !s.summary?.allConfirmed || s.exchangeReady;
+    document.getElementById('gm-publish').disabled  = !s.exchangeReady;
+
+    document.getElementById('gm-note').textContent = s.teamsLocked
+        ? '드래프트가 진행 중이라 팀 구성을 바꿀 수 없어요. 바꾸려면 드래프트를 종료해주세요.'
+        : (s.exists ? '' : '팀 배정을 마친 뒤 드래프트를 시작해주세요.');
+
+    gmRenderTeams(s);
+    gmRenderPublish(s);
+    if (s.type === 'prize') gmRenderPrize(s);
+}
+
+function gmRenderTeams(s){
+    const el = document.getElementById('gm-teams');
+    const teams = s.summary?.teams ?? [];
+    if (!teams.length) { el.innerHTML = '<div style="color:var(--muted);font-size:.82rem">드래프트를 시작하면 팀별 진행 상황이 표시됩니다.</div>'; return; }
+    el.innerHTML = teams.map(t => {
+        const cls = t.confirmed ? 'confirmed' : (t.status === '선택 중' ? 'active' : '');
+        const badge = t.confirmed ? 'done' : (t.status === '선택 중' ? 'live' : 'wait');
+        return `<div class="gm-team ${cls}">
+            <div class="gm-team-head">${t.teamNum}팀 <span class="gm-badge ${badge}">${esc(t.status)}</span>
+                <span style="flex:1"></span><span style="font-size:.8rem;color:var(--muted)">${t.picked}/${t.total}</span></div>
+            <div class="gm-bar"><span style="width:${(t.picked/t.total)*100}%"></span></div>
+            <div class="gm-team-sub">${t.holder ? `${esc(t.holder)} 님이 선택 중` : (t.waiting ? `대기 ${t.waiting}명` : '선택 중인 사람 없음')} · 팀원 ${t.memberCount}명</div>
+            <div class="gm-team-btns">
+                <button class="btn btn-secondary btn-sm" style="padding:.2rem .45rem;font-size:.7rem" onclick="gmTeamAction('force-release',${t.teamNum})">권한 해제</button>
+                ${t.confirmed
+                    ? `<button class="btn btn-danger btn-sm" style="padding:.2rem .45rem;font-size:.7rem" onclick="gmTeamAction('unconfirm',${t.teamNum})">확정 취소</button>`
+                    : `<button class="btn btn-primary btn-sm" style="padding:.2rem .45rem;font-size:.7rem" onclick="gmTeamAction('force-confirm',${t.teamNum})">강제 확정</button>`}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function gmRenderPublish(s){
+    const el = document.getElementById('gm-publish-state');
+    const msgs = Object.entries(s.teamMessages ?? {});
+    if (!msgs.length) { el.textContent = s.exchangeReady ? '배정이 끝났어요. 결과를 공지할 수 있습니다.' : ''; return; }
+    const failed = msgs.filter(([, m]) => !m.ok);
+    el.innerHTML = failed.length
+        ? `<span style="color:var(--accent)">전송 실패: ${failed.map(([t,m])=>`${t}팀(${esc(m.error ?? '사유 불명')})`).join(', ')}</span>
+           <button class="btn btn-secondary btn-sm" style="margin-left:.4rem" onclick="gmPublish()">실패한 팀 다시 보내기</button>`
+        : `${msgs.length}개 팀 공지 완료 · 특정 팀만 다시 올리려면 팀 번호를 입력해 재게시하세요
+           <button class="btn btn-secondary btn-sm" style="margin-left:.4rem" onclick="gmRepublish()">팀 지정 재게시</button>`;
+}
+
+function gmRenderPrize(s){
+    // 우승팀 선택지
+    const sel = document.getElementById('gm-winner');
+    const tc = eventData?.teamCount || 2;
+    const cur = s.winnerTeam;
+    sel.innerHTML = '<option value="">미지정</option>' +
+        Array.from({length: tc}, (_, i) => `<option value="${i+1}"${cur===i+1?' selected':''}>${i+1}팀</option>`).join('');
+    sel.disabled = !!s.winnerPublished;
+
+    const v = s.vote ?? { status:'none' };
+    const parts = [`우승팀 ${cur ? `${cur}팀` : '미지정'}${s.winnerPublished ? ' (공지함)' : ''}`,
+                   `투표 ${GM_VOTE[v.status] ?? v.status}`];
+    if (v.status && v.status !== 'none') parts.push(`참여 ${v.votedCount}/${v.totalVoters}명`);
+    if (s.unlucky?.published) parts.push(s.unlucky.winners.length ? `불행상 ${s.unlucky.winners.map(w=>esc(w.nickname)).join(', ')}` : '불행상 수상자 없음');
+    document.getElementById('gm-vote-state').textContent = parts.join(' · ');
+
+    // 마감된 뒤에만 득표 결과가 내려온다
+    const tally = v.tally;
+    document.getElementById('gm-tally').innerHTML = tally
+        ? `<div style="font-size:.8rem;color:var(--muted);margin-bottom:.25rem">득표 결과 (총 ${tally.totalVotes}표)</div>`
+          + tally.rows.map(r => `<div class="gm-pay"><span>${r.rank}위 · ${esc(r.nickname)} <span style="color:var(--muted)">${esc(r.character ?? '-')}</span></span><span>${r.votes}표</span></div>`).join('')
+        : '';
+
+    gmLoadPayouts();
+}
+
+async function gmLoadPayouts(){
+    const el = document.getElementById('gm-payouts');
+    const r = await gmApi('payouts');
+    if (r.error || !r.rows?.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div style="font-size:.8rem;color:var(--muted);margin-bottom:.25rem">상품 지급 상태</div>'
+        + r.rows.map(row => `<div class="gm-pay">
+            <span><span class="gm-badge ${row.kind==='우승'?'done':'live'}">${esc(row.kind)}</span> ${esc(row.nickname)}</span>
+            <button class="btn ${row.status==='done'?'btn-success':'btn-secondary'} btn-sm" style="padding:.2rem .5rem;font-size:.72rem"
+                onclick="gmTogglePayout('${esc(row.token)}','${row.status}')">${row.status==='done'?'지급 완료':'지급 대기'}</button>
+        </div>`).join('');
+}
+
+async function gmTogglePayout(token, status){
+    const r = await gmApi('payout', { participantToken: token, status: status === 'done' ? 'pending' : 'done' });
+    r.error ? toast(r.error, true) : gmLoadPayouts();
+}
+
+// ── 동작 ──
+async function gmSetType(){
+    const r = await gmApi('setup', { type: document.getElementById('gm-type').value });
+    r.error ? toast(r.error, true) : toast('회차 유형을 바꿨어요');
+    gmRefresh();
+}
+
+async function gmStart(){
+    if (!confirm('실험체 드래프트를 시작할까요?\n시작하면 종료할 때까지 팀 구성을 바꿀 수 없어요.')) return;
+    const r = await gmApi('start', {});
+    if (r.error) { toast(r.error, true); return; }
+    toast(`드래프트 시작 · 팀당 후보 ${r.perTeam}명`);
+    gmRefresh();
+}
+
+async function gmRedraw(){
+    if (!confirm('후보를 다시 뽑을까요?\n선택 내용과 대기 상태가 모두 초기화됩니다. (팀 구성과 밴 목록은 유지)')) return;
+    const r = await gmApi('redraw', {});
+    r.error ? toast(r.error, true) : toast('후보를 다시 뽑았어요');
+    gmRefresh();
+}
+
+async function gmTeamAction(action, teamNum){
+    const msg = { 'force-release':`${teamNum}팀의 선택 권한을 해제할까요?`,
+                  'force-confirm':`${teamNum}팀을 강제로 확정할까요?\n부족한 실험체는 남은 후보에서 무작위로 채워집니다.`,
+                  'unconfirm':`${teamNum}팀의 확정을 취소할까요?\n선택한 실험체는 그대로 두고 다시 수정할 수 있게 됩니다.` }[action];
+    if (!confirm(msg)) return;
+    const r = await gmApi(action, { teamNum });
+    r.error ? toast(r.error, true) : toast('처리했어요');
+    gmRefresh();
+}
+
+async function gmFinalize(){
+    if (!confirm('모든 팀의 선물을 교환하고 팀원에게 배정할까요?\n배정은 한 번만 정해지며 다시 뽑히지 않습니다.')) return;
+    const r = await gmApi('finalize', {});
+    if (r.error) { toast(r.error, true); return; }
+    toast(r.already ? '이미 배정이 끝나 있어요' : '선물 교환과 배정을 마쳤어요');
+    gmRefresh();
+}
+
+async function gmPublish(){
+    if (!confirm('팀별 결과를 디스코드에 공지할까요?\n이미 올린 팀은 건너뜁니다.')) return;
+    const r = await gmApi('publish', {});
+    if (r.error) { toast(r.error, true); return; }
+    toast(r.failed.length ? `${r.failed.length}개 팀 전송 실패` : '결과를 공지했어요', !!r.failed.length);
+    gmRefresh();
+}
+
+async function gmRepublish(){
+    const t = prompt('다시 올릴 팀 번호를 입력하세요');
+    if (!t) return;
+    if (!confirm(`${t}팀 결과를 다시 올릴까요?\n기존과 같은 배정 결과로 올라갑니다.`)) return;
+    const r = await gmApi('publish', { teamNum: Number(t) });
+    r.error ? toast(r.error, true) : toast(`${t}팀 결과를 다시 올렸어요`);
+    gmRefresh();
+}
+
+async function gmCloseDraft(){
+    if (!confirm('드래프트를 종료할까요?\n종료하면 팀 구성을 다시 바꿀 수 있습니다.')) return;
+    const r = await gmApi('close-draft', {});
+    r.error ? toast(r.error, true) : toast('드래프트를 종료했어요');
+    gmRefresh();
+}
+
+async function gmSetWinner(){
+    const v = document.getElementById('gm-winner').value;
+    const r = await gmApi('winner', { teamNum: v === '' ? null : Number(v) });
+    r.error ? toast(r.error, true) : toast('우승팀을 지정했어요');
+    gmRefresh();
+}
+
+async function gmSuggestWinner(){
+    const r = await gmApi('winner/suggest');
+    if (r.error || r.champion == null) { toast('토너먼트 우승팀 정보가 없어요', true); return; }
+    document.getElementById('gm-winner').value = String(r.champion);
+    toast(`토너먼트 우승 ${r.champion}팀을 불러왔어요. 지정 버튼을 눌러주세요.`);
+}
+
+async function gmPublishWinner(){
+    if (!confirm('우승팀을 디스코드에 공지할까요?\n공지한 뒤에는 우승팀을 바꿀 수 없어요.')) return;
+    const r = await gmApi('winner/publish', {});
+    r.error ? toast(r.error, true) : toast('우승팀을 공지했어요');
+    gmRefresh();
+}
+
+async function gmVote(action){
+    const msg = { open:'불행상 투표를 시작할까요?', remind:'투표 독려 메시지를 보낼까요?',
+                  close:'투표를 마감할까요?\n마감하면 득표 결과를 볼 수 있습니다.',
+                  reopen:'투표를 다시 열까요?\n기존 표는 그대로 유지됩니다.',
+                  cancel:'투표를 취소할까요?\n모든 표가 삭제되고 되돌릴 수 없습니다.' }[action];
+    if (!confirm(msg)) return;
+    const body = action === 'cancel' ? { notify: confirm('취소 안내를 채널에 보낼까요?') } : {};
+    const r = await gmApi(`vote/${action}`, body);
+    r.error ? toast(r.error, true) : toast('처리했어요');
+    gmRefresh();
+}
+
+async function gmPublishUnlucky(){
+    if (!confirm('불행상 결과를 공지할까요?\n공지한 뒤에는 결과를 바꿀 수 없어요.')) return;
+    const r = await gmApi('unlucky/publish', {});
+    if (r.error) { toast(r.error, true); return; }
+    toast(r.noWinner ? '0표라 수상자가 없어요' : `불행상 ${r.winners.length}명을 공지했어요`);
+    gmRefresh();
+}
+
+async function gmNextRound(){
+    if (!confirm('다음 회차를 시작할까요?\n\n이전 회차의 드래프트·배정·투표·수상·지급 기록이 모두 삭제됩니다.\n이미 올라간 디스코드 메시지는 그대로 남습니다.')) return;
+    const r = await gmApi('next-round', {
+        keepTeams: document.getElementById('gm-keep-teams').checked,
+        keepBans:  document.getElementById('gm-keep-bans').checked,
+        type:      document.getElementById('gm-next-type').value,
+    });
+    if (r.error) { toast(r.error, true); return; }
+    toast(`${r.round}회차를 시작했어요`);
+    location.reload();
 }
 
 function isCobaltMode(){ return (eventData?.mapType || '').startsWith('코발트'); }
@@ -1010,6 +1333,7 @@ async function silentRefresh(){
         renderTournament();
         renderRoleInfo();
         if(newCount !== oldCount) refreshTeamPlan();
+        gmRefresh();
         populateTransferSelect();
         if(newCount !== oldCount) toast(`참가자 업데이트: ${newCount}명`);
         const now = new Date();

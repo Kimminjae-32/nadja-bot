@@ -751,6 +751,26 @@ client.on(Events.InteractionCreate, async interaction => {
             }
         }
 
+        // 「저쪽 신사분이 주신 겁니다」 — 실험체 선택 / 불행상 투표 버튼
+        if (action === 'gmSelect' || action === 'gmVote') {
+            const eventId = parts[1];
+            const me = db.getByDiscordId(eventId, interaction.user.id);
+            if (!me) {
+                return await interaction.reply({
+                    content: '⚠️ 이 내전의 참가자만 이용할 수 있어요. 먼저 참가 신청을 해주세요.',
+                    ephemeral: true,
+                });
+            }
+            const BASE = process.env.WEB_URL || 'http://localhost:3000';
+            const page = action === 'gmSelect' ? 'gentleman' : 'gentleman-vote';
+            const label = action === 'gmSelect' ? '실험체 선택' : '불행상 투표';
+            return await interaction.reply({
+                content: `${label} 페이지로 이동해주세요.
+${BASE}/${page}?event=${eventId}&token=${me.cancel_token}`,
+                ephemeral: true,
+            });
+        }
+
         // 참가/취소 — 웹 폼 기반 (이터널 리턴)
         if (action === 'join' || action === 'leave') {
             const targetMsgId = parts[1];

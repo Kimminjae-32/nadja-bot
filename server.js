@@ -3,6 +3,9 @@ const path    = require('path');
 const db      = require('./db');
 const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES, TIERS, TIER_BY_MMR } = require('./constants');
 const teamUtil = require('./teams');
+const gentleman = require('./gentleman-routes');
+const gentlemanDev = require('./gentleman-dev');
+const gentlemanDiscord = require('./gentleman-discord');
 const VALID_TIERS = TIERS.map(t => t.name);
 
 let generateResultCard = null, generateBracketCard = null, generateCharPoolCard = null;
@@ -16,6 +19,17 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use('/icons', express.static(path.join(__dirname, 'public', 'icons')));
+
+// 「저쪽 신사분이 주신 겁니다」 전용 API와 페이지
+app.use('/api/gentleman', gentleman.router);
+app.use('/api/gentleman/dev', gentlemanDev.router);
+app.get('/gentleman',      (req, res) => res.sendFile(path.join(__dirname, 'public', 'gentleman.html')));
+app.get('/gentleman-vote', (req, res) => res.sendFile(path.join(__dirname, 'public', 'gentleman-vote.html')));
+app.get('/gentleman-sim',  (req, res) => {
+    const t = req.query.token;
+    if (t !== (process.env.DEV_TOKEN || 'nadja-dev-2026')) return res.status(403).send(errorPage('개발자 전용 페이지입니다.'));
+    res.sendFile(path.join(__dirname, 'public', 'gentleman-sim.html'));
+});
 
 let discordClient        = null;
 let closeRecruitCallback = null;
@@ -1298,9 +1312,10 @@ app.post('/api/dev/reset-teams', (req, res) => {
 
 module.exports = {
     start(port) {
-        app.listen(port, () => console.log(`[웹] 포트 ${port} 에서 실행 중`));
+        // 테스트에서 서버를 닫을 수 있도록 listen 결과를 돌려준다
+        return app.listen(port, () => console.log(`[웹] 포트 ${port} 에서 실행 중`));
     },
-    setClient(client)          { discordClient = client; },
+    setClient(client)          { discordClient = client; gentlemanDiscord.setClient(client); },
     setCloseCallback(fn)       { closeRecruitCallback = fn; },
     setRestoreCallback(fn)     { restoreCallback = fn; },
     setRecruitMap(map)         { recruitMap = map; },

@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>이벤트 테스트 시뮬레이터</title>
+<style>
+    :root{
+        --bg:#0f0f1a; --card:#1a1a2e; --border:#2a2a4a; --accent:#e94560; --accent2:#0f3460;
+        --text:#e0e0f0; --muted:#8888aa; --green:#2ecc71; --gold:#f1c40f;
+        --ease:cubic-bezier(.22,.9,.28,1);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html,body{height:100%;}
+    body{background:var(--bg);color:var(--text);font-family:'Segoe UI',sans-serif;font-size:14px;overflow:hidden;}
+
+    .app{display:grid;grid-template-columns:290px 1fr 340px;height:100vh;}
+    @media(max-width:1100px){ .app{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;overflow:auto;height:auto;} body{overflow:auto;} }
+
+    .col{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--border);}
+    .col:last-child{border-right:none;border-left:1px solid var(--border);}
+    .col-head{padding:.7rem .9rem;border-bottom:1px solid var(--border);background:var(--card);
+        font-size:.74rem;font-weight:800;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;flex:none;}
+    .col-body{flex:1;overflow:auto;padding:.8rem;min-height:0;}
+    @media(max-width:1100px){ .col-body{max-height:50vh;} }
+
+    .box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;margin-bottom:.7rem;}
+    .box h3{font-size:.78rem;color:var(--muted);margin-bottom:.5rem;font-weight:700;}
+
+    label{display:block;font-size:.76rem;color:var(--muted);margin:.45rem 0 .2rem;}
+    input,select{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:7px;
+        color:var(--text);padding:.45rem .55rem;font-size:.84rem;outline:none;font-family:inherit;}
+    input:focus,select:focus{border-color:var(--accent);}
+
+    .btn{border:none;border-radius:7px;padding:.48rem .8rem;font-size:.8rem;font-weight:700;cursor:pointer;
+        transition:transform .15s var(--ease),opacity .15s;width:100%;margin-top:.45rem;}
+    .btn:hover:not(:disabled){transform:translateY(-1px);}
+    .btn:disabled{opacity:.4;cursor:not-allowed;}
+    .btn-primary{background:var(--accent);color:#fff;}
+    .btn-blue{background:var(--accent2);color:#fff;border:1px solid #1a5a9a;}
+    .btn-green{background:#1a4a2a;color:var(--green);border:1px solid var(--green);}
+    .btn-gold{background:var(--gold);color:#1a1a0a;}
+    .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border);}
+    .btn-row{display:flex;gap:.4rem;}
+    .btn-row .btn{margin-top:.45rem;}
+
+    .actor{display:flex;align-items:center;gap:.45rem;padding:.4rem .5rem;border-radius:7px;cursor:pointer;
+        border:1px solid transparent;transition:background .15s,border-color .15s;font-size:.82rem;}
+    .actor:hover{background:rgba(255,255,255,.04);}
+    .actor.on{border-color:var(--accent);background:rgba(233,69,96,.12);}
+    .actor .tag{font-size:.64rem;padding:.08rem .3rem;border-radius:4px;font-weight:800;flex:none;}
+    .tag.editor{background:var(--green);color:#06240f;}
+    .tag.done{background:var(--gold);color:#1a1a0a;}
+    .tag.voted{background:var(--accent2);color:#cfe3ff;}
+    .team-label{font-size:.7rem;color:var(--muted);margin:.6rem 0 .2rem;font-weight:700;}
+
+    iframe{width:100%;height:100%;border:none;background:var(--bg);display:block;}
+    .frame-bar{display:flex;align-items:center;gap:.5rem;padding:.5rem .7rem;border-bottom:1px solid var(--border);
+        background:var(--card);flex:none;font-size:.78rem;}
+    .frame-bar .who{font-weight:800;color:var(--gold);}
+    .frame-wrap{flex:1;min-height:0;}
+    @media(max-width:1100px){ .frame-wrap{height:70vh;} }
+
+    .step{display:flex;gap:.5rem;align-items:flex-start;padding:.4rem .2rem;border-bottom:1px solid rgba(255,255,255,.05);font-size:.78rem;}
+    .step .n{width:19px;height:19px;border-radius:50%;background:var(--border);color:var(--text);
+        display:flex;align-items:center;justify-content:center;font-size:.66rem;font-weight:800;flex:none;}
+    .step.done .n{background:var(--green);color:#06240f;}
+    .step button{background:none;border:none;color:var(--text);cursor:pointer;text-align:left;padding:0;font:inherit;flex:1;}
+    .step button:hover{color:var(--accent);}
+
+    .log{font-family:Consolas,monospace;font-size:.72rem;line-height:1.5;}
+    .log div{padding:.2rem 0;border-bottom:1px solid rgba(255,255,255,.04);word-break:break-all;}
+    .log .ok{color:var(--green);}
+    .log .err{color:var(--accent);}
+    .log .info{color:var(--muted);}
+
+    .msg{border:1px solid var(--border);border-radius:8px;padding:.5rem .6rem;margin-bottom:.5rem;background:var(--bg);}
+    .msg .k{font-size:.65rem;color:var(--accent);font-weight:800;text-transform:uppercase;}
+    .msg .c{font-size:.76rem;margin:.25rem 0;white-space:pre-wrap;}
+    .msg img{width:100%;border-radius:6px;margin-top:.35rem;border:1px solid var(--border);}
+    .msg .btns{display:flex;gap:.25rem;flex-wrap:wrap;margin-top:.3rem;}
+    .msg .btns span{font-size:.65rem;background:var(--accent2);color:#cfe3ff;padding:.1rem .35rem;border-radius:4px;}
+
+    .kv{display:flex;justify-content:space-between;font-size:.78rem;padding:.22rem 0;}
+    .kv span:last-child{color:var(--muted);}
+    .empty{color:var(--muted);font-size:.78rem;text-align:center;padding:1.2rem .5rem;}
+    .pill{display:inline-block;font-size:.66rem;padding:.12rem .4rem;border-radius:5px;background:var(--border);color:var(--text);}
+</style>
+</head>
+<body>
+<div class="app">
+    <!-- 왼쪽: 테스트 이벤트와 참가자 -->
+    <div class="col">
+        <div class="col-head">테스트 이벤트 · 참가자</div>
+        <div class="col-body">
+            <div class="box">
+                <h3>새 테스트 이벤트</h3>
+                <label>참가 인원</label>
+                <select id="memberCount">
+                    <option>8</option><option selected>16</option><option>12</option><option>20</option><option>24</option>
+                </select>
+                <label>팀당 인원</label>
+                <select id="teamSize"><option>2</option><option>3</option><option selected>4</option></select>
+                <label>회차 유형</label>
+                <select id="roundType"><option value="prize" selected>상품 회차</option><option value="normal">일반 회차</option></select>
+                <button class="btn btn-primary" id="btn-create">이벤트 만들기</button>
+                <div class="btn-row">
+                    <button class="btn btn-ghost" id="btn-reload">목록 새로고침</button>
+                    <button class="btn btn-ghost" id="btn-delete-all">전체 삭제</button>
+                </div>
+            </div>
+
+            <div class="box">
+                <h3>이벤트 선택</h3>
+                <select id="eventSelect"></select>
+                <div class="kv"><span>회차</span><span id="kv-round">-</span></div>
+                <div class="kv"><span>단계</span><span id="kv-phase">-</span></div>
+                <div class="kv"><span>유형</span><span id="kv-type">-</span></div>
+                <button class="btn btn-ghost" id="btn-delete">이 이벤트 삭제</button>
+            </div>
+
+            <div class="box">
+                <h3>관점 전환</h3>
+                <div class="actor on" id="actor-admin" data-role="admin">
+                    <span class="tag done">관리자</span><span>관리자 화면</span>
+                </div>
+                <div id="actors"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 가운데: 실제 화면 -->
+    <div class="col">
+        <div class="frame-bar">
+            <span>현재 보는 사람:</span><span class="who" id="who">관리자</span>
+            <span style="flex:1"></span>
+            <span class="pill" id="frame-url">-</span>
+            <button class="btn btn-ghost" style="width:auto;margin:0" id="btn-frame-reload">새로고침</button>
+        </div>
+        <div class="frame-wrap"><iframe id="frame" title="미리보기"></iframe></div>
+    </div>
+
+    <!-- 오른쪽: 시나리오 · 상태 · 메시지 · 로그 -->
+    <div class="col">
+        <div class="col-head">시나리오 · 상태 · 로그</div>
+        <div class="col-body">
+            <div class="box">
+                <h3>순서대로 실행</h3>
+                <div id="steps"></div>
+            </div>
+
+            <div class="box">
+                <h3>팀 진행 상황</h3>
+                <div id="team-status"><div class="empty">이벤트를 선택해주세요</div></div>
+            </div>
+
+            <div class="box">
+                <h3>Mock 디스코드 메시지</h3>
+                <div class="btn-row">
+                    <button class="btn btn-ghost" id="btn-outbox-clear">비우기</button>
+                </div>
+                <div id="outbox" style="margin-top:.5rem"><div class="empty">아직 없습니다</div></div>
+            </div>
+
+            <div class="box">
+                <h3>실행 로그</h3>
+                <div class="log" id="log"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const DEV = new URLSearchParams(location.search).get('token') || '';
+let EV = null, ADM = null, actors = [], current = { role: 'admin', token: null, nickname: '관리자' };
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function log(msg, kind='info'){
+    const el = $('log');
+    const t = new Date().toLocaleTimeString('ko-KR', { hour12:false });
+    el.insertAdjacentHTML('afterbegin', `<div class="${kind}">[${t}] ${esc(msg)}</div>`);
+    while (el.children.length > 120) el.lastChild.remove();
+}
+
+async function call(path, body, method='POST'){
+    try {
+        const opt = method === 'POST'
+            ? { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }
+            : {};
+        const url = method === 'POST' ? path : path;
+        const res = await fetch(url, opt);
+        const data = await res.json().catch(()=>({}));
+        if (data.error) log(`${path.split('/').pop()}: ${data.error}`, 'err');
+        return data;
+    } catch (e) { log(`${path}: ${e.message}`, 'err'); return { error: e.message }; }
+}
+const dev  = (p, b) => call(`/api/gentleman/dev/${p}`, { devToken: DEV, event: EV, ...b });
+const devg = (p) => call(`/api/gentleman/dev/${p}?devToken=${DEV}${EV?`&event=${EV}`:''}`, null, 'GET');
+const adm  = (p, b) => call(`/api/gentleman/admin/${p}`, { event: EV, token: ADM, ...b });
+const admg = (p) => call(`/api/gentleman/admin/${p}?event=${EV}&token=${ADM}`, null, 'GET');
+
+// ── 이벤트 관리 ──────────────────────────────────────
+$('btn-create').addEventListener('click', async () => {
+    const r = await call('/api/gentleman/dev/create', {
+        devToken: DEV,
+        memberCount: Number($('memberCount').value),
+        teamSize: Number($('teamSize').value),
+        type: $('roundType').value,
+    });
+    if (r.error) return;
+    log(`테스트 이벤트 생성: ${r.eventId} (${r.memberCount}명 · ${r.teamCount}팀)`, 'ok');
+    await loadEvents(r.eventId);
+});
+
+$('btn-reload').addEventListener('click', () => loadEvents(EV));
+$('btn-delete').addEventListener('click', async () => {
+    if (!EV || !confirm('이 테스트 이벤트를 삭제할까요?')) return;
+    await dev('delete');
+    log('테스트 이벤트 삭제', 'ok');
+    EV = null; await loadEvents();
+});
+$('btn-delete-all').addEventListener('click', async () => {
+    if (!confirm('모든 테스트 이벤트를 삭제할까요? (운영 이벤트는 영향 없음)')) return;
+    const r = await call('/api/gentleman/dev/delete-all', { devToken: DEV });
+    log(`테스트 이벤트 ${r.removed}건 삭제`, 'ok');
+    EV = null; await loadEvents();
+});
+
+async function loadEvents(prefer){
+    const r = await devg('events');
+    const sel = $('eventSelect');
+    const list = r.events ?? [];
+    sel.innerHTML = list.length
+        ? list.map(e => `<option value="${esc(e.eventId)}">${esc(e.eventId)} · ${e.participantCount}명 ${e.teamCount}팀 · ${e.round}회차</option>`).join('')
+        : '<option value="">테스트 이벤트 없음</option>';
+    const pick = prefer && list.some(e => e.eventId === prefer) ? prefer : (list[0]?.eventId ?? null);
+    sel.value = pick ?? '';
+    await selectEvent(pick);
+}
+
+$('eventSelect').addEventListener('change', e => selectEvent(e.target.value));
+
+async function selectEvent(id){
+    EV = id || null; ADM = null; actors = [];
+    if (!EV) { $('actors').innerHTML = ''; $('frame').src = 'about:blank'; return; }
+    const a = await devg('actors');
+    if (a.error) return;
+    ADM = a.adminToken;
+    actors = a.participants;
+    renderActors();
+    setView({ role:'admin' });
+    await refresh();
+}
+
+function renderActors(){
+    const byTeam = {};
+    for (const p of actors) (byTeam[p.teamNum ?? '-'] ??= []).push(p);
+    $('actors').innerHTML = Object.entries(byTeam).sort((a,b)=>Number(a[0])-Number(b[0])).map(([t, list]) => `
+        <div class="team-label">${esc(t)}팀</div>
+        ${list.map(p => `
+            <div class="actor" data-token="${esc(p.token)}" data-nick="${esc(p.nickname)}">
+                ${p.isEditor?'<span class="tag editor">선택중</span>':''}
+                ${p.teamConfirmed?'<span class="tag done">확정</span>':''}
+                ${p.voted?'<span class="tag voted">투표</span>':''}
+                <span>${esc(p.nickname)}</span>
+            </div>`).join('')}
+    `).join('');
+    $('actors').querySelectorAll('.actor').forEach(el =>
+        el.addEventListener('click', () => setView({ role:'participant', token: el.dataset.token, nickname: el.dataset.nick })));
+}
+
+// ── 화면 전환 ────────────────────────────────────────
+let viewMode = 'select';   // participant일 때 select | vote
+function setView(who){
+    if (who) current = { ...current, ...who };
+    document.querySelectorAll('.actor').forEach(el => el.classList.remove('on'));
+    let url;
+    if (current.role === 'admin') {
+        $('actor-admin').classList.add('on');
+        $('who').textContent = '관리자';
+        url = `/admin?event=${EV}&token=${ADM}`;
+    } else {
+        document.querySelector(`.actor[data-token="${current.token}"]`)?.classList.add('on');
+        $('who').textContent = `${current.nickname} (${viewMode === 'vote' ? '투표' : '실험체 선택'})`;
+        url = `/${viewMode === 'vote' ? 'gentleman-vote' : 'gentleman'}?event=${EV}&token=${current.token}`;
+    }
+    $('frame-url').textContent = url.length > 42 ? url.slice(0, 42) + '…' : url;
+    $('frame').src = url;
+}
+$('actor-admin').addEventListener('click', () => setView({ role:'admin' }));
+$('btn-frame-reload').addEventListener('click', () => { $('frame').contentWindow?.location.reload(); });
+
+// ── 시나리오 단계 ────────────────────────────────────
+const STEPS = [
+    ['드래프트 시작 (후보 추첨)', async () => { const r = await adm('start'); if (!r.error) log(`드래프트 시작 · 팀당 후보 ${r.perTeam}명`, 'ok'); }],
+    ['1팀 관점으로 전환해 직접 선택해보기', async () => {
+        const first = actors.find(a => a.teamNum === 1);
+        if (first) { viewMode = 'select'; setView({ role:'participant', token:first.token, nickname:first.nickname }); log('1팀 참가자 화면으로 전환했습니다. 직접 골라보세요.', 'info'); }
+    }],
+    ['1팀 연결 끊김 흉내 (권한 이전)', async () => { const r = await dev('simulate-disconnect', { teamNum: 1 }); if (!r.error) log(`${r.disconnected} 연결 끊김 → ${r.newHolder ?? '대기자 없음'}`, 'ok'); }],
+    ['1팀 강제 확정', async () => { const r = await adm('force-confirm', { teamNum: 1 }); if (!r.error) log(`1팀 강제 확정 (자동 ${r.autoFilled.length}명 추가)`, 'ok'); }],
+    ['나머지 팀 자동 선택·확정', async () => { const r = await dev('auto-pick'); if (!r.error) log(`자동 확정: ${r.teams.join(', ')}팀`, 'ok'); }],
+    ['전 팀 확정 → 선물 교환·배정', async () => { const r = await adm('finalize'); if (!r.error) log(`원형 교환: ${r.order?.join(' → ')}`, 'ok'); }],
+    ['결과 공지 (이미지 미리 보기)', async () => { const r = await adm('publish'); if (!r.error) log(`팀별 결과 ${r.results.length}건 전송 · 실패 ${r.failed.length}건`, 'ok'); }],
+    ['우승팀 1팀 지정 + 공지', async () => {
+        await adm('winner', { teamNum: 1 });
+        const r = await adm('winner/publish');
+        if (!r.error) log('우승팀 공지 완료', 'ok');
+    }],
+    ['불행상 투표 시작', async () => { const r = await adm('vote/open'); if (!r.error) log(`투표 시작 · 후보 ${r.candidateCount}명 / 투표권 ${r.voterCount}명`, 'ok'); }],
+    ['참가자 관점으로 투표해보기', async () => {
+        const voter = actors.find(a => a.teamNum === 1);
+        if (voter) { viewMode = 'vote'; setView({ role:'participant', token:voter.token, nickname:voter.nickname }); log('투표 화면으로 전환했습니다.', 'info'); }
+    }],
+    ['여러 명이 투표 (공동 1등 만들기)', async () => { const r = await dev('auto-vote', { mode:'tie' }); if (!r.error) log(`${r.cast}표 투표 (공동 1등 시나리오)`, 'ok'); }],
+    ['투표 마감 + 불행상 공지', async () => {
+        const c = await adm('vote/close');
+        if (c.error) return;
+        log(`마감 · 최고 득표 ${c.tally.topVotes}표 / 수상 후보 ${c.tally.winners.length}명`, 'ok');
+        const u = await adm('unlucky/publish');
+        if (!u.error) log(u.noWinner ? '0표로 수상자 없음' : `불행상 공지 (${u.winners.length}명)`, 'ok');
+    }],
+    ['상품 지급 완료 처리', async () => {
+        const p = await admg('payouts');
+        if (!p.rows?.length) return log('수상자가 없습니다', 'err');
+        for (const row of p.rows) await adm('payout', { participantToken: row.token, status:'done' });
+        log(`${p.rows.length}명 지급 완료 처리`, 'ok');
+    }],
+    ['드래프트 종료 + 다음 회차', async () => {
+        await adm('close-draft');
+        const r = await adm('next-round', { keepTeams:true, keepBans:true, type:'prize' });
+        if (!r.error) log(`${r.round}회차 시작`, 'ok');
+    }],
+];
+
+let stepDone = new Set();
+function renderSteps(){
+    $('steps').innerHTML = STEPS.map((s, i) => `
+        <div class="step${stepDone.has(i)?' done':''}">
+            <span class="n">${i+1}</span>
+            <button data-i="${i}">${esc(s[0])}</button>
+        </div>`).join('');
+    $('steps').querySelectorAll('button').forEach(b => b.addEventListener('click', async () => {
+        const i = Number(b.dataset.i);
+        if (!EV) return log('먼저 테스트 이벤트를 만들어주세요', 'err');
+        b.disabled = true;
+        try { await STEPS[i][1](); stepDone.add(i); }
+        finally { b.disabled = false; renderSteps(); await refresh(); }
+    }));
+}
+renderSteps();
+
+// ── 상태 · 메시지 갱신 ───────────────────────────────
+async function refresh(){
+    if (!EV || !ADM) return;
+    const s = await admg('state');
+    if (!s.error) {
+        $('kv-round').textContent = s.round || '-';
+        $('kv-phase').textContent = ({ idle:'시작 전', drafting:'선택 중', assigned:'배정 완료', published:'결과 공지', closed:'종료' })[s.phase] ?? s.phase;
+        $('kv-type').textContent = s.type === 'prize' ? '상품 회차' : '일반 회차';
+
+        const teams = s.summary?.teams ?? [];
+        $('team-status').innerHTML = teams.length ? teams.map(t => `
+            <div class="kv">
+                <span>${t.teamNum}팀 <span class="pill">${esc(t.status)}</span></span>
+                <span>${t.picked}/${t.total}${t.holder?` · ${esc(t.holder)}`:''}</span>
+            </div>`).join('')
+            + `<div class="kv" style="margin-top:.4rem;border-top:1px solid var(--border);padding-top:.4rem">
+                 <span>투표</span><span>${esc(({none:'없음',open:'진행 중',closed:'마감',cancelled:'취소'})[s.vote?.status] ?? '-')}
+                 ${s.vote?.status && s.vote.status !== 'none' ? ` ${s.vote.votedCount}/${s.vote.totalVoters}` : ''}</span></div>`
+            : '<div class="empty">아직 드래프트를 시작하지 않았습니다</div>';
+    }
+    const o = await devg('outbox');
+    const msgs = o.messages ?? [];
+    $('outbox').innerHTML = msgs.length ? msgs.slice(0, 12).map(m => `
+        <div class="msg">
+            <div class="k">${esc(m.kind)}${m.teamNum?` · ${m.teamNum}팀`:''}</div>
+            ${m.embedTitle?`<div class="c"><b>${esc(m.embedTitle)}</b></div>`:''}
+            ${m.content?`<div class="c">${esc(m.content)}</div>`:''}
+            ${m.buttons?.length?`<div class="btns">${m.buttons.map(b=>`<span>${esc(b)}</span>`).join('')}</div>`:''}
+            ${m.files?.map(f=>f.dataUrl?`<img src="${f.dataUrl}" alt="${esc(f.name)}">`:`<div class="c">${esc(f.name)}</div>`).join('') ?? ''}
+        </div>`).join('') : '<div class="empty">아직 없습니다</div>';
+
+    const a = await devg('actors');
+    if (!a.error) { actors = a.participants; renderActors();
+        if (current.role === 'participant') document.querySelector(`.actor[data-token="${current.token}"]`)?.classList.add('on');
+        else $('actor-admin').classList.add('on'); }
+}
+
+$('btn-outbox-clear').addEventListener('click', async () => { await dev('outbox/clear'); await refresh(); });
+
+if (!DEV) log('주소에 개발자 토큰이 없습니다. /gentleman-sim?token=DEV_TOKEN 형식으로 접속해주세요.', 'err');
+loadEvents();
+setInterval(() => { if (EV) refresh(); }, 4000);
+</script>
+</body>
+</html>

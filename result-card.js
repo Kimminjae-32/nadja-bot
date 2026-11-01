@@ -475,4 +475,15 @@ async function generateCharPoolCard(title, groups) {
     return canvas.toBuffer('image/png');
 }
 
-module.exports = { generateResultCard, generateBracketCard, generateCharPoolCard };
+// 다른 카드 모듈(gentleman-card 등)이 폰트·이미지 캐시·그리기 유틸을 재사용할 수 있도록 함께 내보낸다
+async function fontFamily() {
+    await initPromise;
+    return fontLoaded ? '"CardFont",sans-serif' : 'sans-serif';
+}
+// 이미 캐시된 이미지를 동기로 꺼낸다 (없으면 null)
+function peekImg(key) { return imgCache.get(key) ?? null; }
+
+module.exports = {
+    generateResultCard, generateBracketCard, generateCharPoolCard,
+    fontFamily, cachedImg, peekImg, fitText, roundedRect, TEAM_COLORS,
+};

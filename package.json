@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test --test-force-exit \"test/**/*.test.js\"",
+    "test:gentleman": "node --test --test-force-exit test/gentleman-draft.test.js test/gentleman-vote.test.js test/gentleman-integration.test.js",
+    "test:teams": "node --test --test-force-exit test/teams.test.js",
+    "sim": "node -e \"require(\\\"./server\\\").start(process.env.WEB_PORT||3000)\""
   },
   "keywords": [],
   "author": "",
