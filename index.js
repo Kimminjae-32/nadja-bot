@@ -8,6 +8,7 @@ const cron = require('node-cron');
 require('dotenv').config();
 
 const db        = require('./db');
+const gentlemanRoutes = require('./gentleman-routes');
 const webServer = require('./server');
 const { TEAM_EMOJIS, TEAM_NAMES, CHARACTERS, CHAR_CODE } = require('./constants');
 const poke = require('./pokemon');
@@ -26,6 +27,8 @@ webServer.setClient(client);
 webServer.setCloseCallback(async (msgId) => {
     const data = allRecruits.get(msgId);
     if (!data) return;
+    // 이벤트가 채널에 올린 메시지(선택 안내·결과·수상·투표)를 먼저 정리한다
+    await gentlemanRoutes.cleanupMessages(msgId).catch(e => console.warn('[gentleman] 메시지 정리 실패:', e.message));
     try {
         await deleteMessage(msgId, data.channelId);
     } catch (e) { /* 무시 */ }
@@ -228,6 +231,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
     if (activeUserRecruits.has(rKey)) {
         const oldMsgId = activeUserRecruits.get(rKey);
         const oldData  = allRecruits.get(oldMsgId);
+        await gentlemanRoutes.cleanupMessages(oldMsgId).catch(() => null);
         await deleteMessage(oldMsgId, oldData?.channelId).catch(() => null);
         await webServer.deleteEventRole(oldMsgId).catch(() => null);
         db.archiveEvent(oldMsgId, 'replaced');
@@ -266,8 +270,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
         msg = await sendFn({
             embeds: [await createRecruitEmbed(newRecruit)],
             components: [new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('join_temp').setLabel('참가').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId('leave_temp').setLabel('취소').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId('join_temp').setLabel('참가/취소').setStyle(ButtonStyle.Primary)
             )]
         });
     } catch (e) {
@@ -398,6 +401,7 @@ cron.schedule('* * * * *', async () => {
         const expiresAt = schedule.resolveExpiresAt(data);
         if (!Number.isFinite(expiresAt) || now < expiresAt) continue;
         try {
+            await gentlemanRoutes.cleanupMessages(msgId).catch(() => null);
             await deleteMessage(msgId, data.channelId).catch(() => null);
             await webServer.deleteEventRole(msgId).catch(() => null);
             db.archiveEvent(msgId, 'expired');

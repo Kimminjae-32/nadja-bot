@@ -90,6 +90,8 @@ router.get('/admin/state', requireAdmin, (req, res) => {
         participantCount: participants.length,
         bannedCount: (ev.bannedCharacters ?? []).length,
         resultsPublished: !!g?.resultsPublished,
+        exchangeReady: !!g?.assignments,        // 선물 교환·배정이 끝났는지 (결과 공지 가능 여부)
+        allConfirmed: !!summary?.allConfirmed,
         teamMessages: g?.teamMessages ?? {},
         // 상품 회차
         winnerTeam: g?.winnerTeam ?? null,
@@ -519,6 +521,8 @@ router.post('/admin/next-round', requireAdmin, (req, res) => {
         if (g.vote?.status === V.STATUS.OPEN)
             return { error: '불행상 투표가 진행 중이에요. 마감하거나 취소한 뒤에 넘어가주세요.' };
 
+        // 이전 회차에서 보낸 메시지 ID를 보관해 둔다 (모집 종료 시 함께 지우기 위함)
+        ev.gentlemanSentMessages = collectMessageIds(ev);
         const next = D.createState({ round: (g.round ?? 1) + 1, type });
         setState(next);
         if (!keepBans) ev.bannedCharacters = [];
@@ -610,9 +614,35 @@ router.post('/me/vote', requireParticipant, (req, res) => {
     r.error ? fail(res, r) : res.json(r);
 });
 
+/**
+ * 이 이벤트가 디스코드에 올린 메시지 ID를 모두 모은다.
+ * 회차가 바뀌어도 지워지지 않도록 sentMessages에 누적해 둔 것을 함께 본다.
+ */
+function collectMessageIds(ev) {
+    const g = ev?.gentleman;
+    const ids = [...(ev?.gentlemanSentMessages ?? [])];
+    if (g) {
+        ids.push(g.draftMessageId, g.winnerMessageId, g.vote?.messageId, g.unlucky?.messageId);
+        ids.push(...(g.vote?.remindMessageIds ?? []));
+        for (const m of Object.values(g.teamMessages ?? {})) ids.push(m?.messageId);
+    }
+    return [...new Set(ids.filter(Boolean))];
+}
+
+/** 모집 종료·자동 만료 시 이 이벤트가 보낸 메시지를 전부 지운다. */
+async function cleanupMessages(eventId) {
+    const ev = db.getEvent(eventId);
+    if (!ev) return { deleted: 0, failed: 0 };
+    const ids = collectMessageIds(ev);
+    if (!ids.length) return { deleted: 0, failed: 0 };
+    const r = await discord.deleteMessages(ev, ids);
+    console.log(`[gentleman] ${eventId} 메시지 정리 — 삭제 ${r.deleted}건, 실패 ${r.failed}건`);
+    return r;
+}
+
 // ── 페이지 ───────────────────────────────────────────
 const page = f => (req, res) => res.sendFile(path.join(__dirname, 'public', f));
 router.get('/page/select', page('gentleman.html'));
 router.get('/page/vote', page('gentleman-vote.html'));
 
-module.exports = { router, requireDevTestEvent, sendDraftMessage, teamName };
+module.exports = { router, requireDevTestEvent, sendDraftMessage, teamName, cleanupMessages, collectMessageIds };

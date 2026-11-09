@@ -29,6 +29,8 @@
     @keyframes slideIn{from{opacity:0;transform:translateX(-22px)}to{opacity:1;transform:none}}
     @keyframes slideInRight{from{opacity:0;transform:translateX(22px)}to{opacity:1;transform:none}}
     @keyframes popIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+    /* 오른쪽 바깥에서 제자리로 미끄러져 들어온다 */
+    @keyframes cardIn{from{opacity:0;transform:translateX(64px) scale(.94)}to{opacity:1;transform:none}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
     @keyframes spin{to{transform:rotate(360deg)}}
     @keyframes checkPop{0%{transform:scale(0) rotate(-20deg)}60%{transform:scale(1.18) rotate(4deg)}100%{transform:scale(1) rotate(0)}}
@@ -64,7 +66,7 @@
         position:relative;background:var(--card);border:2px solid var(--border);border-radius:12px;
         overflow:hidden;cursor:pointer;user-select:none;aspect-ratio:4/3.2;
         transition:transform .22s var(--ease),border-color .22s var(--ease),box-shadow .22s var(--ease);
-        animation:popIn .4s var(--ease) both;
+        animation:cardIn .45s var(--ease) both;
     }
     .char img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s var(--ease);}
     .char .nm{
@@ -237,6 +239,8 @@ function renderStatus(){
     const count = state.role === 'editor' ? picks.length : state.pickedCount;
     $('bar').style.width = `${(count / state.picksRequired) * 100}%`;
     sub.textContent += ` · ${count}/${state.picksRequired}명`;
+    const wp = $('wait-progress');
+    if (wp) wp.textContent = `저장된 진행률 ${state.pickedCount}/${state.picksRequired}명`;
 }
 
 function renderSlots(){
@@ -251,20 +255,33 @@ function renderSlots(){
     $('confirm-btn').disabled = !(picks.length === want && !dirty && state.role === 'editor');
 }
 
-function renderGrid(){
+let gridKey = null;      // 같은 후보 목록이면 다시 그리지 않는다
+function renderGrid(force){
     const editable = state.role === 'editor' && !state.confirmed;
+    const key = state.candidates.join('|') + '|' + editable;
+    if (!force && key === gridKey && $('grid')) { syncGridSelection(); return; }
+    gridKey = key;
     $('main').innerHTML = `<div class="panel right" style="padding:.85rem"><div class="grid" id="grid"></div></div>`;
     const grid = $('grid');
     grid.innerHTML = state.candidates.map((c, i) => {
         const src = charImg(c);
         const on = picks.includes(c);
-        return `<div class="char${on?' picked':''}${editable?'':' disabled'}" data-name="${esc(c)}" style="animation-delay:${Math.min(i*28,420)}ms">
+        return `<div class="char${on?' picked':''}${editable?'':' disabled'}" data-name="${esc(c)}" style="animation-delay:${Math.min(i*55,760)}ms">
             ${src?`<img src="${src}" alt="" loading="lazy" onerror="this.style.display='none'">`:''}
             ${src?'':`<div class="no-img">이미지 없음</div>`}
             <div class="nm">${esc(c)}</div>
         </div>`;
     }).join('');
     if (editable) grid.querySelectorAll('.char').forEach(el => el.addEventListener('click', () => toggle(el.dataset.name, el)));
+}
+
+// 격자를 다시 만들지 않고 선택 표시만 맞춘다
+function syncGridSelection(){
+    const grid = $('grid');
+    if (!grid) return;
+    grid.querySelectorAll('.char').forEach(el => {
+        el.classList.toggle('picked', picks.includes(el.dataset.name));
+    });
 }
 
 function renderWaiting(){
@@ -274,7 +291,7 @@ function renderWaiting(){
             <div class="center-msg">
                 <div style="font-size:2rem;margin-bottom:.6rem">⏳</div>
                 <div style="font-size:1.05rem;color:var(--text);font-weight:700;margin-bottom:.4rem">다른 팀원이 선택 중입니다</div>
-                <div>저장된 진행률 ${state.pickedCount}/${state.picksRequired}명</div>
+                <div id="wait-progress">저장된 진행률 ${state.pickedCount}/${state.picksRequired}명</div>
                 <div style="margin-top:.9rem;font-size:.82rem">먼저 기다린 분부터 차례가 돌아갑니다. 이 화면은 자동으로 갱신돼요.</div>
             </div>
         </div>`;
@@ -298,14 +315,19 @@ function renderConfirmed(){
         </div>`;
 }
 
+let lastView = null;     // 'confirmed' | 'waiting' | 'editor'
 function render(){
     if (!state) return;
     renderStatus();
-    if (state.confirmed)            { renderConfirmed(); return; }
-    if (state.role !== 'editor')    { renderWaiting(); return; }
+    const view = state.confirmed ? 'confirmed' : (state.role === 'editor' ? 'editor' : 'waiting');
+
+    if (view === 'confirmed') { if (lastView !== 'confirmed') renderConfirmed(); lastView = view; return; }
+    if (view === 'waiting')   { if (lastView !== 'waiting') renderWaiting(); lastView = view; return; }
+
     $('dock').style.display = '';
-    renderGrid();
+    renderGrid(lastView !== 'editor');     // 다른 화면에서 막 넘어왔을 때만 새로 그린다
     renderSlots();
+    lastView = view;
 }
 
 // ── 선택 동작 ────────────────────────────────────────
@@ -322,6 +344,7 @@ function toggle(name, el){
         setTimeout(()=>el?.classList.remove('bump'), 320);
     }
     dirty = true;
+    // 카드 격자는 그대로 두고 아래 슬롯과 진행률만 갱신한다 (전체 재생성은 깜빡임을 만든다)
     renderSlots();
     renderStatus();
     scheduleSave();
@@ -446,8 +469,12 @@ async function refresh(force){
     }
     rev = data.rev;
 
-    const sig = JSON.stringify([data.role, data.confirmed, data.pickedCount, data.holderNickname, data.candidates.length, picks]);
+    // 선택 중에는 역할·확정 여부가 바뀔 때만 다시 그린다. 매번 그리면 카드가 깜빡인다.
+    const sig = JSON.stringify([data.role, data.confirmed, data.holderNickname, data.candidates.length]);
+    const editing = state.role === 'editor' && !state.confirmed;
     if (sig !== lastSignature || force) { lastSignature = sig; render(); }
+    else if (editing) { renderStatus(); renderSlots(); }      // 진행률만 조용히 갱신
+    else render();
 
     if (!wasEditor && state.role === 'editor' && !state.confirmed) toast('선택 차례가 됐어요!');
     if (state.role === 'editor' && !dirty) setSaveState('', picks.length ? '저장됨' : '');

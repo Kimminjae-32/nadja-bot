@@ -74,6 +74,18 @@
         .lock-summary{font-size:.78rem;color:#f1c40f;margin-left:.3rem;}
 
         /* ── 저쪽 신사분이 주신 겁니다 ── */
+        .gm-steps{display:flex;gap:.4rem;margin:.6rem 0 .9rem;flex-wrap:wrap;}
+        .gm-stepbox{flex:1;min-width:116px;background:var(--bg);border:1px solid var(--border);
+            border-radius:9px;padding:.45rem .6rem;transition:border-color .25s ease,background .25s ease;}
+        .gm-stepbox .num{font-size:.64rem;color:var(--muted);font-weight:800;letter-spacing:.06em;}
+        .gm-stepbox .ttl{font-size:.82rem;font-weight:700;margin-top:.1rem;}
+        .gm-stepbox.now{border-color:var(--accent);background:rgba(233,69,96,.1);}
+        .gm-stepbox.ok{border-color:var(--green);background:rgba(46,204,113,.08);}
+        .gm-stepbox.ok .ttl{color:var(--green);}
+        .gm-panel{border:1px solid var(--border);border-radius:10px;padding:.7rem .8rem;margin-bottom:.6rem;background:var(--bg);}
+        .gm-panel-head{display:flex;align-items:center;gap:.5rem;font-size:.8rem;font-weight:700;
+            color:var(--muted);margin-bottom:.55rem;}
+        .gm-panel-head::after{content:'';flex:1;height:1px;background:var(--border);}
         .gm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.6rem;}
         .gm-team{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:.6rem .7rem;
             transition:border-color .25s ease;}
@@ -169,19 +181,14 @@
     </div>
 
     <!-- 룰 공지 섹션 -->
-    <div class="section-card" id="rule-section" style="margin-bottom:1rem;display:none">
-        <div class="section-title">내전 룰 공지</div>
-        <div class="section-sub">저장하면 참가 신청 페이지 상단에 표시됩니다</div>
-        <textarea id="rule-textarea" placeholder="내전 룰을 입력하세요..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:.75rem 1rem;font-size:.88rem;min-height:80px;resize:vertical;font-family:inherit;outline:none;box-sizing:border-box;margin-bottom:.5rem"></textarea>
-        <button class="btn btn-secondary btn-sm" id="rule-save-btn">저장</button>
-    </div>
-
     <div class="tabs">
-        <button class="tab active" data-tab="list">전체 목록</button>
-        <button class="tab" data-tab="teams">팀별 보기</button>
+        <button class="tab active" data-tab="list">참가자</button>
+        <button class="tab" data-tab="teams">팀 배정</button>
+        <button class="tab" data-tab="event" id="tab-event" style="display:none">이벤트</button>
+        <button class="tab" data-tab="manage">관리</button>
     </div>
 
-    <div id="view-list">
+    <div id="view-list" data-pane="list">
         <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
             <span style="font-size:.8rem;color:var(--muted)">정렬</span>
             <select class="team-select" id="sort-select" onchange="renderTable()">
@@ -197,7 +204,7 @@
         </table>
     </div>
 
-    <div id="view-teams" style="display:none">
+    <div id="view-teams" style="display:none" data-pane="teams">
         <div class="teams-hint" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
             <span>참가자를 끌어서 다른 팀 카드에 놓으면 팀이 바뀝니다. 자물쇠를 누르면 그 팀에 고정되어 다시 섞어도 남습니다.</span>
             <span id="lock-count" class="lock-summary"></span>
@@ -207,7 +214,7 @@
     </div>
 
     <!-- 실험체 배정 결과 -->
-    <div id="char-results" style="display:none;margin-top:1.5rem">
+    <div id="char-results" style="display:none;margin-top:1.5rem" data-pane="teams">
         <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
             <h2 style="font-size:1.1rem">실험체 배정 결과</h2>
             <button class="btn btn-success btn-sm" id="char-send-btn" onclick="sendCharPools()">디스코드에 공지</button>
@@ -217,7 +224,7 @@
 
 
     <!-- 코발트 토너먼트 섹션 -->
-    <div id="tourney-section" class="section-card" style="display:none">
+    <div id="tourney-section" class="section-card" style="display:none" data-pane="event">
         <div class="section-title">코발트 토너먼트</div>
         <div class="section-sub">팀 배정을 마친 뒤 시작하세요. 팀 수가 2·4·8이 아니면 일부 팀은 부전승으로 올라가요.</div>
         <div id="tourney-setup">
@@ -239,33 +246,51 @@
     </div>
 
     <!-- 저쪽 신사분이 주신 겁니다 -->
-    <div id="gm-section" class="section-card" style="display:none">
+    <div id="gm-section" class="section-card" style="display:none" data-pane="event">
         <div class="section-title">저쪽 신사분이 주신 겁니다</div>
         <div class="section-sub">팀마다 실험체 4명을 골라 다른 팀에 선물하고, 받은 실험체를 팀원에게 나눠주는 이벤트입니다.</div>
 
-        <div class="gm-step">
-            <span class="gm-step-label">회차</span>
-            <span id="gm-round-info" style="font-size:.85rem">-</span>
-            <select class="team-select" id="gm-type" style="width:auto" onchange="gmSetType()">
-                <option value="normal">일반 회차</option>
-                <option value="prize">상품 회차</option>
-            </select>
-            <button class="btn btn-primary btn-sm" id="gm-start" onclick="gmStart()">실험체 드래프트 시작</button>
-            <button class="btn btn-secondary btn-sm" id="gm-redraw" onclick="gmRedraw()">후보 재추첨</button>
-            <button class="btn btn-danger btn-sm" id="gm-close" onclick="gmCloseDraft()">드래프트 종료</button>
+        <!-- 지금 어느 단계인지 한눈에 -->
+        <div class="gm-steps" id="gm-stepbar">
+            <div class="gm-stepbox" data-step="draft"><div class="num">1단계</div><div class="ttl">실험체 선택</div></div>
+            <div class="gm-stepbox" data-step="assign"><div class="num">2단계</div><div class="ttl">선물 교환·배정</div></div>
+            <div class="gm-stepbox" data-step="publish"><div class="num">3단계</div><div class="ttl">결과 공지</div></div>
+            <div class="gm-stepbox" data-step="close"><div class="num">4단계</div><div class="ttl">드래프트 종료</div></div>
         </div>
-        <div class="gm-note" id="gm-note"></div>
 
-        <div class="gm-grid" id="gm-teams" style="margin-top:.8rem"></div>
+        <div class="gm-panel">
+            <div class="gm-panel-head">회차 설정</div>
+            <div class="gm-step">
+                <span id="gm-round-info" style="font-size:.85rem">-</span>
+                <select class="team-select" id="gm-type" style="width:auto" onchange="gmSetType()">
+                    <option value="normal">일반 회차</option>
+                    <option value="prize">상품 회차</option>
+                </select>
+            </div>
+            <div class="gm-note" id="gm-note"></div>
+        </div>
 
-        <div class="gm-step" style="margin-top:.8rem">
-            <button class="btn btn-secondary btn-sm" id="gm-finalize" onclick="gmFinalize()">선물 교환·배정</button>
-            <button class="btn btn-success btn-sm" id="gm-publish" onclick="gmPublish()">실험체 결과 공지</button>
-            <span class="gm-note" id="gm-publish-state"></span>
+        <div class="gm-panel">
+            <div class="gm-panel-head">1단계 · 실험체 선택</div>
+            <div class="gm-step">
+                <button class="btn btn-primary btn-sm" id="gm-start" onclick="gmStart()">드래프트 시작</button>
+                <button class="btn btn-secondary btn-sm" id="gm-redraw" onclick="gmRedraw()">후보 재추첨</button>
+            </div>
+            <div class="gm-grid" id="gm-teams" style="margin-top:.6rem"></div>
+        </div>
+
+        <div class="gm-panel">
+            <div class="gm-panel-head">2~3단계 · 교환과 공지</div>
+            <div class="gm-step">
+                <button class="btn btn-secondary btn-sm" id="gm-finalize" onclick="gmFinalize()">선물 교환·배정</button>
+                <button class="btn btn-success btn-sm" id="gm-publish" onclick="gmPublish()">실험체 결과 공지</button>
+            </div>
+            <div class="gm-note" id="gm-publish-state"></div>
         </div>
 
         <!-- 상품 회차 전용 -->
-        <div id="gm-prize" style="display:none;border-top:1px solid var(--border);margin-top:.9rem;padding-top:.8rem">
+        <div id="gm-prize" class="gm-panel" style="display:none">
+            <div class="gm-panel-head">상품 회차 · 우승팀과 불행상</div>
             <div class="gm-step">
                 <span class="gm-step-label">우승팀</span>
                 <select class="team-select" id="gm-winner" style="width:auto"></select>
@@ -287,7 +312,15 @@
             <div id="gm-payouts" style="margin-top:.6rem"></div>
         </div>
 
-        <div class="gm-step" style="margin-top:.9rem;border-top:1px solid var(--border);padding-top:.8rem">
+        <div class="gm-panel">
+            <div class="gm-panel-head">4단계 · 마무리</div>
+            <div class="gm-step">
+                <button class="btn btn-danger btn-sm" id="gm-close" onclick="gmCloseDraft()">드래프트 종료</button>
+                <span class="gm-note">종료해야 팀 구성을 다시 바꾸고 다음 회차로 넘어갈 수 있어요.</span>
+            </div>
+        </div>
+
+        <div class="gm-step" style="margin-top:.4rem;border-top:1px solid var(--border);padding-top:.8rem">
             <span class="gm-step-label">다음 회차</span>
             <label style="font-size:.78rem;color:var(--muted);display:inline-flex;align-items:center;gap:.25rem">
                 <input type="checkbox" id="gm-keep-teams" checked> 현재 팀 유지</label>
@@ -302,7 +335,14 @@
     </div>
 
     <!-- 추가 관리 섹션 -->
-    <div id="extra-section" class="section-card" style="display:none">
+    <div class="section-card" id="rule-section" style="margin-bottom:1rem;display:none" data-pane="manage">
+        <div class="section-title">내전 룰 공지</div>
+        <div class="section-sub">저장하면 참가 신청 페이지 상단에 표시됩니다</div>
+        <textarea id="rule-textarea" placeholder="내전 룰을 입력하세요..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:.75rem 1rem;font-size:.88rem;min-height:80px;resize:vertical;font-family:inherit;outline:none;box-sizing:border-box;margin-bottom:.5rem"></textarea>
+        <button class="btn btn-secondary btn-sm" id="rule-save-btn">저장</button>
+    </div>
+
+    <div id="extra-section" class="section-card" style="display:none" data-pane="manage">
         <div class="section-title">추가 관리</div>
 
         <div class="mgmt-group">
@@ -460,15 +500,13 @@ async function load(){
     const isTeamMode = eventData?.gameType === '내전';
     // 팀 배정 구역: 내전(팀 모드)에서만
     document.getElementById('group-team').style.display = isTeamMode ? '' : 'none';
-    document.getElementById('extra-section').style.display = '';
     document.getElementById('voice-group').style.display = isTeamMode ? '' : 'none';
+    document.getElementById('tab-event').style.display = isTeamMode ? '' : 'none';
     // 실험체 구역(팀 공용 풀): 일반 코발트에서만. 토너먼트는 경기별 배정 사용, 루미아/론울프는 없음
     const isPlainCobalt = isTeamMode && eventData?.mapType === '코발트';
     document.getElementById('group-char').style.display = isPlainCobalt ? '' : 'none';
     document.getElementById('chars-per-player-wrap').style.display = isPlainCobalt ? 'inline-flex' : 'none';
-    if (!isPlainCobalt) document.getElementById('char-results').style.display = 'none';
-    document.getElementById('tourney-section').style.display = (isTeamMode && eventData?.mapType === '코발트 토너먼트') ? '' : 'none';
-    document.getElementById('gm-section').style.display = isTeamMode ? '' : 'none';
+    if (!isPlainCobalt) { _lastCharPools = null; document.getElementById('char-results').style.display = 'none'; }
     gmRefresh();
     renderTournament();
     updateMapBadge();
@@ -478,12 +516,12 @@ async function load(){
     renderRoleInfo();
     refreshTeamPlan();
 
-    // 룰 섹션 초기화
-    document.getElementById('rule-section').style.display = '';
+    // 룰 내용 채우기 (표시 여부는 탭이 결정한다)
     if (eventData?.rule) document.getElementById('rule-textarea').value = eventData.rule;
 
     document.getElementById('subtitle').innerHTML = modeHTML();
     render();
+    showTab(currentTab);
 }
 
 function render(){
@@ -763,9 +801,30 @@ async function gmRefresh(){
         ? '드래프트가 진행 중이라 팀 구성을 바꿀 수 없어요. 바꾸려면 드래프트를 종료해주세요.'
         : (s.exists ? '' : '팀 배정을 마친 뒤 드래프트를 시작해주세요.');
 
+    gmRenderStepBar(s);
     gmRenderTeams(s);
     gmRenderPublish(s);
     if (s.type === 'prize') gmRenderPrize(s);
+}
+
+// 지금 어느 단계인지 색으로 보여준다
+function gmRenderStepBar(s){
+    const done = {
+        draft:   !!s.allConfirmed,
+        assign:  !!s.exchangeReady,
+        publish: !!s.resultsPublished,
+        close:   s.phase === 'closed',
+    };
+    const now = !s.exists || s.phase === 'idle' ? 'draft'
+        : !done.draft   ? 'draft'
+        : !done.assign  ? 'assign'
+        : !done.publish ? 'publish' : 'close';
+
+    document.querySelectorAll('#gm-stepbar .gm-stepbox').forEach(el => {
+        const k = el.dataset.step;
+        el.classList.toggle('ok', !!done[k]);
+        el.classList.toggle('now', k === now && !done[k]);
+    });
 }
 
 function gmRenderTeams(s){
@@ -1310,8 +1369,9 @@ document.getElementById('char-btn').addEventListener('click', async ()=>{
     // 공지용으로 마지막 팀 공용 풀 저장
     _lastCharPools = data.charsPerPlayer ? Object.fromEntries(Object.entries(teams).filter(([,l])=>l.length).map(([tn,l])=>[tn, l.flatMap(a=>a.characters||[a.character])])) : null;
     document.getElementById('char-send-btn').style.display = _lastCharPools ? '' : 'none';
-    const charResults = document.getElementById('char-results');
     document.getElementById('char-grid').innerHTML = html;
+    showTab('teams');
+    const charResults = document.getElementById('char-results');
     charResults.style.display='block';
     charResults.scrollIntoView({ behavior:'smooth' });
     toast('실험체 배정 완료!');
@@ -1342,13 +1402,34 @@ document.getElementById('send-btn').addEventListener('click', async ()=>{
     data.success ? toast('디스코드에 전송됐어요!') : toast('전송 실패: '+data.error, true);
 });
 
-document.querySelectorAll('.tab').forEach(tab=>{
-    tab.addEventListener('click',()=>{
-        document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById('view-list').style.display  = tab.dataset.tab==='list'  ?'block':'none';
-        document.getElementById('view-teams').style.display = tab.dataset.tab==='teams' ?'block':'none';
+// 탭 전환 — 각 묶음은 data-pane으로 구분한다.
+// 모드에 따라 쓰지 않는 항목(실험체 결과, 토너먼트 등)은 숨긴 채로 둔다.
+let currentTab = 'list';
+function showTab(name){
+    currentTab = name;
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+    document.querySelectorAll('[data-pane]').forEach(el=>{
+        const mine = el.dataset.pane === name;
+        if (!mine) { el.style.display = 'none'; return; }
+        el.style.display = paneVisible(el.id) ? '' : 'none';
     });
+}
+
+// 모드·진행 상황에 따라 그 묶음을 보여줄지 판단한다
+function paneVisible(id){
+    const isTeamMode = eventData?.gameType === '내전';
+    switch(id){
+        case 'char-results':    return !!_lastCharPools;
+        case 'tourney-section': return isTeamMode && eventData?.mapType === '코발트 토너먼트';
+        case 'gm-section':      return isTeamMode;
+        case 'rule-section':    return true;
+        case 'extra-section':   return true;
+        default:                return true;
+    }
+}
+
+document.querySelectorAll('.tab').forEach(tab=>{
+    tab.addEventListener('click',()=>showTab(tab.dataset.tab));
 });
 
 document.getElementById('rule-save-btn').addEventListener('click', async ()=>{

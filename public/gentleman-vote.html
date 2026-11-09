@@ -22,6 +22,7 @@
     @keyframes dropIn{from{opacity:0;transform:translateY(-18px)}to{opacity:1;transform:none}}
     @keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:none}}
     @keyframes popIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+    @keyframes cardIn{from{opacity:0;transform:translateX(64px) scale(.94)}to{opacity:1;transform:none}}
     @keyframes checkPop{0%{transform:scale(0) rotate(-18deg)}60%{transform:scale(1.16)}100%{transform:scale(1)}}
     @keyframes shake{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(4px)}50%{transform:translateX(-5px)}}
 
@@ -43,7 +44,7 @@
     .cand{position:relative;background:var(--card);border:2px solid var(--border);border-radius:12px;
         overflow:hidden;cursor:pointer;user-select:none;
         transition:transform .22s var(--ease),border-color .22s var(--ease),box-shadow .22s var(--ease);
-        animation:popIn .4s var(--ease) both;}
+        animation:cardIn .45s var(--ease) both;}
     .cand .ph{position:relative;aspect-ratio:4/3.1;background:var(--bg);}
     .cand img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s var(--ease);}
     .cand .meta{padding:.55rem .65rem .7rem;}
@@ -189,7 +190,7 @@ function render(){
                 <div class="meta"><div class="nick">${esc(c.nickname)}</div>
                 <div class="info">${esc(c.character ?? '실험체 없음')} · ${esc(c.fromTeam)}팀의 선물</div></div>
             </div>`;
-            delay += 26;
+            delay += 55;
         }
         html += `</div>`;
     }

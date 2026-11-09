@@ -105,4 +105,34 @@ async function avatarUrl(discordId) {
     } catch { return null; }
 }
 
-module.exports = { setClient, send, sendWithRetry, disableButtons, avatarUrl, isMockMode, getMockOutbox, clearMockOutbox };
+/**
+ * 이 이벤트로 보낸 메시지를 한꺼번에 지운다. (모집 종료·자동 만료 시)
+ * 지우지 못한 메시지가 있어도 나머지는 계속 지운다.
+ */
+async function deleteMessages(ev, messageIds) {
+    const ids = [...new Set((messageIds ?? []).filter(Boolean))];
+    if (!ids.length) return { deleted: 0, failed: 0 };
+    if (isMockMode(ev)) {
+        pushMock({ eventId: ev?.id ?? null, kind: 'delete-messages', content: `(메시지 ${ids.length}건 삭제)`, mock: true });
+        return { deleted: ids.length, failed: 0, mock: true };
+    }
+    let deleted = 0, failed = 0;
+    try {
+        const channel = await discordClient.channels.fetch(ev.channelId).catch(() => null);
+        if (!channel) return { deleted: 0, failed: ids.length };
+        for (const id of ids) {
+            try {
+                const msg = await channel.messages.fetch(id).catch(() => null);
+                if (msg) { await msg.delete(); deleted += 1; }
+            } catch (e) {
+                failed += 1;
+                console.warn(`[gentleman-discord] 메시지 ${id} 삭제 실패: ${e.message}`);
+            }
+        }
+    } catch (e) {
+        console.error('[gentleman-discord] 메시지 정리 실패:', e.message);
+    }
+    return { deleted, failed };
+}
+
+module.exports = { setClient, send, sendWithRetry, disableButtons, deleteMessages, avatarUrl, isMockMode, getMockOutbox, clearMockOutbox };
