@@ -115,8 +115,31 @@ module.exports = {
                 return { error: `${teamNum}팀은 이미 ${max}명이에요. (${ev?.mapType || ev?.gameType} 최대 ${max}명)` };
         }
         p.team_num = teamNum;
+        if (teamNum == null) p.locked = false;      // 미배정으로 빼면 고정도 푼다
         save(data);
         return { success: true };
+    },
+
+    // 팀 고정 — 켜두면 다시 섞어도 지금 팀에 그대로 남는다
+    setMemberLock(token, locked) {
+        const data = load();
+        const p = data.participants[token];
+        if (!p) return { error: '참가자를 찾을 수 없어요.' };
+        if (locked && !p.team_num) return { error: '팀이 배정된 참가자만 고정할 수 있어요.' };
+        p.locked = !!locked;
+        save(data);
+        return { success: true, locked: p.locked };
+    },
+
+    // 전체 고정 해제
+    clearMemberLocks(eventId) {
+        const data = load();
+        let n = 0;
+        for (const p of Object.values(data.participants)) {
+            if (p.event_id === eventId && p.locked) { p.locked = false; n += 1; }
+        }
+        if (n) save(data);
+        return n;
     },
 
     // 관리자가 참가자 티어 수정 (허위 신고 정정용)
@@ -131,12 +154,23 @@ module.exports = {
         const data = load();
         const ev   = data.events[eventId];
         const list = Object.values(data.participants).filter(p => p.event_id === eventId);
-        if (!list.length) return { teamCount: 0, sizes: [], noTierCount: 0, valid: true };
+        if (!list.length) return { teamCount: 0, sizes: [], noTierCount: 0, valid: true, lockedCount: 0 };
 
-        const sizes = teamUtil.getTeamDistribution(list.length, ev);
+        // 고정된 참가자는 지금 팀에 그대로 두고 나머지만 다시 섞는다
+        const locked = list.filter(p => p.locked && p.team_num);
+        const maxSize = teamUtil.maxTeamSize(ev);
+        let sizes = teamUtil.getTeamDistribution(list.length, ev);
+
+        if (locked.length) {
+            // 고정된 사람이 있는 팀 번호까지 팀 수를 늘려준다
+            const maxLockedTeam = Math.max(...locked.map(p => p.team_num));
+            while (sizes.length < maxLockedTeam) sizes.push(0);
+            sizes = teamUtil.adjustSizesForLocks(sizes, teamUtil.countLockedByTeam(locked), maxSize);
+        }
+
         const teams = mode === 'tier'
-            ? teamUtil.distributeByTier(list, sizes)
-            : teamUtil.distributeRandom(list, sizes);
+            ? teamUtil.distributeByTier(list, sizes, locked)
+            : teamUtil.distributeRandom(list, sizes, locked);
 
         const valid = teamUtil.validateTeamDistribution(teams, list, ev, sizes);
 
@@ -148,8 +182,9 @@ module.exports = {
 
         return {
             teamCount: teams.length,
-            sizes,
+            sizes: teams.map(t => t.length),
             noTierCount: list.filter(p => !p.tier).length,
+            lockedCount: locked.length,
             valid,
         };
     },
@@ -315,7 +350,7 @@ module.exports = {
         const data = load();
         Object.values(data.participants)
             .filter(p => p.event_id === eventId)
-            .forEach(p => { p.team_num = null; });
+            .forEach(p => { p.team_num = null; p.locked = false; });   // 팀이 풀리면 고정도 의미가 없다
         save(data);
     },
 

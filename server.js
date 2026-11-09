@@ -333,14 +333,32 @@ app.get('/api/admin/team-plan', (req, res) => {
     const ev = db.getEvent(event);
     const participants = db.getParticipants(event);
     const sizes = teamUtil.getTeamDistribution(participants.length, ev);
+    const lockedCount = participants.filter(p => p.locked && p.team_num).length;
     res.json({
         count: participants.length,
         sizes,
         teamCount: sizes.length,
         maxTeamSize: teamUtil.maxTeamSize(ev),
         noTierCount: participants.filter(p => !p.tier).length,
+        lockedCount,
         text: teamUtil.describeDistribution(sizes, participants.length),
     });
+});
+
+// POST /api/admin/lock-member — 팀 고정 켜기/끄기
+app.post('/api/admin/lock-member', (req, res) => {
+    const { event, token, cancel_token, locked } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const r = db.setMemberLock(cancel_token, !!locked);
+    if (r.error) return res.status(400).json(r);
+    res.json(r);
+});
+
+// POST /api/admin/clear-locks — 전체 고정 해제
+app.post('/api/admin/clear-locks', (req, res) => {
+    const { event, token } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    res.json({ success: true, cleared: db.clearMemberLocks(event) });
 });
 
 // POST /api/admin/assign  { event, token, cancel_token, team_num }

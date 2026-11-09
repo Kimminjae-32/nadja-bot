@@ -81,6 +81,46 @@ function getTeamDistribution(participantCount, ev) {
     return Array.from({ length: teamCount }, (_, i) => base + (i < rest ? 1 : 0));
 }
 
+/**
+ * 고정(잠금)된 참가자를 반영해 팀별 목표 인원을 다시 맞춘다.
+ * 고정 인원이 많은 팀은 그만큼 자리를 확보하고, 남는 인원은 다른 팀에서 덜어낸다.
+ * @param sizes 고정을 고려하지 않은 기본 목표 인원
+ * @param lockedCounts { 팀번호: 고정 인원수 }
+ */
+function adjustSizesForLocks(sizes, lockedCounts, maxSize) {
+    const target = [...sizes];
+    const total = sizes.reduce((a, b) => a + b, 0);
+    const lockedOf = i => lockedCounts[i + 1] ?? 0;
+
+    // 1) 고정 인원보다 목표가 작은 팀은 고정 인원만큼 올린다
+    for (let i = 0; i < target.length; i++) target[i] = Math.max(target[i], lockedOf(i));
+
+    // 2) 총합이 넘치면 여유가 있는 팀(목표 > 고정)에서 가장 큰 팀부터 하나씩 덜어낸다
+    const sum = () => target.reduce((a, b) => a + b, 0);
+    let guard = target.length * maxSize + 10;
+    while (sum() > total && guard-- > 0) {
+        let pick = -1;
+        for (let i = 0; i < target.length; i++) {
+            if (target[i] <= lockedOf(i)) continue;
+            if (pick < 0 || target[i] > target[pick]) pick = i;
+        }
+        if (pick < 0) break;
+        target[pick] -= 1;
+    }
+    // 3) 모자라면 최대 인원에 여유가 있는 팀 중 가장 작은 팀부터 채운다
+    guard = target.length * maxSize + 10;
+    while (sum() < total && guard-- > 0) {
+        let pick = -1;
+        for (let i = 0; i < target.length; i++) {
+            if (target[i] >= maxSize) continue;
+            if (pick < 0 || target[i] < target[pick]) pick = i;
+        }
+        if (pick < 0) break;
+        target[pick] += 1;
+    }
+    return target;
+}
+
 // 사람이 읽을 수 있는 분배 설명 — 예) "21명 · 7팀 × 3명" / "17명 · 6팀 (3/3/3/3/3/2)"
 function describeDistribution(sizes, count) {
     if (!sizes.length) return `${count || 0}명 · 배정할 참가자가 없어요`;
@@ -93,12 +133,24 @@ function describeDistribution(sizes, count) {
 const shuffled = arr => [...arr].sort(() => Math.random() - 0.5);
 
 // 목표 인원에 맞춰 무작위 배정
-function distributeRandom(participants, sizes) {
+function distributeRandom(participants, sizes, locked = []) {
     const teams = sizes.map(() => []);
-    const pool = shuffled(participants);
+    const lockedSet = new Set(locked.map(p => p.cancel_token));
+
+    // 고정된 참가자는 원래 팀에 먼저 넣는다
+    for (const p of locked) {
+        const i = p.team_num - 1;
+        if (teams[i]) teams[i].push(p);
+    }
+    const pool = shuffled(participants.filter(p => !lockedSet.has(p.cancel_token)));
     let idx = 0;
     for (let t = 0; t < sizes.length; t++) {
-        for (let n = 0; n < sizes[t] && idx < pool.length; n++) teams[t].push(pool[idx++]);
+        while (teams[t].length < sizes[t] && idx < pool.length) teams[t].push(pool[idx++]);
+    }
+    // 목표를 채우고도 남은 사람은 자리가 있는 팀에 넣는다 (고정 때문에 생길 수 있다)
+    while (idx < pool.length) {
+        const t = teams.reduce((best, team, i) => team.length < teams[best].length ? i : best, 0);
+        teams[t].push(pool[idx++]);
     }
     return teams;
 }
@@ -110,14 +162,23 @@ function distributeRandom(participants, sizes) {
  * 3) 합계가 같은 팀이 여러 개면 무작위로 고름
  * 같은 티어끼리 순서를 섞기 때문에 실행할 때마다 조합은 달라지지만, 팀 간 실력 차는 크게 벌어지지 않는다.
  */
-function distributeByTier(participants, sizes) {
+function distributeByTier(participants, sizes, locked = []) {
     const avg = averageTierValue(participants);
-    const scored = shuffled(participants)
+    const lockedSet = new Set(locked.map(p => p.cancel_token));
+    const scored = shuffled(participants.filter(p => !lockedSet.has(p.cancel_token)))
         .map(p => ({ p, score: tierScore(p, avg) }))
         .sort((a, b) => b.score - a.score);       // 동점은 위에서 섞인 순서 유지
 
     const teams = sizes.map(() => []);
     const sums  = sizes.map(() => 0);
+
+    // 고정된 참가자를 먼저 배치하고 그 실력도 팀 합계에 반영한다
+    for (const p of locked) {
+        const i = p.team_num - 1;
+        if (!teams[i]) continue;
+        teams[i].push(p);
+        sums[i] += tierScore(p, avg);
+    }
 
     for (const { p, score } of scored) {
         let best = [], bestSum = Infinity;
@@ -126,12 +187,29 @@ function distributeByTier(participants, sizes) {
             if (sums[t] < bestSum - 1e-9) { bestSum = sums[t]; best = [t]; }
             else if (Math.abs(sums[t] - bestSum) <= 1e-9) best.push(t);
         }
-        if (!best.length) break;                              // 자리가 없으면 중단 (검증에서 걸림)
+        if (!best.length) {
+            // 고정 인원 때문에 목표가 꽉 찼다면 최대 인원에 여유가 있는 팀 중 가장 약한 팀에 넣는다
+            let fallback = -1;
+            for (let t = 0; t < teams.length; t++) {
+                if (fallback < 0 || sums[t] < sums[fallback]) fallback = t;
+            }
+            if (fallback < 0) break;
+            teams[fallback].push(p);
+            sums[fallback] += score;
+            continue;
+        }
         const pick = best[Math.floor(Math.random() * best.length)];
         teams[pick].push(p);
         sums[pick] += score;
     }
     return teams;
+}
+
+// 고정된 참가자 목록에서 팀별 고정 인원수를 센다
+function countLockedByTeam(locked) {
+    const counts = {};
+    for (const p of locked) if (p.team_num) counts[p.team_num] = (counts[p.team_num] ?? 0) + 1;
+    return counts;
 }
 
 // 팀 평균 티어 — { value, name } (표시용)
@@ -180,6 +258,6 @@ function validateTeamDistribution(teams, participants, ev, sizes) {
 module.exports = {
     MAX_TEAM_SIZE, LUMIA_MAX_TEAMS, TIER_VALUE, TIER_NAME_BY_VALUE,
     maxTeamSize, tierScore, averageTierValue, teamAverageTier,
-    getTeamDistribution, describeDistribution,
+    getTeamDistribution, describeDistribution, adjustSizesForLocks, countLockedByTeam,
     distributeRandom, distributeByTier, validateTeamDistribution,
 };

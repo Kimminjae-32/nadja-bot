@@ -56,6 +56,23 @@
         .toast.error{background:var(--accent);}
         select option{background:#1a1a2e;}
 
+        /* ── 팀 고정 ── */
+        .member-item{position:relative;}
+        .member-row{display:flex;align-items:flex-start;gap:.4rem;}
+        .member-row > div:first-child{flex:1;min-width:0;}
+        .lock-btn{
+            flex:none;width:26px;height:26px;border-radius:6px;cursor:pointer;
+            background:transparent;border:1px solid var(--border);color:var(--muted);
+            display:flex;align-items:center;justify-content:center;padding:0;
+            transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease;
+        }
+        .lock-btn:hover{border-color:var(--accent);color:var(--text);transform:translateY(-1px);}
+        .lock-btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;
+            stroke-linecap:round;stroke-linejoin:round;}
+        .lock-btn.on{background:rgba(241,196,15,.16);border-color:#f1c40f;color:#f1c40f;}
+        .member-item.locked{background:rgba(241,196,15,.06);border-radius:7px;}
+        .lock-summary{font-size:.78rem;color:#f1c40f;margin-left:.3rem;}
+
         /* ── 저쪽 신사분이 주신 겁니다 ── */
         .gm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.6rem;}
         .gm-team{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:.6rem .7rem;
@@ -181,7 +198,11 @@
     </div>
 
     <div id="view-teams" style="display:none">
-        <div class="teams-hint">참가자를 끌어서 다른 팀 카드에 놓으면 팀이 바뀝니다</div>
+        <div class="teams-hint" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+            <span>참가자를 끌어서 다른 팀 카드에 놓으면 팀이 바뀝니다. 자물쇠를 누르면 그 팀에 고정되어 다시 섞어도 남습니다.</span>
+            <span id="lock-count" class="lock-summary"></span>
+            <button class="btn btn-secondary btn-sm" style="padding:.2rem .5rem;font-size:.72rem" onclick="clearAllLocks()">고정 전체 해제</button>
+        </div>
         <div class="teams-grid" id="teams-grid"></div>
     </div>
 
@@ -537,10 +558,15 @@ function renderTeams(){
         html+=`<div class="team-card" data-team="${i}"><h3 style="color:${color}">${i}팀 (${teams[i].length}명)${avgLabel?`<span style="float:right;font-size:.72rem;font-weight:400;color:var(--muted)">평균 ${esc(avgLabel)}</span>`:''}</h3>`;
         if(!teams[i].length) html+='<p style="color:var(--muted);font-size:.85rem">없음</p>';
         for(const p of teams[i]) html+=`
-            <div class="member-item" draggable="true" data-token="${esc(p.cancel_token)}">
-                <div class="member-name">${esc(p.discord_nickname)}</div>
-                <div class="member-sub">${esc(p.ingame_nickname)}${p.tier?` · ${tierImg(p.tier)}${esc(p.tier)}`:''}${p.position?` · ${posImg(p.position)}${esc(p.position)}`:''}</div>
-                ${p.main_characters?.length?`<div style="font-size:.76rem;color:var(--muted);margin-top:.15rem">${p.main_characters.map(c=>esc(c)).join(' · ')}</div>`:''}
+            <div class="member-item${p.locked?' locked':''}" draggable="${p.locked?'false':'true'}" data-token="${esc(p.cancel_token)}">
+                <div class="member-row">
+                    <div>
+                        <div class="member-name">${esc(p.discord_nickname)}</div>
+                        <div class="member-sub">${esc(p.ingame_nickname)}${p.tier?` · ${tierImg(p.tier)}${esc(p.tier)}`:''}${p.position?` · ${posImg(p.position)}${esc(p.position)}`:''}</div>
+                        ${p.main_characters?.length?`<div style="font-size:.76rem;color:var(--muted);margin-top:.15rem">${p.main_characters.map(c=>esc(c)).join(' · ')}</div>`:''}
+                    </div>
+                    ${lockButton(p)}
+                </div>
             </div>`;
         html+='</div>';
     }
@@ -550,14 +576,48 @@ function renderTeams(){
     for(const p of unassigned) html+=`<div class="member-item" draggable="true" data-token="${esc(p.cancel_token)}"><div class="member-name">${esc(p.discord_nickname)}</div></div>`;
     html+='</div>';
     grid.innerHTML = html || '<p style="color:var(--muted)">참가자가 없어요</p>';
+    const lockedCount = participants.filter(p=>p.locked).length;
+    const lc = document.getElementById('lock-count');
+    if(lc) lc.textContent = lockedCount ? `고정 ${lockedCount}명` : '';
     bindTeamDragDrop();
+}
+
+// ── 팀 고정 ──
+// 고정한 참가자는 자동 배정·팀 섞기에서 지금 팀에 그대로 남는다
+const LOCK_ICON_ON  = '<svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const LOCK_ICON_OFF = '<svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>';
+
+function lockButton(p){
+    return `<button class="lock-btn${p.locked?' on':''}" title="${p.locked?'고정 해제 — 다시 섞을 때 팀이 바뀝니다':'이 팀에 고정 — 다시 섞어도 그대로 남습니다'}"
+        onclick="event.stopPropagation();toggleLock('${esc(p.cancel_token)}',${p.locked?'false':'true'})">${p.locked?LOCK_ICON_ON:LOCK_ICON_OFF}</button>`;
+}
+
+async function toggleLock(cancelToken, locked){
+    const data = await api('/api/admin/lock-member', { event:EVENT, token:TOKEN, cancel_token:cancelToken, locked: locked === true || locked === 'true' });
+    if(data.error){ toast(data.error, true); return; }
+    const p = participants.find(x=>x.cancel_token===cancelToken);
+    if(p) p.locked = data.locked;
+    render();
+    refreshTeamPlan();
+}
+
+async function clearAllLocks(){
+    const n = participants.filter(p=>p.locked).length;
+    if(!n){ toast('고정된 참가자가 없어요'); return; }
+    if(!confirm(`고정 ${n}명을 모두 해제할까요?`)) return;
+    const data = await api('/api/admin/clear-locks', { event:EVENT, token:TOKEN });
+    if(data.error){ toast(data.error, true); return; }
+    participants.forEach(p=>{ p.locked = false; });
+    render();
+    refreshTeamPlan();
+    toast(`고정 ${data.cleared}명 해제`);
 }
 
 // ── 팀별 보기 드래그&드롭 ──
 let _dragToken = null;
 function bindTeamDragDrop(){
     const grid = document.getElementById('teams-grid');
-    grid.querySelectorAll('.member-item[draggable="true"]').forEach(el=>{
+    grid.querySelectorAll('.member-item[draggable="true"]').forEach(el=>{   // 고정된 참가자는 draggable="false"라 제외된다
         el.addEventListener('dragstart', e=>{
             _dragToken = el.dataset.token;
             el.classList.add('dragging');
@@ -592,8 +652,12 @@ async function assignTeam(cancelToken, teamNum){
     const data = await api('/api/admin/assign', { event:EVENT, token:TOKEN, cancel_token:cancelToken, team_num:teamNum });
     if(data?.error){ toast(data.error, true); render(); return; }   // 최대 인원 초과 등
     const p = participants.find(x=>x.cancel_token===cancelToken);
-    if(p) p.team_num = teamNum===''? null : Number(teamNum);
+    if(p){
+        p.team_num = teamNum===''? null : Number(teamNum);
+        if(p.team_num === null) p.locked = false;   // 미배정으로 빼면 서버와 함께 고정도 풀린다
+    }
     render();
+    refreshTeamPlan();
     toast('팀 배정 저장됨');
 }
 
@@ -658,7 +722,8 @@ async function refreshTeamPlan(){
     const d = await api(`/api/admin/team-plan?event=${EVENT}&token=${TOKEN}`).catch(()=>null);
     if(!d || d.error){ el.textContent=''; return; }
     const warn = d.noTierCount ? ` · 티어 미설정 ${d.noTierCount}명` : '';
-    el.textContent = d.count ? `${d.text}${warn}` : '참가자가 없어요';
+    const lock = d.lockedCount ? ` · 고정 ${d.lockedCount}명` : '';
+    el.textContent = d.count ? `${d.text}${lock}${warn}` : '참가자가 없어요';
 }
 
 // ── 저쪽 신사분이 주신 겁니다 ──────────────────────────
@@ -1172,8 +1237,9 @@ function shuffleResultMsg(data, label){
     const sizes = data.sizes || [];
     const uniform = sizes.length && sizes.every(x=>x===sizes[0]);
     const detail = uniform ? `${sizes.length}팀 × ${sizes[0]}명` : `${sizes.length}팀 (${sizes.join('/')})`;
+    const lock = data.lockedCount ? ` · 고정 ${data.lockedCount}명 유지` : '';
     const warn = data.noTierCount ? ` · 티어 미설정 ${data.noTierCount}명은 평균으로 계산` : '';
-    return `${label} 완료 — ${detail}${warn}`;
+    return `${label} 완료 — ${detail}${lock}${warn}`;
 }
 
 async function runShuffle(kind){
@@ -1183,7 +1249,9 @@ async function runShuffle(kind){
     const warn = plan?.noTierCount ? `\n티어 미설정 ${plan.noTierCount}명은 평균 티어로 계산합니다.` : '';
     const label = kind==='tier' ? '티어 밸런스 배정' : '자동 배정';
     const extra = kind==='tier' ? '\n(실력이 한쪽에 몰리지 않도록 나눕니다)' : '';
-    if(!confirm(`${planText} 으로 ${label}할까요?${extra}${kind==='tier'?warn:''}`)) return;
+    const lockedNow = participants.filter(p=>p.locked).length;
+    const lockMsg = lockedNow ? `\n고정된 ${lockedNow}명은 지금 팀에 그대로 둡니다.` : '';
+    if(!confirm(`${planText} 으로 ${label}할까요?${extra}${lockMsg}${kind==='tier'?warn:''}`)) return;
 
     const btn = document.getElementById(kind==='tier' ? 'shuffle-tier-btn' : 'shuffle-btn');
     btn.disabled=true;
