@@ -56,7 +56,8 @@ const commands = [
             .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (HH:mm, 예: 20:00)').setRequired(false)))
         .addSubcommand(sub => sub
             .setName('코발트')
-            .setDescription('코발트 내전 (4vs4 고정)')
+            .setDescription('코발트 내전 (기본 4vs4, 이벤트용 최대 32명 모집)')
+            .addIntegerOption(opt => opt.setName('최대인원').setDescription('최대 참가 인원 (기본 8명, 최대 32명 · 실제 진행 인원은 관리자 페이지에서 선택)').setRequired(false).setMinValue(4).setMaxValue(32))
             .addStringOption(opt => opt.setName('날짜').setDescription('진행 날짜 (YYYY-MM-DD, 예: 2026-10-02 / 미입력 시 오늘)').setRequired(false))
             .addStringOption(opt => opt.setName('시간').setDescription('시작 시간 (HH:mm, 예: 20:00)').setRequired(false)))
         .addSubcommand(sub => sub

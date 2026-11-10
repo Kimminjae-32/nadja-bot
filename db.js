@@ -11,6 +11,9 @@ function load() {
     return { events: {}, participants: {} };
 }
 
+// 실제 진행 참가자 여부 — 값이 없으면(이전 데이터·새 신청자) 진행 대상으로 본다
+const isActive = p => p.active !== false;
+
 function save(data) {
     // 임시 파일에 먼저 기록한 뒤 교체한다. 쓰기 도중 중단돼도 기존 파일이 손상되지 않는다.
     const tmp = DB_PATH + '.tmp';
@@ -108,6 +111,8 @@ module.exports = {
 
         if (teamNum != null) {
             const ev = data.events[p.event_id];
+            const teamCount = ev?.teamCount || 2;
+            if (teamNum < 1 || teamNum > teamCount) return { error: `${teamNum}팀은 없어요. (현재 ${teamCount}팀)` };
             const max = teamUtil.maxTeamSize(ev);
             const current = Object.values(data.participants)
                 .filter(x => x.event_id === p.event_id && x.team_num === teamNum && x.cancel_token !== token).length;
@@ -116,8 +121,62 @@ module.exports = {
         }
         p.team_num = teamNum;
         if (teamNum == null) p.locked = false;      // 미배정으로 빼면 고정도 푼다
+        else p.active = true;                       // 직접 팀에 넣은 사람은 실제 진행 인원으로 본다
         save(data);
         return { success: true };
+    },
+
+    // ── 실제 진행 인원 ─────────────────────────────
+    // 모집 인원과 실제로 팀을 짜서 진행할 인원을 분리한다. 빠진 사람도 신청 기록은 그대로 남는다.
+    isActive,
+
+    /**
+     * 실제 진행할 참가자를 정한다. activeTokens에 없는 사람은 팀 미지정으로 돌린다 (신청은 유지).
+     * @returns { activeCount, inactiveCount, unassignedCount }
+     */
+    setActiveParticipants(eventId, activeTokens) {
+        const data = load();
+        if (!data.events[eventId]) return { error: '이벤트를 찾을 수 없어요.' };
+        const keep = new Set(activeTokens ?? []);
+        const list = Object.values(data.participants).filter(p => p.event_id === eventId);
+        for (const p of list) {
+            p.active = keep.has(p.cancel_token);
+            if (!p.active) { p.team_num = null; p.locked = false; }
+        }
+        save(data);
+        const active = list.filter(isActive);
+        return {
+            success: true,
+            activeCount: active.length,
+            inactiveCount: list.length - active.length,
+            unassignedCount: list.filter(p => !p.team_num).length,
+        };
+    },
+
+    /**
+     * 관리자가 팀 수를 직접 정한다. 이후 자동 배정은 이 팀 수를 그대로 쓴다.
+     * 줄어든 팀에 있던 참가자는 팀 미지정으로 돌려서 없는 팀 번호가 남지 않게 한다.
+     */
+    setManualTeamCount(eventId, teamCount) {
+        const data = load();
+        const ev = data.events[eventId];
+        if (!ev) return { error: '이벤트를 찾을 수 없어요.' };
+        const t = Math.floor(Number(teamCount));
+        if (!Number.isFinite(t) || t < 1 || t > teamUtil.MAX_TEAMS) return { error: `팀 수는 1~${teamUtil.MAX_TEAMS}팀 사이로 정해주세요.` };
+        ev.teamCount = t;
+        ev.teamCountManual = true;
+        let cleared = 0;
+        for (const p of Object.values(data.participants)) {
+            if (p.event_id === eventId && p.team_num && p.team_num > t) { p.team_num = null; p.locked = false; cleared += 1; }
+        }
+        save(data);
+        return { success: true, teamCount: t, cleared };
+    },
+
+    // 모집 정원 — 실제 진행 인원·팀 수와 별개로 보관한다
+    setMaxPlayers(eventId, maxPlayers) {
+        const data = load();
+        if (data.events[eventId] && Number.isFinite(maxPlayers)) { data.events[eventId].maxPlayers = maxPlayers; save(data); }
     },
 
     // 팀 고정 — 켜두면 다시 섞어도 지금 팀에 그대로 남는다
@@ -150,18 +209,27 @@ module.exports = {
 
     // 팀 배정 공통 — mode: 'random' | 'tier'
     // 팀 수와 팀별 인원은 teams.js가 정하고(맵별 최대 인원 준수), 결과는 검증까지 거친다.
+    // 배정 대상은 실제 진행 인원(active)뿐이다. 빠진 사람은 팀 미지정으로 남는다.
+    // 관리자가 팀 수를 정했으면(teamCountManual) 그 팀 수에 균등하게 나누고, 불가능하면 아무것도 바꾸지 않고 이유를 돌려준다.
     assignTeams(eventId, mode) {
         const data = load();
         const ev   = data.events[eventId];
-        const list = Object.values(data.participants).filter(p => p.event_id === eventId);
-        if (!list.length) return { teamCount: 0, sizes: [], noTierCount: 0, valid: true, lockedCount: 0 };
+        const all  = Object.values(data.participants).filter(p => p.event_id === eventId);
+        const list = all.filter(isActive);
+        const inactiveCount = all.length - list.length;
+        if (!list.length) return { error: '실제 진행할 참가자를 먼저 선택해주세요.' };
 
-        // 고정된 참가자는 지금 팀에 그대로 두고 나머지만 다시 섞는다
-        const locked = list.filter(p => p.locked && p.team_num);
+        const plan = teamUtil.planTeams(list.length, ev, ev?.teamCountManual ? ev.teamCount : null);
+        if (plan.error) return { error: plan.error, range: plan.range };
+
+        // 고정된 참가자는 지금 팀에 그대로 두고 나머지만 다시 섞는다 (없는 팀 번호에 고정된 경우는 풀어준다)
+        const locked = list.filter(p => p.locked && p.team_num && (!plan.manual || p.team_num <= plan.teamCount));
         const maxSize = teamUtil.maxTeamSize(ev);
-        let sizes = teamUtil.getTeamDistribution(list.length, ev);
+        let sizes = plan.sizes;
 
-        if (locked.length) {
+        if (locked.length && plan.manual) {
+            sizes = teamUtil.adjustSizesForLocks(sizes, teamUtil.countLockedByTeam(locked), maxSize);
+        } else if (locked.length) {
             // 고정된 사람이 있는 팀 번호까지 팀 수를 늘려준다
             const maxLockedTeam = Math.max(...locked.map(p => p.team_num));
             while (sizes.length < maxLockedTeam) sizes.push(0);
@@ -173,7 +241,13 @@ module.exports = {
             : teamUtil.distributeRandom(list, sizes, locked);
 
         const valid = teamUtil.validateTeamDistribution(teams, list, ev, sizes);
+        if (!valid) return { error: '팀 배정 결과를 검증하지 못해 저장하지 않았어요. 서버 로그를 확인해주세요.', valid: false };
 
+        const lockedSet = new Set(locked.map(p => p.cancel_token));
+        for (const p of all) {
+            if (!isActive(p)) { p.team_num = null; p.locked = false; }
+            else if (p.locked && !lockedSet.has(p.cancel_token)) p.locked = false;
+        }
         teams.forEach((team, i) => {
             for (const p of team) data.participants[p.cancel_token].team_num = i + 1;
         });
@@ -183,6 +257,9 @@ module.exports = {
         return {
             teamCount: teams.length,
             sizes: teams.map(t => t.length),
+            activeCount: list.length,
+            inactiveCount,
+            manual: !!plan.manual,
             noTierCount: list.filter(p => !p.tier).length,
             lockedCount: locked.length,
             valid,
@@ -312,9 +389,17 @@ module.exports = {
         if (data.events[eventId]) { data.events[eventId].gameType = gameType; save(data); }
     },
 
+    // 맵 변경 등으로 팀 수가 정해질 때 — 직접 지정한 팀 수는 풀고, 없어진 팀 번호는 미지정으로 돌린다
     updateEventTeamCount(eventId, teamCount) {
         const data = load();
-        if (data.events[eventId]) { data.events[eventId].teamCount = teamCount; save(data); }
+        const ev = data.events[eventId];
+        if (!ev) return;
+        ev.teamCount = teamCount;
+        ev.teamCountManual = false;
+        for (const p of Object.values(data.participants)) {
+            if (p.event_id === eventId && p.team_num && p.team_num > teamCount) { p.team_num = null; p.locked = false; }
+        }
+        save(data);
     },
 
     // 구인 일정(게임 시작·만료 시각) 저장 — 보관/복구 시에도 유지되도록 이벤트에 함께 기록

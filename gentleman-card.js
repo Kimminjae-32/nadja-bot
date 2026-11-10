@@ -4,22 +4,46 @@
 const { createCanvas } = require('@napi-rs/canvas');
 const { CHAR_EN, DAK_VER } = require('./constants');
 const rc = require('./result-card');
+const W = require('./character-weapons');
 
 const TEAM_COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#95a5a6', '#1abc9c'];
 const BG = '#0f0f1a', CARD = '#1a1a2e', LINE = '#2a2a4a', TEXT = '#e0e0f0', MUTED = '#8888aa';
 
 const teamColor = n => TEAM_COLORS[(Number(n) - 1) % TEAM_COLORS.length] || '#5865F2';
-const charUrl = name => {
-    const en = CHAR_EN[name];
+// 값은 후보 ID("1:15")·표시 이름("단검 재키")·실험체 이름 모두 받는다
+const charKey = value => CHAR_EN[W.describe(value)?.characterName];
+const charUrl = value => {
+    const en = charKey(value);
     return en ? `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharResult_${en}_S000.png` : null;
 };
+const weaponIconUrl = key => `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/Ico_Ability_${key}.png`;
+
+// 무기군 배지 — 같은 초상화라도 다른 후보임을 한눈에 구분하게 한다
+async function drawWeaponBadge(ctx, F, x, y, info, size) {
+    if (!info?.weaponName) return;
+    const icon = await rc.cachedImg(`weapon_${info.weaponKey}`, weaponIconUrl(info.weaponKey));
+    ctx.font = `bold ${size}px ${F}`;
+    const pad = Math.round(size * 0.45), iconS = Math.round(size * 1.25);
+    const textW = ctx.measureText(info.weaponName).width;
+    const bw = pad * 2 + (icon ? iconS + pad * 0.6 : 0) + textW, bh = iconS + pad;
+    ctx.fillStyle = 'rgba(10,10,20,0.78)';
+    rc.roundedRect(ctx, x, y, bw, bh, bh / 2); ctx.fill();
+    let tx = x + pad;
+    if (icon) { ctx.drawImage(icon, tx, y + (bh - iconS) / 2, iconS, iconS); tx += iconS + pad * 0.6; }
+    ctx.fillStyle = '#ffd479';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(info.weaponName, tx, y + bh / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+}
 
 // 실험체 초상화 타일 하나를 그린다 (이미지가 없어도 자리와 이름은 유지된다)
-async function drawCharTile(ctx, F, x, y, w, h, name, { dim = false, label = null, color = LINE } = {}) {
+async function drawCharTile(ctx, F, x, y, w, h, value, { dim = false, label = null, color = LINE } = {}) {
     ctx.fillStyle = CARD;
     rc.roundedRect(ctx, x, y, w, h, 8); ctx.fill();
 
-    const img = name ? await rc.cachedImg(`result_${CHAR_EN[name]}`, charUrl(name)) : null;
+    const info = value != null ? W.describe(value) : null;
+    const name = info?.characterName ?? null;
+    const img = name ? await rc.cachedImg(`result_${charKey(value)}`, charUrl(value)) : null;
     ctx.save();
     rc.roundedRect(ctx, x, y, w, h, 8); ctx.clip();
     if (img) {
@@ -42,6 +66,7 @@ async function drawCharTile(ctx, F, x, y, w, h, name, { dim = false, label = nul
         ctx.fillText(rc.fitText(ctx, label, w - 20), x + 12, y + h - 14 - Math.round(h * 0.16));
     }
     ctx.restore();
+    await drawWeaponBadge(ctx, F, x + 10, y + 10, info, Math.round(h * 0.085));
 
     ctx.strokeStyle = color;
     ctx.lineWidth = dim ? 1.5 : 3;
@@ -56,7 +81,7 @@ async function generateGiftCard(teamNum, assignment, teamName) {
     const F = await rc.fontFamily();
 
     const TILE_W = 300, TILE_H = 238, GAP = 14, PAD = 28;
-    const HEAD_H = 150, NAME_H = 46, FOOT_H = assignment.leftover.length ? 150 : PAD;
+    const HEAD_H = 150, NAME_H = 46, FOOT_H = assignment.leftover.length ? 172 : PAD;
     const cols = Math.max(1, Math.min(assignment.members.length, 4));
     const rows = Math.ceil(assignment.members.length / cols);
 
@@ -101,9 +126,9 @@ async function generateGiftCard(teamNum, assignment, teamName) {
         ctx.fillStyle = MUTED;
         ctx.fillText('미배정 실험체 · 사용 불가', PAD, fy + 24);
 
-        const SW = 108, SH = 86;
+        const SW = 156, SH = 100;     // 무기군이 붙은 이름(예: 레이피어 피오라)이 잘리지 않을 만큼
         // 동기로 그리기 전에 이미지를 미리 받아 캐시에 넣는다
-        await Promise.all(assignment.leftover.map(n => rc.cachedImg(`result_${CHAR_EN[n]}`, charUrl(n))));
+        await Promise.all(assignment.leftover.map(n => rc.cachedImg(`result_${charKey(n)}`, charUrl(n))));
         assignment.leftover.forEach((name, k) => {
             drawCharTileSync(ctx, F, PAD + k * (SW + 10), fy + 38, SW, SH, name);
         });
@@ -112,10 +137,11 @@ async function generateGiftCard(teamNum, assignment, teamName) {
 }
 
 // 미배정 칸은 이미 캐시된 이미지만 쓰므로 동기로 그린다
-function drawCharTileSync(ctx, F, x, y, w, h, name) {
+function drawCharTileSync(ctx, F, x, y, w, h, value) {
     ctx.fillStyle = CARD;
     rc.roundedRect(ctx, x, y, w, h, 6); ctx.fill();
-    const img = rc.peekImg(`result_${CHAR_EN[name]}`);
+    const name = W.describe(value)?.displayName ?? String(value);
+    const img = rc.peekImg(`result_${charKey(value)}`);
     ctx.save();
     rc.roundedRect(ctx, x, y, w, h, 6); ctx.clip();
     if (img) { ctx.globalAlpha = 0.3; ctx.drawImage(img, x, y, w, h); ctx.globalAlpha = 1; }
@@ -126,6 +152,14 @@ function drawCharTileSync(ctx, F, x, y, w, h, name) {
     ctx.restore();
     ctx.strokeStyle = LINE; ctx.lineWidth = 1.5;
     rc.roundedRect(ctx, x, y, w, h, 6); ctx.stroke();
+}
+
+/** i번째 칸의 x 좌표 — 각 줄(마지막 줄 포함)을 캔버스 가운데에 맞춘다. */
+function centeredX(W, i, count, cols, itemW, gap) {
+    const row = Math.floor(i / cols);
+    const inRow = Math.min(cols, count - row * cols);
+    const rowW = inRow * itemW + (inRow - 1) * gap;
+    return (W - rowW) / 2 + (i % cols) * (itemW + gap);
 }
 
 /**
@@ -162,7 +196,7 @@ async function generateWinnerCard(teamNum, teamName, members) {
 
     let i = 0;
     for (const m of members) {
-        const cx = PAD + (i % cols) * (AV + GAP);
+        const cx = centeredX(W, i, members.length, cols, AV, GAP);
         const cy = HEAD_H + Math.floor(i / cols) * (AV + NAME_H + GAP);
 
         const img = m.avatarUrl ? await rc.cachedImg(`avatar_${m.avatarUrl}`, m.avatarUrl) : null;
@@ -221,7 +255,7 @@ async function generateUnluckyCard(winners) {
 
     let i = 0;
     for (const w of winners) {
-        const cx = PAD + (i % cols) * (TILE_W + GAP);
+        const cx = centeredX(W, i, winners.length, cols, TILE_W, GAP);
         const cy = HEAD_H + Math.floor(i / cols) * (TILE_H + INFO_H + GAP);
         await drawCharTile(ctx, F, cx, cy, TILE_W, TILE_H, w.character, { color: '#e94560' });
 

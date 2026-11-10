@@ -1,15 +1,18 @@
 // 「저쪽 신사분이 주신 겁니다」 — 실험체 선물 드래프트 핵심 로직
 //
+// 후보는 "실험체 + 무기군" 조합의 ID(예: "1:15" = 단검 재키)로 저장한다. 표시 정보는 character-weapons.js가 만든다.
+//
 // 흐름: 드래프트 시작(팀별 후보 추첨) → 팀마다 4명 선택 후 확정 → 전 팀 확정 시 원형 교환
 //       → 받은 실험체를 팀원에게 무작위 배정 → 관리자가 결과 공지
 //
 // 이 파일은 순수 로직만 담당한다. 저장은 db.withGentleman 트랜잭션 안에서 호출하는 쪽이 처리한다.
 
-const { CHARACTERS } = require('./constants');
+const W = require('./character-weapons');
 
 const PICKS_PER_TEAM     = 4;                 // 팀마다 선물할 실험체 수
 const DEFAULT_CANDIDATES = 12;                // 팀당 기본 후보 수
 const MIN_CANDIDATES     = 4;                 // 이보다 적으면 드래프트를 시작할 수 없다
+const MIN_TEAM_MEMBERS   = 2;                 // 1명 팀은 선물 드래프트를 진행할 수 없다
 const LOCK_TTL_MS        = 90 * 1000;         // 선택 권한 유지 시간 (연결 신호가 끊기면 만료)
 
 // 단계: idle(시작 전) → drafting(선택 중) → assigned(배정 완료) → published(결과 공지) → closed(드래프트 종료)
@@ -69,20 +72,34 @@ function candidateCount(availableCount, teamCount) {
 
 /**
  * 드래프트를 시작한다. 팀마다 서로 겹치지 않는 후보를 무작위로 배정한다.
+ * 같은 실험체라도 무기군이 다르면 다른 후보이고, 밴은 실험체 단위로 모든 무기군에 적용된다.
+ * @param charPool 후보 ID 목록 (생략하면 전체 실험체 × 무기군 후보)
  * @returns { error } 또는 { state, perTeam, teamCount }
  */
-function startDraft(state, participants, bannedCharacters = [], charPool = CHARACTERS) {
+function startDraft(state, participants, bannedCharacters = [], charPool = null) {
     const teams = teamNumbers(participants);
     if (teams.length < 2) return { error: '팀이 2팀 이상이어야 드래프트를 시작할 수 있어요.' };
 
+    // 선물 드래프트는 2~4인 팀만 지원한다 (한 팀이 4명을 선물하고 받으므로)
+    const badTeams = teams
+        .map(t => ({ t, n: membersOfTeam(participants, t).length }))
+        .filter(x => x.n < MIN_TEAM_MEMBERS || x.n > PICKS_PER_TEAM);
+    if (badTeams.length) {
+        return {
+            error: `팀 인원이 맞지 않아 시작할 수 없어요: ${badTeams.map(x => `${x.t}팀 ${x.n}명`).join(', ')}. `
+                 + `한 팀은 ${MIN_TEAM_MEMBERS}~${PICKS_PER_TEAM}명이어야 해요. 팀 배정을 다시 해주세요.`,
+        };
+    }
+
     const banned    = new Set(bannedCharacters);
-    const available = charPool.filter(c => !banned.has(c));
+    const ids       = charPool ?? W.allCandidates().map(c => c.id);
+    const available = [...new Set(ids)].filter(id => !banned.has(W.describe(id).characterName));
     const perTeam   = candidateCount(available.length, teams.length);
 
     if (perTeam < MIN_CANDIDATES) {
         return {
             error: `후보가 팀당 ${perTeam}명뿐이라 시작할 수 없어요. `
-                 + `(사용 가능한 실험체 ${available.length}명 ÷ ${teams.length}팀, 최소 ${MIN_CANDIDATES}명 필요) `
+                 + `(사용 가능한 후보 ${available.length}개 ÷ ${teams.length}팀, 최소 ${MIN_CANDIDATES}명 필요) `
                  + `밴을 줄이거나 팀 수를 줄여주세요.`,
         };
     }
@@ -277,11 +294,16 @@ function finalizeAssignments(state, participants) {
         const members  = shuffle(membersOfTeam(participants, t));
         const pool     = shuffle(received);
 
-        const assigned = members.map((m, i) => ({
-            token:     m.cancel_token,
-            nickname:  m.discord_nickname,
-            character: pool[i] ?? null,          // 팀원이 4명보다 많으면 남는 사람은 없음 처리
-        }));
+        const assigned = members.map((m, i) => {
+            const info = pool[i] != null ? W.describe(pool[i]) : null;
+            return {
+                token:       m.cancel_token,
+                nickname:    m.discord_nickname,
+                character:   pool[i] ?? null,      // 후보 ID. 팀원이 4명보다 많으면 남는 사람은 없음 처리
+                displayName: info?.displayName ?? null,
+                weaponName:  info?.weaponName ?? null,
+            };
+        });
         const used     = assigned.map(a => a.character).filter(Boolean);
         const leftover = pool.filter(c => !used.includes(c));
 
@@ -343,6 +365,7 @@ function participantView(state, participant, participants) {
         phase: state.phase,
         teamNum: t,
         candidates: team.candidates,
+        candidateInfo: W.infoMap(team.candidates),     // 후보 ID → 실험체·무기군 표시 정보
         picksRequired: PICKS_PER_TEAM,
         confirmed: team.confirmed,
         rev: team.rev,

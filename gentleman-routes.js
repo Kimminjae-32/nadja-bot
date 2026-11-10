@@ -464,7 +464,7 @@ router.post('/admin/unlucky/publish', requireAdmin, async (req, res) => {
         return res.json({ success: true, noWinner: true, message: '0표로 마감되어 수상자가 없습니다. 결과 메시지는 보내지 않았어요.' });
     }
 
-    const winners = tally.winners.map(w => ({ token: w.token, nickname: w.nickname, character: w.character, fromTeam: w.fromTeam, votes: w.votes }));
+    const winners = tally.winners.map(w => ({ token: w.token, nickname: w.nickname, character: w.character, displayName: w.displayName ?? null, weaponName: w.weaponName ?? null, fromTeam: w.fromTeam, votes: w.votes }));
     let files = [];
     if (card) {
         try { files = [{ name: 'gentleman-unlucky.png', buffer: await card.generateUnluckyCard(winners) }]; }

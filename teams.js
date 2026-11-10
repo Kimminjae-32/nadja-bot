@@ -11,6 +11,8 @@ const MAX_TEAM_SIZE = {
 };
 const DEFAULT_MAX_TEAM_SIZE = 4;
 const LUMIA_MAX_TEAMS = 8;            // 루미아 섬은 최대 8팀 (기존 규칙)
+const MAX_TEAMS = 8;                  // 팀 이름·색이 8팀까지 있다 (관리자가 직접 정할 수 있는 최대 팀 수)
+const MIN_TEAM_SIZE = 2;              // 팀전에서 한 팀 최소 인원 — 1명 팀은 만들지 않는다
 
 // 티어 이름 → 점수 (constants.TIERS의 value를 그대로 사용)
 const TIER_VALUE = Object.fromEntries(TIERS.map(t => [t.name, t.value]));
@@ -21,6 +23,58 @@ const MAX_TIER_VALUE = Math.max(...TIERS.map(t => t.value));
 function maxTeamSize(ev) {
     if (ev?.gameType === '론울프') return 1;
     return MAX_TEAM_SIZE[ev?.mapType] ?? DEFAULT_MAX_TEAM_SIZE;
+}
+
+// 한 팀 최소 인원 — 론울프만 1명
+function minTeamSize(ev) {
+    return ev?.gameType === '론울프' ? 1 : MIN_TEAM_SIZE;
+}
+
+// 인원을 팀 수에 최대한 균등하게 나눈다 — 앞쪽 팀부터 1명씩 더 받는다. 예) 16명 · 5팀 → 4/3/3/3/3
+function evenSizes(count, teamCount) {
+    const n = Math.max(0, Math.floor(Number(count) || 0));
+    const t = Math.max(0, Math.floor(Number(teamCount) || 0));
+    if (!n || !t) return [];
+    const base = Math.floor(n / t), rest = n % t;
+    return Array.from({ length: t }, (_, i) => base + (i < rest ? 1 : 0));
+}
+
+/**
+ * 이 인원으로 가능한 팀 수 범위 — 최대 인원을 넘지 않고, 최소 인원보다 작은 팀이 생기지 않는 범위.
+ * @returns { min, max } (불가능하면 min > max)
+ */
+function teamCountRange(count, ev) {
+    const n = Math.max(0, Number(count) || 0);
+    const maxSize = maxTeamSize(ev), minSize = minTeamSize(ev);
+    const cap = ev?.gameType === '론울프' ? n : MAX_TEAMS;
+    return { min: Math.max(1, Math.ceil(n / maxSize)), max: Math.min(cap, Math.floor(n / minSize)) };
+}
+
+/**
+ * 팀 구성 계획 — 관리자가 팀 수를 정했으면 그 값을 그대로 쓰고, 아니면 기존 자동 결정을 쓴다.
+ * 정한 팀 수로 균등하게 나눌 수 없으면 팀 수를 바꾸지 않고 이유와 가능한 범위를 돌려준다.
+ * @returns { sizes, teamCount, manual } 또는 { error, range, manual }
+ */
+function planTeams(count, ev, manualTeamCount = null) {
+    const n = Math.max(0, Number(count) || 0);
+    if (manualTeamCount == null) {
+        const sizes = getTeamDistribution(n, ev);
+        return { sizes, teamCount: sizes.length, manual: false };
+    }
+    const t = Math.floor(Number(manualTeamCount));
+    const range = teamCountRange(n, ev);
+    const maxSize = maxTeamSize(ev), minSize = minTeamSize(ev);
+    if (!n) return { sizes: [], teamCount: t, manual: true };
+    if (!Number.isFinite(t) || t < 1) return { error: '팀 수가 올바르지 않아요.', range, manual: true };
+    const sizes = evenSizes(n, t);
+    const rangeText = range.min <= range.max ? `${range.min}~${range.max}팀` : '없음';
+    if (Math.max(...sizes) > maxSize)
+        return { error: `${n}명을 ${t}팀으로 나누면 한 팀이 ${Math.max(...sizes)}명이 되어 최대 ${maxSize}명을 넘어요. 가능한 팀 수: ${rangeText}`, range, manual: true };
+    if (Math.min(...sizes) < minSize)
+        return { error: `${n}명을 ${t}팀으로 나누면 ${Math.min(...sizes)}명뿐인 팀이 생겨요. 한 팀은 최소 ${minSize}명이어야 해요. 가능한 팀 수: ${rangeText}`, range, manual: true };
+    if (t > MAX_TEAMS && ev?.gameType !== '론울프')
+        return { error: `팀은 최대 ${MAX_TEAMS}팀까지 만들 수 있어요. 가능한 팀 수: ${rangeText}`, range, manual: true };
+    return { sizes, teamCount: t, manual: true };
 }
 
 // 티어 점수 — 티어(0~10)가 기준, 같은 티어 안에서는 MMR로 미세 조정
@@ -130,7 +184,15 @@ function describeDistribution(sizes, count) {
         : `${count}명 · ${sizes.length}팀 (${sizes.join('/')})`;
 }
 
-const shuffled = arr => [...arr].sort(() => Math.random() - 0.5);
+// Fisher-Yates — sort(() => Math.random() - 0.5)는 순서가 고르게 섞이지 않는다
+const shuffled = arr => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+};
 
 // 목표 인원에 맞춰 무작위 배정
 function distributeRandom(participants, sizes, locked = []) {
@@ -234,6 +296,7 @@ function validateTeamDistribution(teams, participants, ev, sizes) {
         if (!team.length) errors.push(`${i + 1}팀이 비어 있습니다.`);
         if (team.length > maxSize) errors.push(`${i + 1}팀 인원 ${team.length}명 — ${ev?.mapType || ev?.gameType} 최대 ${maxSize}명 초과`);
         if (sizes && team.length > sizes[i]) errors.push(`${i + 1}팀 인원 ${team.length}명 — 목표 ${sizes[i]}명 초과`);
+        if (sizes && team.length < sizes[i]) errors.push(`${i + 1}팀 인원 ${team.length}명 — 목표 ${sizes[i]}명 미달`);
         for (const p of team) {
             const prev = seen.get(p.cancel_token);
             if (prev != null) errors.push(`${p.discord_nickname}(이)가 ${prev + 1}팀과 ${i + 1}팀에 중복 배정됐습니다.`);
@@ -256,8 +319,8 @@ function validateTeamDistribution(teams, participants, ev, sizes) {
 }
 
 module.exports = {
-    MAX_TEAM_SIZE, LUMIA_MAX_TEAMS, TIER_VALUE, TIER_NAME_BY_VALUE,
-    maxTeamSize, tierScore, averageTierValue, teamAverageTier,
+    MAX_TEAM_SIZE, LUMIA_MAX_TEAMS, MAX_TEAMS, MIN_TEAM_SIZE, TIER_VALUE, TIER_NAME_BY_VALUE,
+    maxTeamSize, minTeamSize, evenSizes, teamCountRange, planTeams, tierScore, averageTierValue, teamAverageTier,
     getTeamDistribution, describeDistribution, adjustSizesForLocks, countLockedByTeam,
     distributeRandom, distributeByTier, validateTeamDistribution,
 };

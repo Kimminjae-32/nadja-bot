@@ -6,6 +6,8 @@
 // 비밀 보장: 투표가 마감되기 전에는 어떤 API도 득표수나 투표 내역을 돌려주지 않는다.
 // 관리자에게도 "누가 투표를 마쳤는지"까지만 공개한다.
 
+const W = require('./character-weapons');
+
 const STATUS = { NONE: 'none', OPEN: 'open', CLOSED: 'closed', CANCELLED: 'cancelled' };
 
 const now = () => Date.now();
@@ -23,20 +25,30 @@ function openVote(participants, assignments, winnerTeam) {
         for (const m of a.members) charOf[m.token] = { character: m.character, fromTeam: a.from, teamNum: Number(teamNum) };
     }
 
-    // 후보: 팀이 배정된 참가자 중 우승팀을 제외한 사람
-    const candidates = participants
-        .filter(p => p.team_num && p.team_num !== winnerTeam)
-        .map(p => ({
-            token:     p.cancel_token,
-            nickname:  p.discord_nickname,
-            teamNum:   p.team_num,
-            character: charOf[p.cancel_token]?.character ?? null,
-            fromTeam:  charOf[p.cancel_token]?.fromTeam ?? null,
-        }));
+    // 이번 회차에 실험체를 배정받은 사람만 대상이다. 팀 미지정(실제 진행에서 빠진) 참가자는 후보·투표권 모두 없다.
+    const inRound = p => p.team_num && charOf[p.cancel_token];
 
-    // 투표권: 팀이 배정된 참가자 전원 (우승팀 포함, 팀 미지정은 제외)
+    // 후보: 이번 회차 참가자 중 우승팀을 제외한 사람
+    const candidates = participants
+        .filter(p => inRound(p) && p.team_num !== winnerTeam)
+        .map(p => {
+            const character = charOf[p.cancel_token]?.character ?? null;
+            const info = character != null ? W.describe(character) : null;
+            return {
+                token:       p.cancel_token,
+                nickname:    p.discord_nickname,
+                teamNum:     p.team_num,
+                character,                                  // 후보 ID (예: "1:15")
+                characterName: info?.characterName ?? null,
+                weaponName:  info?.weaponName ?? null,
+                displayName: info?.displayName ?? null,
+                fromTeam:    charOf[p.cancel_token]?.fromTeam ?? null,
+            };
+        });
+
+    // 투표권: 이번 회차 참가자 전원 (우승팀 포함)
     const voters = participants
-        .filter(p => p.team_num)
+        .filter(inRound)
         .map(p => ({ token: p.cancel_token, nickname: p.discord_nickname, teamNum: p.team_num }));
 
     if (!candidates.length) return { error: '투표 후보가 없어요. 우승팀 외에 참가자가 있어야 합니다.' };

@@ -301,6 +301,7 @@ test('참가자 화면은 자기 팀 정보만 담고 대기자에게는 선택 
     assert.strictEqual(waitView.holderNickname, p1.discord_nickname);
 
     // 다른 팀 후보가 섞여 들어가지 않는지
-    const text = JSON.stringify(waitView);
-    for (const c of state.teams[2].candidates) assert.ok(!text.includes(c), '다른 팀 후보가 노출되면 안 된다');
+    // 후보 ID("27" 등)는 숫자라 문자열 포함 여부로 보면 타임스탬프와 겹칠 수 있다. 목록을 직접 비교한다.
+    const shown = new Set([...waitView.candidates, ...Object.keys(waitView.candidateInfo), ...waitView.picks]);
+    for (const c of state.teams[2].candidates) assert.ok(!shown.has(c), '다른 팀 후보가 노출되면 안 된다');
 });

@@ -178,6 +178,19 @@ router.post('/auto-vote', requireDev, requireTestEvent, (req, res) => {
     r.error ? res.status(400).json(r) : res.json(r);
 });
 
+// ── 자동 시나리오 (A 무기군 · B 32명 중 16명 · C 팀 수 변경) ──
+// 실제 관리자 API를 같은 서버에 HTTP로 호출해서 운영과 같은 경로를 검증한다.
+router.post('/scenario/:name', requireDev, async (req, res) => {
+    const { runScenario } = require('./gentleman-scenarios');
+    const base = `http://127.0.0.1:${req.socket.localPort}`;
+    try {
+        const r = await runScenario(req.params.name, { base, devToken: req.body.devToken });
+        r.error ? res.status(400).json(r) : res.json(r);
+    } catch (e) {
+        res.status(500).json({ error: `시나리오 실행 중 오류: ${e.message}` });
+    }
+});
+
 // ── Mock 디스코드 보관함 ─────────────────────────────
 router.get('/outbox', requireDev, (req, res) => {
     res.json({ messages: discord.getMockOutbox(req.query.event || null) });

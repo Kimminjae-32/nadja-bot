@@ -110,8 +110,9 @@ test('대기자와 다른 팀에게 선택 내용이 새지 않는다', async ()
 
     const other = ctx.members.find(m => m.teamNum === 2);
     const view = await ctx.Pget('state', other.token);
-    const text = JSON.stringify(view.data);
-    assert.ok(!ctx.cands.some(c => text.includes(c)), '다른 팀 후보가 노출되면 안 된다');
+    // 후보 ID는 숫자 형태("27", "1:15")라 문자열 포함 검사는 타임스탬프와 겹친다. 목록을 직접 비교한다.
+    const shown = new Set([...(view.data.candidates ?? []), ...Object.keys(view.data.candidateInfo ?? {}), ...(view.data.picks ?? [])]);
+    assert.ok(!ctx.cands.some(c => shown.has(c)), '다른 팀 후보가 노출되면 안 된다');
 });
 
 test('연결이 끊기면 대기자에게 권한이 넘어간다', async () => {

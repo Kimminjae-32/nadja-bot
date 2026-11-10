@@ -294,6 +294,7 @@ async function createRecruit(interaction, { gameType, mapType, maxPlayers, teamC
         // 이터널 리턴 — DB 이벤트 생성 (웹 폼 참가 + 관리자 페이지 공통)
         db.createEvent(msgId, interaction.guildId ?? null, interaction.channelId ?? null, user.id, teamCount, gameType, mapType);
         db.setSchedule(msgId, newRecruit.eventAt, newRecruit.expiresAt);
+        db.setMaxPlayers(msgId, maxPlayers);             // 모집 정원 (실제 진행 인원과 별개로 보관)
         await msg.edit({ components: [
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`join_${msgId}`).setLabel('참가/취소').setStyle(ButtonStyle.Primary)
@@ -338,7 +339,7 @@ webServer.setRestoreCallback(async (archiveId) => {
             ? ev.expiresAt
             : Date.now() + schedule.LEGACY_HOURS * 60 * 60 * 1000,
         durationHours: schedule.LEGACY_HOURS,
-        maxPlayers: (ev.teamCount || 2) * (ev.mapType === '루미아 섬' ? 3 : 4),
+        maxPlayers: ev.maxPlayers ?? (ev.teamCount || 2) * (ev.mapType === '루미아 섬' ? 3 : 4),
         teamCount: ev.teamCount || 2,
         teams: Array.from({ length: ev.teamCount || 2 }, () => []),
         team1: [], team2: [],
@@ -476,9 +477,13 @@ client.on(Events.InteractionCreate, async interaction => {
             const eventAt  = sch?.eventAt, expiresAt = sch?.expiresAt;
 
             if (유형 === '코발트') {
+                // 기본은 기존처럼 8명(4vs4). 이벤트용으로 최대 32명까지 모집할 수 있다.
+                // 실제 진행 인원과 팀 수는 관리자 페이지에서 따로 정한다.
+                const maxPlayers = interaction.options.getInteger('최대인원') ?? 8;
+                if (maxPlayers < 4 || maxPlayers > 32) return await interaction.reply({ content: '❌ 코발트 최대인원은 4~32명 사이로 입력해주세요.', ephemeral: true });
                 return await createRecruit(interaction, {
                     gameType: '내전', mapType: '코발트',
-                    maxPlayers: 8, teamCount: 2, timeStr, duration, eventAt, expiresAt
+                    maxPlayers, teamCount: Math.max(2, Math.min(8, Math.ceil(maxPlayers / 4))), timeStr, duration, eventAt, expiresAt
                 });
             }
 
@@ -826,6 +831,10 @@ ${BASE}/${page}?event=${eventId}&token=${me.cancel_token}`,
 });
 
 client.once(Events.ClientReady, () => {
+    // 실험체별 무기군을 공식 API에서 다시 확인한다 (실패하면 캐시·내장 데이터를 그대로 쓴다)
+    require('./character-weapons').refreshFromApi()
+        .then(r => console.log(r.ok ? `[weapons] 무기군 데이터 갱신 — 실험체 ${r.count}명` : `[weapons] 갱신 생략 (${r.reason}) — 기존 데이터 사용`))
+        .catch(() => null);
     client.user.setActivity('/사용법 | 문의 @chapseon', { type: 4 });
 });
 

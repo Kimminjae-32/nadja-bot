@@ -132,6 +132,49 @@
         .mgmt-group:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none;}
         .mgmt-label{font-size:.9rem;font-weight:600;margin-bottom:.5rem;}
 
+        /* ── 팀 구성 패널 (실제 진행 인원 · 팀 수) ── */
+        @keyframes tpIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+        @keyframes tpPop{0%{transform:scale(.92)}60%{transform:scale(1.04)}100%{transform:scale(1)}}
+        @keyframes tpBump{0%{transform:scale(1)}40%{transform:scale(1.18)}100%{transform:scale(1)}}
+        @keyframes tpShake{20%,80%{transform:translateX(-2px)}40%,60%{transform:translateX(3px)}}
+        .tp-panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1rem 1.1rem;margin-bottom:1rem;animation:tpIn .35s ease both;}
+        .tp-title{font-size:1rem;font-weight:700;margin-bottom:.75rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;}
+        .tp-lock{font-size:.75rem;font-weight:600;color:#f1c40f;background:rgba(241,196,15,.12);border:1px solid rgba(241,196,15,.35);border-radius:6px;padding:.15rem .5rem;}
+        .tp-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;margin-bottom:.85rem;}
+        .tp-stat{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:.55rem .7rem;animation:tpIn .4s ease both;}
+        .tp-stat:nth-child(2){animation-delay:.05s}.tp-stat:nth-child(3){animation-delay:.1s}
+        .tp-stat b{display:block;font-size:1.35rem;}
+        .tp-stat span{font-size:.72rem;color:var(--muted);}
+        .tp-stat b.bump{animation:tpBump .35s ease;}
+        .tp-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.7rem;}
+        .tp-label{font-size:.85rem;color:var(--muted);min-width:4.5rem;}
+        .tp-stepper{display:inline-flex;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:9px;overflow:hidden;}
+        .tp-stepper button{background:none;border:none;color:var(--text);width:2.2rem;height:2.1rem;font-size:1.1rem;cursor:pointer;transition:background .15s;}
+        .tp-stepper button:hover:not(:disabled){background:rgba(255,255,255,.08);}
+        .tp-stepper button:active:not(:disabled){transform:scale(.9);}
+        .tp-stepper button:disabled{opacity:.3;cursor:not-allowed;}
+        .tp-stepper .num{min-width:3.4rem;text-align:center;font-weight:700;}
+        .tp-stepper .num.bump{animation:tpBump .3s ease;}
+        .tp-mode{font-size:.74rem;color:var(--muted);}
+        .tp-preview{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.4rem;margin-bottom:.6rem;}
+        .tp-team{background:var(--bg);border:1px solid var(--border);border-left:4px solid var(--c);border-radius:7px;padding:.35rem .55rem;font-size:.82rem;display:flex;justify-content:space-between;animation:tpPop .3s ease both;}
+        .tp-error{color:#ff8a8a;font-size:.82rem;background:rgba(233,69,96,.1);border:1px solid rgba(233,69,96,.35);border-radius:8px;padding:.5rem .7rem;margin-bottom:.6rem;animation:tpShake .35s ease;}
+        .tp-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.9rem;}
+        .tp-actions .btn:active:not(:disabled){transform:scale(.96);}
+        .tp-roster-head{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin:.2rem 0 .55rem;padding-top:.75rem;border-top:1px solid var(--border);}
+        .tp-roster-head .grow{flex:1;}
+        .tp-roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:.4rem;max-height:340px;overflow:auto;padding-right:.2rem;}
+        .tp-chip{display:flex;align-items:center;gap:.45rem;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.4rem .55rem;font-size:.82rem;cursor:pointer;user-select:none;transition:border-color .15s,background .15s,opacity .15s;animation:tpIn .3s ease both;}
+        .tp-chip:hover{border-color:var(--accent);}
+        .tp-chip.on{border-color:var(--green);background:rgba(46,204,113,.08);}
+        .tp-chip.off{opacity:.55;}
+        .tp-chip.pop{animation:tpPop .28s ease;}
+        .tp-chip input{accent-color:var(--green);width:15px;height:15px;cursor:pointer;}
+        .tp-chip .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}
+        .tp-chip .tb{font-size:.68rem;color:var(--muted);white-space:nowrap;}
+        .tp-panel.locked .tp-chip,.tp-panel.locked .tp-stepper button{pointer-events:none;opacity:.5;}
+        .off-badge{display:inline-block;margin-left:.35rem;font-size:.68rem;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:.05rem .35rem;vertical-align:middle;}
+        @media(max-width:560px){ .tp-stats{grid-template-columns:1fr 1fr 1fr;} .tp-stat b{font-size:1.1rem;} }
     </style>
 </head>
 <body>
@@ -205,6 +248,40 @@
     </div>
 
     <div id="view-teams" style="display:none" data-pane="teams">
+        <div class="tp-panel" id="tp-panel">
+            <div class="tp-title">팀 구성 <span class="tp-lock" id="tp-lock" style="display:none"></span></div>
+            <div class="tp-stats">
+                <div class="tp-stat"><b id="tp-registered">-</b><span>신청 인원</span></div>
+                <div class="tp-stat"><b id="tp-active">-</b><span>실제 진행 인원</span></div>
+                <div class="tp-stat"><b id="tp-unassigned">-</b><span>팀 미지정</span></div>
+            </div>
+            <div class="tp-row">
+                <span class="tp-label">팀 수</span>
+                <span class="tp-stepper">
+                    <button type="button" id="tp-minus" aria-label="팀 수 줄이기">−</button>
+                    <span class="num" id="tp-count">-</span>
+                    <button type="button" id="tp-plus" aria-label="팀 수 늘리기">+</button>
+                </span>
+                <span class="tp-mode" id="tp-mode"></span>
+            </div>
+            <div class="tp-label" style="margin-bottom:.35rem">예상 팀 구성</div>
+            <div class="tp-preview" id="tp-preview"></div>
+            <div class="tp-error" id="tp-error" style="display:none"></div>
+            <div class="tp-actions">
+                <button class="btn btn-primary btn-sm" id="tp-random">랜덤 배정</button>
+                <button class="btn btn-secondary btn-sm" id="tp-tier">티어 균형 배정</button>
+            </div>
+            <div class="tp-roster-head">
+                <strong style="font-size:.88rem">실제 참가자 선택</strong>
+                <span class="tp-mode" id="tp-selected"></span>
+                <span class="grow"></span>
+                <button class="btn btn-secondary btn-sm" id="tp-all">전체 선택</button>
+                <button class="btn btn-secondary btn-sm" id="tp-none">전체 해제</button>
+                <input type="number" class="num-input" id="tp-pick-n" min="1" value="16" title="무작위로 뽑을 인원">
+                <button class="btn btn-secondary btn-sm" id="tp-pick">명 무작위 선택</button>
+            </div>
+            <div class="tp-roster" id="tp-roster"></div>
+        </div>
         <div class="teams-hint" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
             <span>참가자를 끌어서 다른 팀 카드에 놓으면 팀이 바뀝니다. 자물쇠를 누르면 그 팀에 고정되어 다시 섞어도 남습니다.</span>
             <span id="lock-count" class="lock-summary"></span>
@@ -555,7 +632,7 @@ function renderTable(){
     const tbody = document.getElementById('table-body');
     tbody.innerHTML = sortedParticipants().map(p=>`
         <tr data-token="${esc(p.cancel_token)}">
-            <td><strong>${esc(p.discord_nickname)}</strong></td>
+            <td><strong>${esc(p.discord_nickname)}</strong>${p.active===false?'<span class="off-badge">미참여</span>':''}</td>
             <td>${esc(p.ingame_nickname)}</td>
             <td>
                 <div style="display:flex;align-items:center;gap:.25rem;margin-bottom:.25rem">
@@ -609,9 +686,9 @@ function renderTeams(){
         html+='</div>';
     }
     // 미배정 카드는 항상 표시 — 드롭해서 배정 해제 가능
-    html+=`<div class="team-card unassigned" data-team=""><h3 style="color:var(--muted)">미배정 (${unassigned.length}명)</h3>`;
+    html+=`<div class="team-card unassigned" data-team=""><h3 style="color:var(--muted)">팀 미지정 (${unassigned.length}명)</h3>`;
     if(!unassigned.length) html+='<p style="color:var(--muted);font-size:.85rem">없음</p>';
-    for(const p of unassigned) html+=`<div class="member-item" draggable="true" data-token="${esc(p.cancel_token)}"><div class="member-name">${esc(p.discord_nickname)}</div></div>`;
+    for(const p of unassigned) html+=`<div class="member-item" draggable="true" data-token="${esc(p.cancel_token)}"${p.active===false?' style="opacity:.55"':''}><div class="member-name">${esc(p.discord_nickname)}${p.active===false?'<span class="off-badge">미참여</span>':''}</div></div>`;
     html+='</div>';
     grid.innerHTML = html || '<p style="color:var(--muted)">참가자가 없어요</p>';
     const lockedCount = participants.filter(p=>p.locked).length;
@@ -693,6 +770,7 @@ async function assignTeam(cancelToken, teamNum){
     if(p){
         p.team_num = teamNum===''? null : Number(teamNum);
         if(p.team_num === null) p.locked = false;   // 미배정으로 빼면 서버와 함께 고정도 풀린다
+        else p.active = true;                         // 직접 팀에 넣으면 실제 진행 인원이 된다
     }
     render();
     refreshTeamPlan();
@@ -753,16 +831,144 @@ async function toggleRole(){
     renderRoleInfo();
 }
 
-// 지금 인원이면 몇 팀 × 몇 명이 되는지 안내
+// 지금 인원이면 몇 팀 × 몇 명이 되는지 안내 (상단 요약 + 팀 구성 패널)
+let teamPlan = null;
 async function refreshTeamPlan(){
     const el = document.getElementById('team-plan');
-    if(!el || document.getElementById('group-team').style.display === 'none'){ if(el) el.textContent=''; return; }
     const d = await api(`/api/admin/team-plan?event=${EVENT}&token=${TOKEN}`).catch(()=>null);
-    if(!d || d.error){ el.textContent=''; return; }
+    if(!d || d.error) { if(el) el.textContent=''; return; }
+    teamPlan = d;
+    renderTeamPanel();
+    if(!el || document.getElementById('group-team').style.display === 'none'){ if(el) el.textContent=''; return; }
     const warn = d.noTierCount ? ` · 티어 미설정 ${d.noTierCount}명` : '';
     const lock = d.lockedCount ? ` · 고정 ${d.lockedCount}명` : '';
-    el.textContent = d.count ? `${d.text}${lock}${warn}` : '참가자가 없어요';
+    const off  = d.inactiveCount ? ` · 미참여 ${d.inactiveCount}명` : '';
+    el.textContent = d.count ? `${d.text}${off}${lock}${warn}` : '실제 진행할 참가자가 없어요';
 }
+
+// ── 팀 구성 패널: 실제 진행 인원 선택 + 팀 수 조절 ──
+function setNum(id, value){
+    const el = document.getElementById(id);
+    const text = String(value);
+    if(el.textContent !== text){ el.textContent = text; el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+}
+
+let rosterSig = '';
+function renderTeamPanel(){
+    const d = teamPlan;
+    const panel = document.getElementById('tp-panel');
+    if(!d || !panel) return;
+    const isTeamMode = eventData?.gameType === '내전';
+    panel.style.display = isTeamMode ? '' : 'none';
+    if(!isTeamMode) return;
+
+    setNum('tp-registered', `${d.registered}명`);
+    setNum('tp-active', `${d.activeCount}명`);
+    setNum('tp-unassigned', `${d.unassignedCount}명`);
+    setNum('tp-count', d.teamCount ? `${d.teamCount}팀` : '-');
+
+    const lockEl = document.getElementById('tp-lock');
+    lockEl.style.display = d.locked ? '' : 'none';
+    lockEl.textContent = d.locked ? '드래프트 진행 중 · 변경 잠김' : '';
+    panel.classList.toggle('locked', !!d.locked);
+
+    const cur = d.teamCount || d.currentTeamCount || 2;
+    document.getElementById('tp-minus').disabled = !!d.locked || cur <= 1;
+    document.getElementById('tp-plus').disabled  = !!d.locked || cur >= d.maxTeams;
+    const r = d.range || {};
+    document.getElementById('tp-mode').textContent =
+        (d.manual ? '직접 지정' : '인원에 맞춰 자동') + (r.min <= r.max ? ` · 가능 ${r.min}~${r.max}팀` : '') + ` · 한 팀 ${d.minTeamSize}~${d.maxTeamSize}명`;
+
+    const prev = document.getElementById('tp-preview');
+    prev.innerHTML = (d.sizes || []).map((n, i) =>
+        `<div class="tp-team" style="--c:${TEAM_COLORS[i % TEAM_COLORS.length]};animation-delay:${i*40}ms"><span>${i+1}팀</span><b>${n}명</b></div>`).join('')
+        || `<span style="color:var(--muted);font-size:.82rem">${d.error ? '이 팀 수로는 구성할 수 없어요' : '실제 진행할 참가자를 선택해주세요'}</span>`;
+    const err = document.getElementById('tp-error');
+    err.style.display = d.error ? '' : 'none';
+    err.textContent = d.error || '';
+    const blocked = !!d.locked || !!d.error || !d.activeCount;
+    document.getElementById('tp-random').disabled = blocked;
+    document.getElementById('tp-tier').disabled = blocked;
+
+    renderRoster();
+}
+
+function renderRoster(force){
+    const box = document.getElementById('tp-roster');
+    const sig = participants.map(p=>`${p.cancel_token}:${p.active!==false}:${p.team_num||0}:${p.tier||''}`).join('|');
+    const activeN = participants.filter(p=>p.active!==false).length;
+    document.getElementById('tp-selected').textContent = `선택 ${activeN}명 / 신청 ${participants.length}명`;
+    if(!force && sig === rosterSig) return;           // 바뀐 게 없으면 다시 그리지 않는다 (깜빡임 방지)
+    rosterSig = sig;
+    box.innerHTML = participants.map((p, i) => {
+        const on = p.active !== false;
+        return `<label class="tp-chip ${on?'on':'off'}" data-token="${esc(p.cancel_token)}" style="animation-delay:${Math.min(i*15,300)}ms">
+            <input type="checkbox" ${on?'checked':''}>
+            <span class="nm">${esc(p.discord_nickname)}</span>
+            <span class="tb">${p.team_num?`${p.team_num}팀`:(on?'미지정':'미참여')}${p.tier?` · ${esc(p.tier)}`:''}</span>
+        </label>`;
+    }).join('') || '<span style="color:var(--muted);font-size:.82rem">신청자가 없어요</span>';
+    box.querySelectorAll('.tp-chip').forEach(chip => {
+        chip.querySelector('input').addEventListener('change', e => {
+            chip.classList.toggle('on', e.target.checked); chip.classList.toggle('off', !e.target.checked);
+            chip.classList.remove('pop'); void chip.offsetWidth; chip.classList.add('pop');
+            const set = new Set(participants.filter(p=>p.active!==false).map(p=>p.cancel_token));
+            e.target.checked ? set.add(chip.dataset.token) : set.delete(chip.dataset.token);
+            saveActive([...set]);
+        });
+    });
+}
+
+let activeSaving = Promise.resolve();
+function saveActive(tokens){
+    // 연속 클릭은 순서대로 보낸다
+    activeSaving = activeSaving.then(async () => {
+        const data = await api('/api/admin/active', { event:EVENT, token:TOKEN, activeTokens:tokens });
+        if(data.error){ toast(data.error, true); renderRoster(true); return; }
+        participants = data.participants;
+        teamPlan = data.plan;
+        render();
+        renderTeamPanel();
+        refreshTeamPlan();
+    });
+    return activeSaving;
+}
+
+async function changeTeamCount(delta){
+    const d = teamPlan; if(!d) return;
+    const cur = d.teamCount || d.currentTeamCount || 2;
+    const next = Math.max(1, Math.min(d.maxTeams, cur + delta));
+    if(next === cur) return;
+    const assigned = participants.filter(p=>p.team_num).length;
+    if(assigned && !confirm(`팀 수를 ${cur}팀 → ${next}팀으로 바꿀까요?\n이미 배정된 팀 구성이 재구성될 수 있어요.${next<cur?`\n${next+1}팀 이후에 있던 참가자는 팀 미지정으로 돌아갑니다.`:''}\n바꾼 뒤에는 랜덤 배정 또는 티어 균형 배정을 다시 눌러주세요.`)) return;
+    const data = await api('/api/admin/team-count', { event:EVENT, token:TOKEN, teamCount:next });
+    if(data.error){ toast(data.error, true); return; }
+    participants = data.participants;
+    eventData = data.event;
+    teamPlan = data.plan;
+    render();
+    renderTeamPanel();
+    refreshTeamPlan();
+    toast(data.cleared ? `${next}팀으로 변경 · ${data.cleared}명이 팀 미지정으로 이동했어요` : `${next}팀으로 변경했어요`);
+}
+
+document.getElementById('tp-minus').addEventListener('click', ()=>changeTeamCount(-1));
+document.getElementById('tp-plus').addEventListener('click', ()=>changeTeamCount(+1));
+document.getElementById('tp-random').addEventListener('click', ()=>runShuffle('random'));
+document.getElementById('tp-tier').addEventListener('click', ()=>runShuffle('tier'));
+document.getElementById('tp-all').addEventListener('click', ()=>saveActive(participants.map(p=>p.cancel_token)));
+document.getElementById('tp-none').addEventListener('click', ()=>{
+    if(participants.some(p=>p.team_num) && !confirm('전체 해제하면 모든 참가자가 팀 미지정이 됩니다. 신청 기록은 유지돼요. 계속할까요?')) return;
+    saveActive([]);
+});
+document.getElementById('tp-pick').addEventListener('click', ()=>{
+    const n = Math.max(1, Math.floor(Number(document.getElementById('tp-pick-n').value) || 0));
+    if(n > participants.length){ toast(`신청자가 ${participants.length}명이라 ${n}명을 뽑을 수 없어요`, true); return; }
+    if(!confirm(`신청자 ${participants.length}명 중 ${n}명을 무작위로 골라 실제 진행 인원으로 정할까요?\n나머지는 팀 미지정이 되고 신청 기록은 유지됩니다.`)) return;
+    const pool = participants.map(p=>p.cancel_token);
+    for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+    saveActive(pool.slice(0, n));
+});
 
 // ── 저쪽 신사분이 주신 겁니다 ──────────────────────────
 let gmState = null;
@@ -881,7 +1087,7 @@ function gmRenderPrize(s){
     const tally = v.tally;
     document.getElementById('gm-tally').innerHTML = tally
         ? `<div style="font-size:.8rem;color:var(--muted);margin-bottom:.25rem">득표 결과 (총 ${tally.totalVotes}표)</div>`
-          + tally.rows.map(r => `<div class="gm-pay"><span>${r.rank}위 · ${esc(r.nickname)} <span style="color:var(--muted)">${esc(r.character ?? '-')}</span></span><span>${r.votes}표</span></div>`).join('')
+          + tally.rows.map(r => `<div class="gm-pay"><span>${r.rank}위 · ${esc(r.nickname)} <span style="color:var(--muted)">${esc(r.displayName ?? r.character ?? '-')}</span></span><span>${r.votes}표</span></div>`).join('')
         : '';
 
     gmLoadPayouts();
@@ -1169,7 +1375,7 @@ function modeLabel() {
     const gt = eventData?.gameType || '내전';
     const tc = eventData?.teamCount || 2;
     if (gt === '론울프')              return `론울프 (개인전) · 최대 ${tc}명`;
-    if (currentMapKey() === '코발트')  return `코발트 · ${tc}팀 (4vs4)`;
+    if (currentMapKey() === '코발트')  return `코발트 · ${tc}팀${tc === 2 ? ' (4vs4)' : ` · 모집 ${eventData?.maxPlayers ?? '-'}명`}`;
     if (currentMapKey() === '코발트 토너먼트') return `코발트 토너먼트 · ${tc}팀 (4vs4)`;
     return `${currentMapKey()} · ${tc}팀`;
 }
@@ -1296,7 +1502,7 @@ function shuffleResultMsg(data, label){
     const sizes = data.sizes || [];
     const uniform = sizes.length && sizes.every(x=>x===sizes[0]);
     const detail = uniform ? `${sizes.length}팀 × ${sizes[0]}명` : `${sizes.length}팀 (${sizes.join('/')})`;
-    const lock = data.lockedCount ? ` · 고정 ${data.lockedCount}명 유지` : '';
+    const lock = (data.lockedCount ? ` · 고정 ${data.lockedCount}명 유지` : '') + (data.inactiveCount ? ` · 팀 미지정 ${data.inactiveCount}명` : '');
     const warn = data.noTierCount ? ` · 티어 미설정 ${data.noTierCount}명은 평균으로 계산` : '';
     return `${label} 완료 — ${detail}${lock}${warn}`;
 }
@@ -1304,18 +1510,21 @@ function shuffleResultMsg(data, label){
 async function runShuffle(kind){
     if(!participants.length){ toast('참가자가 없어요', true); return; }
     const plan = await api(`/api/admin/team-plan?event=${EVENT}&token=${TOKEN}`).catch(()=>null);
-    const planText = plan && !plan.error ? plan.text : `참가자 ${participants.length}명`;
+    if(plan?.locked){ toast(plan.locked, true); return; }
+    if(plan && !plan.activeCount){ toast('실제 진행할 참가자를 먼저 선택해주세요', true); return; }
+    if(plan?.error){ toast(plan.error, true); return; }
+    const planText = plan ? `실제 진행 ${plan.text}${plan.inactiveCount?` (팀 미지정 ${plan.inactiveCount}명은 그대로)`:''}` : `참가자 ${participants.length}명`;
     const warn = plan?.noTierCount ? `\n티어 미설정 ${plan.noTierCount}명은 평균 티어로 계산합니다.` : '';
-    const label = kind==='tier' ? '티어 밸런스 배정' : '자동 배정';
+    const label = kind==='tier' ? '티어 균형 배정' : '랜덤 배정';
     const extra = kind==='tier' ? '\n(실력이 한쪽에 몰리지 않도록 나눕니다)' : '';
     const lockedNow = participants.filter(p=>p.locked).length;
     const lockMsg = lockedNow ? `\n고정된 ${lockedNow}명은 지금 팀에 그대로 둡니다.` : '';
     if(!confirm(`${planText} 으로 ${label}할까요?${extra}${lockMsg}${kind==='tier'?warn:''}`)) return;
 
-    const btn = document.getElementById(kind==='tier' ? 'shuffle-tier-btn' : 'shuffle-btn');
-    btn.disabled=true;
+    const btns = [document.getElementById(kind==='tier' ? 'shuffle-tier-btn' : 'shuffle-btn'), document.getElementById(kind==='tier' ? 'tp-tier' : 'tp-random')];
+    btns.forEach(b=>b.disabled=true);
     const data = await api(kind==='tier' ? '/api/admin/shuffle-tier' : '/api/admin/shuffle', { event:EVENT, token:TOKEN });
-    btn.disabled=false;
+    btns.forEach(b=>b.disabled=false);
     if(data.error){ toast(data.error, true); return; }
     participants = data.participants;
     if(data.event) eventData = data.event;      // 팀 수가 바뀌었을 수 있음
@@ -1481,7 +1690,7 @@ async function silentRefresh(){
         render();
         renderTournament();
         renderRoleInfo();
-        if(newCount !== oldCount) refreshTeamPlan();
+        refreshTeamPlan();
         gmRefresh();
         populateTransferSelect();
         if(newCount !== oldCount) toast(`참가자 업데이트: ${newCount}명`);

@@ -448,7 +448,8 @@ async function generateCharPoolCard(title, groups) {
             roundedRect(ctx, tx, ty, TILE_W, TILE_H, 6); ctx.fill();
 
             // 일러스트 (CharResult 336×266 — 타일과 동일 크기, 리샘플링 없음)
-            const en = CHAR_EN[name];
+            // 이름은 무기군이 붙은 표시 이름(예: 단검 재키)일 수 있다 — 초상화는 실험체 기준으로 찾는다
+            const en = CHAR_EN[name] ?? CHAR_EN[require('./character-weapons').describe(name)?.characterName];
             const img = en ? await cachedImg(`result_${en}`, `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharResult_${en}_S000.png`) : null;
             ctx.save();
             roundedRect(ctx, tx, ty, TILE_W, TILE_H, 6); ctx.clip();

@@ -135,6 +135,9 @@ let charEn = {};
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const charImg = n => charEn[n] ? `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharResult_${charEn[n]}_S000.png` : null;
+// 후보의 초상화는 실험체 이름으로, 표시는 무기군을 포함한 이름(예: 단검 재키)으로 한다
+const candImg   = c => charImg(c.characterName ?? c.character);
+const candLabel = c => c.displayName ?? c.character;
 
 function toast(msg, isErr){
     const el = $('toast');
@@ -183,12 +186,12 @@ function render(){
     for (const [team, list] of Object.entries(groups).sort((a,b)=>Number(a[0])-Number(b[0]))) {
         html += `<div class="group-title" style="animation-delay:${delay}ms">${esc(team)}팀이 보낸 선물</div><div class="grid">`;
         for (const c of list) {
-            const src = charImg(c.character);
+            const src = candImg(c);
             const cls = [ 'cand', closed ? 'locked' : '', view.myVote === c.token ? 'mine' : (selected === c.token ? 'sel' : '') ].filter(Boolean).join(' ');
             html += `<div class="${cls}" data-token="${esc(c.token)}" style="animation-delay:${Math.min(delay,420)}ms">
                 <div class="ph">${src?`<img src="${src}" alt="" loading="lazy" onerror="this.style.display='none'">`:''}</div>
                 <div class="meta"><div class="nick">${esc(c.nickname)}</div>
-                <div class="info">${esc(c.character ?? '실험체 없음')} · ${esc(c.fromTeam)}팀의 선물</div></div>
+                <div class="info">${esc(candLabel(c) ?? '실험체 없음')} · ${esc(c.fromTeam)}팀의 선물</div></div>
             </div>`;
             delay += 55;
         }
@@ -216,7 +219,7 @@ function updateDock(){
     const changed = selected && selected !== view.myVote;
 
     info.innerHTML = cand
-        ? `선택: <b>${esc(cand.nickname)}</b> (${esc(cand.character ?? '-')})`
+        ? `선택: <b>${esc(cand.nickname)}</b> (${esc(candLabel(cand) ?? '-')})`
         : (view.myVote ? '다른 후보를 고르면 표를 바꿀 수 있어요' : '후보를 골라주세요');
     btn.disabled = !changed;
     btn.textContent = view.myVote ? '투표 변경' : '투표 제출';
@@ -225,11 +228,11 @@ function updateDock(){
 $('submit-btn').addEventListener('click', () => {
     const cand = view.candidates.find(c => c.token === selected);
     if (!cand) return;
-    const src = charImg(cand.character);
+    const src = candImg(cand);
     $('modal').innerHTML = `
         <h2>${view.myVote ? '이 분으로 바꿀까요?' : '이 분에게 투표할까요?'}</h2>
         ${src?`<div class="pv"><img src="${src}" onerror="this.remove()"></div>`:''}
-        <p><b style="color:var(--text)">${esc(cand.nickname)}</b><br>${esc(cand.character ?? '-')} · ${esc(cand.fromTeam)}팀의 선물</p>
+        <p><b style="color:var(--text)">${esc(cand.nickname)}</b><br>${esc(candLabel(cand) ?? '-')} · ${esc(cand.fromTeam)}팀의 선물</p>
         <p style="margin-top:.5rem;font-size:.8rem">투표는 익명이며, 마감 전까지 언제든 바꿀 수 있어요.</p>
         <div class="modal-btns">
             <button class="btn btn-ghost" id="cancel">다시 고를게요</button>

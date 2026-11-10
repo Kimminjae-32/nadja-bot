@@ -86,6 +86,17 @@
     .char.disabled:hover img{transform:none;}
     .char.bump{animation:popIn .3s var(--ease);}
 
+    /* 무기군 배지 — 같은 초상화라도 무기군이 다르면 다른 후보다 */
+    .wpn{
+        position:absolute;top:.5rem;left:.5rem;z-index:1;display:inline-flex;align-items:center;gap:.25rem;
+        background:rgba(10,10,20,.8);color:#ffd479;font-size:.72rem;font-weight:800;line-height:1;
+        padding:.2rem .5rem .2rem .3rem;border-radius:999px;border:1px solid rgba(255,212,121,.35);
+        animation:popIn .3s var(--ease) both;
+    }
+    .char .wpn img,.slot .wpn img,.mc .wpn img{width:15px;height:15px;object-fit:contain;transform:none !important;}
+    .slot .wpn,.mc .wpn{top:.25rem;left:.25rem;font-size:.6rem;padding:.12rem .35rem .12rem .2rem;}
+    .slot .wpn img,.mc .wpn img{width:11px;height:11px;}
+
     /* 화면 아래 고정 선택 슬롯 */
     .dock{
         position:fixed;left:0;right:0;bottom:0;z-index:20;
@@ -211,6 +222,16 @@ let charEn = {};           // 한국어 이름 → 영문 파일명
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const charImg = n => charEn[n] ? `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharResult_${charEn[n]}_S000.png` : null;
+// 후보는 "실험체 + 무기군" ID다 (예: "1:15" = 단검 재키). 표시 정보는 서버가 candidateInfo로 함께 보낸다.
+const infoOf    = id => state?.candidateInfo?.[id] ?? { characterName: id, displayName: id, weaponName: null };
+const candImg   = id => charImg(infoOf(id).characterName);
+const candLabel = id => infoOf(id).displayName ?? id;
+const wpnBadge  = id => {
+    const i = infoOf(id);
+    if (!i.weaponName) return '';
+    const icon = i.weaponKey ? `<img src="https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/Ico_Ability_${i.weaponKey}.png" alt="" onerror="this.remove()">` : '';
+    return `<span class="wpn">${icon}${esc(i.weaponName)}</span>`;
+};
 
 function toast(msg, isErr){
     const el = $('toast');
@@ -243,16 +264,20 @@ function renderStatus(){
     if (wp) wp.textContent = `저장된 진행률 ${state.pickedCount}/${state.picksRequired}명`;
 }
 
+let slotsKey = null;      // 같은 선택이면 슬롯을 다시 그리지 않는다 (이미지 깜빡임 방지)
 function renderSlots(){
     const el = $('slots');
     const want = state.picksRequired;
+    $('confirm-btn').disabled = !(picks.length === want && !dirty && state.role === 'editor');
+    const key = want + '|' + picks.join('|');
+    if (key === slotsKey && el.children.length) return;
+    slotsKey = key;
     el.innerHTML = Array.from({length: want}, (_, i) => {
         const name = picks[i];
         if (!name) return `<div class="slot">${i+1}</div>`;
-        const src = charImg(name);
-        return `<div class="slot filled">${src?`<img src="${src}" alt="" onerror="this.remove()">`:''}<span class="sn">${esc(name)}</span></div>`;
+        const src = candImg(name);
+        return `<div class="slot filled">${src?`<img src="${src}" alt="" onerror="this.remove()">`:''}${wpnBadge(name)}<span class="sn">${esc(candLabel(name))}</span></div>`;
     }).join('');
-    $('confirm-btn').disabled = !(picks.length === want && !dirty && state.role === 'editor');
 }
 
 let gridKey = null;      // 같은 후보 목록이면 다시 그리지 않는다
@@ -264,12 +289,13 @@ function renderGrid(force){
     $('main').innerHTML = `<div class="panel right" style="padding:.85rem"><div class="grid" id="grid"></div></div>`;
     const grid = $('grid');
     grid.innerHTML = state.candidates.map((c, i) => {
-        const src = charImg(c);
+        const src = candImg(c);
         const on = picks.includes(c);
         return `<div class="char${on?' picked':''}${editable?'':' disabled'}" data-name="${esc(c)}" style="animation-delay:${Math.min(i*55,760)}ms">
             ${src?`<img src="${src}" alt="" loading="lazy" onerror="this.style.display='none'">`:''}
             ${src?'':`<div class="no-img">이미지 없음</div>`}
-            <div class="nm">${esc(c)}</div>
+            ${wpnBadge(c)}
+            <div class="nm">${esc(candLabel(c))}</div>
         </div>`;
     }).join('');
     if (editable) grid.querySelectorAll('.char').forEach(el => el.addEventListener('click', () => toggle(el.dataset.name, el)));
@@ -307,8 +333,8 @@ function renderConfirmed(){
             <p style="text-align:center">이 4명은 다른 팀에게 전달됩니다. 어느 팀에 가는지는 결과 발표 때 공개돼요.</p>
             <div class="modal-grid" style="margin-top:1.1rem">
                 ${state.picks.map(n=>{
-                    const src=charImg(n);
-                    return `<div class="mc${auto.has(n)?' auto':''}">${src?`<img src="${src}" onerror="this.remove()">`:''}<span>${esc(n)}</span></div>`;
+                    const src=candImg(n);
+                    return `<div class="mc${auto.has(n)?' auto':''}">${src?`<img src="${src}" onerror="this.remove()">`:''}${wpnBadge(n)}<span>${esc(candLabel(n))}</span></div>`;
                 }).join('')}
             </div>
             ${auto.size?`<p style="text-align:center;color:var(--accent);font-size:.82rem">관리자가 확정해서 '자동' 표시된 실험체가 무작위로 채워졌어요.</p>`:''}
@@ -401,7 +427,7 @@ $('confirm-btn').addEventListener('click', () => {
         <h2>이 4명을 선물할까요?</h2>
         <p>확정하면 더 이상 바꿀 수 없어요. 어느 팀에게 가는지는 결과 발표 때 공개됩니다.</p>
         <div class="modal-grid">
-            ${picks.map(n=>{const s=charImg(n);return `<div class="mc">${s?`<img src="${s}" onerror="this.remove()">`:''}<span>${esc(n)}</span></div>`;}).join('')}
+            ${picks.map(n=>{const s=candImg(n);return `<div class="mc">${s?`<img src="${s}" onerror="this.remove()">`:''}${wpnBadge(n)}<span>${esc(candLabel(n))}</span></div>`;}).join('')}
         </div>
         <div class="modal-btns">
             <button class="btn btn-ghost" onclick="closeModal()">다시 고를게요</button>
@@ -461,7 +487,7 @@ async function refresh(force){
     const wasEditor = state?.role === 'editor';
     state = data;
     $('title').textContent = `${data.teamNum}팀 실험체 선택`;
-    $('subtitle').textContent = `${data.nickname}님 · 후보 ${data.candidates.length}명 중 ${data.picksRequired}명을 골라 다른 팀에 선물합니다`;
+    $('subtitle').textContent = `${data.nickname}님 · 후보 ${data.candidates.length}개 중 ${data.picksRequired}개를 골라 다른 팀에 선물합니다`;
 
     // 권한을 새로 얻었거나 잃었으면 화면의 선택 내용을 서버 기준으로 되돌린다
     if (!wasEditor || force || !dirty) {
@@ -490,6 +516,13 @@ function showCenter(title, desc){
 
 async function loop(){
     try {
+        // 내가 선택 중일 때는 확정 전까지 서버 상태를 다시 받아오지 않는다 (화면 깜빡임 방지).
+        // 권한 유지 신호만 보내고, 권한을 잃었거나 관리자가 확정하면 그때 한 번 새로 받아온다.
+        if (state && state.role === 'editor' && !state.confirmed) {
+            const hb = await heartbeat();
+            if (hb?.error || hb?.role !== 'editor') await refresh(true);
+            return;
+        }
         if (state && !state.confirmed) await heartbeat();    // 90초 만료를 막는다
         await refresh(false);
     } catch (e) {

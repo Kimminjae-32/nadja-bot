@@ -3,6 +3,7 @@ const path    = require('path');
 const db      = require('./db');
 const { CHARACTERS, POS_EMOJI, TEAM_EMOJIS, TEAM_NAMES, TIERS, TIER_BY_MMR } = require('./constants');
 const teamUtil = require('./teams');
+const weapons  = require('./character-weapons');
 const gentleman = require('./gentleman-routes');
 const gentlemanDev = require('./gentleman-dev');
 const gentlemanDiscord = require('./gentleman-discord');
@@ -310,39 +311,96 @@ app.get('/api/admin/data', (req, res) => {
     res.json({ event: ev, participants });
 });
 
-// POST /api/admin/shuffle
-app.post('/api/admin/shuffle', (req, res) => {
+// 「저쪽 신사분이 주신 겁니다」 드래프트가 진행 중이면 팀 구성을 바꿀 수 없다 (배정·결과가 꼬이지 않게)
+const TEAM_LOCK_PHASES = ['drafting', 'assigned', 'published'];
+function teamChangeBlocked(eventId) {
+    const phase = db.getEvent(eventId)?.gentleman?.phase;
+    return TEAM_LOCK_PHASES.includes(phase)
+        ? '선물 드래프트가 진행 중이라 팀 구성을 바꿀 수 없어요. 이벤트 탭에서 드래프트를 종료한 뒤 다시 시도해주세요.'
+        : null;
+}
+
+function runAssign(req, res, mode) {
     const { event, token } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
-    const r = db.shuffleTeams(event);
+    const blocked = teamChangeBlocked(event);
+    if (blocked) return res.status(409).json({ error: blocked });
+    const r = mode === 'tier' ? db.shuffleByTier(event) : db.shuffleTeams(event);
+    if (r.error) return res.status(400).json(r);
     res.json({ success: true, participants: db.getParticipants(event), event: db.getEvent(event), ...r });
-});
+}
 
-// POST /api/admin/shuffle-tier — 티어 밸런스 배정 (강한 참가자가 한 팀에 몰리지 않도록)
-app.post('/api/admin/shuffle-tier', (req, res) => {
-    const { event, token } = req.body;
-    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
-    const r = db.shuffleByTier(event);
-    res.json({ success: true, participants: db.getParticipants(event), event: db.getEvent(event), ...r });
-});
+// POST /api/admin/shuffle — 실제 진행 인원만 무작위로 배정
+app.post('/api/admin/shuffle', (req, res) => runAssign(req, res, 'random'));
 
-// GET /api/admin/team-plan — 지금 인원이면 몇 팀 × 몇 명이 되는지 미리 보기
-app.get('/api/admin/team-plan', (req, res) => {
-    const { event, token } = req.query;
-    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
-    const ev = db.getEvent(event);
-    const participants = db.getParticipants(event);
-    const sizes = teamUtil.getTeamDistribution(participants.length, ev);
-    const lockedCount = participants.filter(p => p.locked && p.team_num).length;
-    res.json({
-        count: participants.length,
+// POST /api/admin/shuffle-tier — 티어 밸런스 배정 (팀별 인원은 같게 유지하고 실력만 고르게)
+app.post('/api/admin/shuffle-tier', (req, res) => runAssign(req, res, 'tier'));
+
+/**
+ * 팀 구성 요약 — 신청 인원 / 실제 진행 인원 / 팀 미지정 / 예상 팀 구성.
+ * previewTeamCount를 주면 저장하지 않고 그 팀 수일 때의 구성을 계산한다.
+ */
+function teamPlanSummary(eventId, previewTeamCount) {
+    const ev = db.getEvent(eventId);
+    const participants = db.getParticipants(eventId);
+    const active = participants.filter(db.isActive);
+    const manual = previewTeamCount != null || !!ev?.teamCountManual;
+    const teamCount = previewTeamCount != null ? previewTeamCount : (ev?.teamCountManual ? ev.teamCount : null);
+    const plan = teamUtil.planTeams(active.length, ev, manual ? teamCount : null);
+    const range = teamUtil.teamCountRange(active.length, ev);
+    const sizes = plan.sizes ?? [];
+    return {
+        registered: participants.length,
+        count: active.length,                                     // 실제 진행 인원 (배정 대상)
+        activeCount: active.length,
+        inactiveCount: participants.length - active.length,
+        unassignedCount: participants.filter(p => !p.team_num).length,
+        maxPlayers: ev?.maxPlayers ?? null,
+        manual,
+        teamCount: plan.error ? teamCount : plan.teamCount,
+        currentTeamCount: ev?.teamCount ?? 2,
         sizes,
-        teamCount: sizes.length,
+        error: plan.error ?? null,
+        range,
         maxTeamSize: teamUtil.maxTeamSize(ev),
-        noTierCount: participants.filter(p => !p.tier).length,
-        lockedCount,
-        text: teamUtil.describeDistribution(sizes, participants.length),
-    });
+        minTeamSize: teamUtil.minTeamSize(ev),
+        maxTeams: teamUtil.MAX_TEAMS,
+        noTierCount: active.filter(p => !p.tier).length,
+        lockedCount: active.filter(p => p.locked && p.team_num).length,
+        locked: teamChangeBlocked(eventId),
+        text: plan.error ? plan.error : teamUtil.describeDistribution(sizes, active.length),
+    };
+}
+
+// GET /api/admin/team-plan — 지금 인원이면 몇 팀 × 몇 명이 되는지 미리 보기 (?teamCount= 로 다른 팀 수 미리 보기)
+app.get('/api/admin/team-plan', (req, res) => {
+    const { event, token, teamCount } = req.query;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const preview = teamCount != null && teamCount !== '' ? Math.floor(Number(teamCount)) : null;
+    res.json(teamPlanSummary(event, Number.isFinite(preview) ? preview : null));
+});
+
+// POST /api/admin/active — 실제 진행할 참가자 지정 { activeTokens: [...] } (빠진 사람은 팀 미지정, 신청은 유지)
+app.post('/api/admin/active', (req, res) => {
+    const { event, token, activeTokens } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const blocked = teamChangeBlocked(event);
+    if (blocked) return res.status(409).json({ error: blocked });
+    if (!Array.isArray(activeTokens)) return res.status(400).json({ error: '선택 목록이 올바르지 않아요.' });
+    const r = db.setActiveParticipants(event, activeTokens);
+    if (r.error) return res.status(400).json(r);
+    res.json({ ...r, participants: db.getParticipants(event), plan: teamPlanSummary(event) });
+});
+
+// POST /api/admin/team-count — 팀 수 직접 지정 (줄어든 팀의 참가자는 팀 미지정으로 돌아간다)
+app.post('/api/admin/team-count', (req, res) => {
+    const { event, token, teamCount } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const blocked = teamChangeBlocked(event);
+    if (blocked) return res.status(409).json({ error: blocked });
+    const r = db.setManualTeamCount(event, teamCount);
+    if (r.error) return res.status(400).json(r);
+    res.json({ ...r, participants: db.getParticipants(event), event: db.getEvent(event), plan: teamPlanSummary(event) });
 });
 
 // POST /api/admin/lock-member — 팀 고정 켜기/끄기
@@ -365,6 +423,8 @@ app.post('/api/admin/clear-locks', (req, res) => {
 app.post('/api/admin/assign', (req, res) => {
     const { event, token, cancel_token, team_num } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    const blocked = teamChangeBlocked(event);
+    if (blocked) return res.status(409).json({ error: blocked });
     const r = db.assignTeam(cancel_token, team_num === '' ? null : Number(team_num));
     if (r?.error) return res.status(400).json(r);
     res.json({ success: true });
@@ -398,8 +458,9 @@ app.post('/api/admin/random-chars', (req, res) => {
     const assigned = participants.filter(p => p.team_num);
     if (!assigned.length) return res.status(400).json({ error: '팀 배정이 되어있지 않아요.' });
 
+    // 후보는 "실험체 + 무기군" 조합이다 (단검 재키 ≠ 양손검 재키). 밴은 실험체 단위로 모든 무기군에 적용된다.
     const banned  = db.getBannedCharacters(event);
-    const pool    = CHARACTERS.filter(c => !banned.includes(c));
+    const pool    = weapons.candidatePool(banned).map(c => c.displayName);
     const toEntry = (p, characters) => ({
         cancel_token:     p.cancel_token,
         discord_nickname: p.discord_nickname,
@@ -407,6 +468,7 @@ app.post('/api/admin/random-chars', (req, res) => {
         team_num:         p.team_num,
         character:        characters[0],
         characters,
+        candidates:       characters.map(c => weapons.describe(c)),
     });
 
     // 인당 N캐릭 모드 (코발트) — 팀 내에서는 중복 없음, 팀끼리는 중복 허용
@@ -418,17 +480,30 @@ app.post('/api/admin/random-chars', (req, res) => {
         for (const members of Object.values(byTeam)) {
             const need = members.length * perPlayer;
             if (need > pool.length)
-                return res.status(400).json({ error: `한 팀에 필요한 실험체 ${need}개가 전체 실험체 ${pool.length}개보다 많아요.` });
-            const shuffled = [...pool].sort(() => Math.random() - 0.5);
+                return res.status(400).json({ error: `한 팀에 필요한 실험체 ${need}개가 전체 후보 ${pool.length}개보다 많아요.` });
+            const shuffled = shuffleList(pool);
             members.forEach((p, i) => assignments.push(toEntry(p, shuffled.slice(i * perPlayer, (i + 1) * perPlayer))));
         }
         return res.json({ success: true, assignments, charsPerPlayer: perPlayer, bannedCount: banned.length });
     }
 
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    const shuffled = shuffleList(pool);
     const assignments = assigned.map((p, i) => toEntry(p, [shuffled[i % shuffled.length]]));
     res.json({ success: true, assignments, bannedCount: banned.length });
 });
+
+// Fisher-Yates 섞기
+function shuffleList(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+// 실험체 공지에 들어온 값이 실제 후보(실험체 + 무기군 표시 이름)인지 확인
+const VALID_CANDIDATE_NAMES = () => new Set(weapons.allCandidates().map(c => c.displayName));
 
 // ── 테스트용 더미 참가자 ─────────────────────────
 // POST /api/admin/fill-dummy — 빈 자리를 테스트 참가자로 채우고 팀 배정까지 완료
@@ -438,7 +513,7 @@ app.post('/api/admin/fill-dummy', (req, res) => {
     const ev = db.getEvent(event);
     if (!ev) return res.status(404).json({ error: '이벤트가 없어요.' });
     const teamCount  = ev.teamCount || 2;
-    const maxPlayers = recruitMap?.get(event)?.maxPlayers || teamCount * 4;
+    const maxPlayers = recruitMap?.get(event)?.maxPlayers || ev.maxPlayers || teamCount * 4;
     const existing   = db.getParticipants(event);
     const need = maxPlayers - existing.length;
     if (need <= 0) return res.status(400).json({ error: '이미 인원이 가득 찼어요.' });
@@ -492,12 +567,12 @@ app.post('/api/admin/tournament/match-chars', (req, res) => {
     const perPlayer = Math.max(1, Number(charsPerPlayer) || 1);
     const participants = db.getParticipants(event);
     const banned = db.getBannedCharacters(event);
-    const pool   = CHARACTERS.filter(c => !banned.includes(c));
+    const pool   = weapons.candidatePool(banned).map(c => c.displayName);   // 실험체 × 무기군
     const chars  = {};
     for (const tn of [m.teamA, m.teamB]) {
         const need = participants.filter(p => p.team_num === tn).length * perPlayer;
-        if (need > pool.length) return res.status(400).json({ error: `${tn}팀에 필요한 실험체 ${need}개가 전체 ${pool.length}개보다 많아요.` });
-        chars[tn] = [...pool].sort(() => Math.random() - 0.5).slice(0, need);
+        if (need > pool.length) return res.status(400).json({ error: `${tn}팀에 필요한 실험체 ${need}개가 전체 후보 ${pool.length}개보다 많아요.` });
+        chars[tn] = shuffleList(pool).slice(0, need);
     }
     db.setMatchChars(event, round === 'third' ? 'third' : Number(round), Number(match), chars);
     res.json({ success: true, chars });
@@ -617,7 +692,10 @@ app.post('/api/admin/random-chars/send', async (req, res) => {
     const ev = db.getEvent(event);
     if (!ev?.channelId) return res.status(404).json({ error: '채널 정보가 없습니다.' });
     const groups = Object.entries(pools || {})
-        .map(([tn, list]) => teamGroup(Number(tn), (list || []).filter(c => CHARACTERS.includes(c))))
+        .map(([tn, list]) => {
+            const valid = VALID_CANDIDATE_NAMES();
+            return teamGroup(Number(tn), (list || []).filter(c => valid.has(c) || CHARACTERS.includes(c)));
+        })
         .filter(g => g.chars.length).sort((a, b) => a.teamNum - b.teamNum);
     if (!groups.length) return res.status(400).json({ error: '배정된 실험체가 없어요.' });
     try {
@@ -1025,6 +1103,7 @@ app.post('/api/admin/change-map', async (req, res) => {
         } catch (e) { console.error('맵 변경 embed 업데이트 실패:', e); }
     }
 
+    db.setMaxPlayers(event, recruit.maxPlayers);         // 바뀐 모집 정원도 이벤트에 기록한다
     res.json({ success: true, gameType: recruit.gameType, mapType: recruit.mapType, teamCount: newTeamCount });
 });
 

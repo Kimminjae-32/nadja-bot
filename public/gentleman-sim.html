@@ -52,6 +52,18 @@
     .tag.editor{background:var(--green);color:#06240f;}
     .tag.done{background:var(--gold);color:#1a1a0a;}
     .tag.voted{background:var(--accent2);color:#cfe3ff;}
+    /* 자동 시나리오 결과 */
+    @keyframes scIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    .sc-btn{display:flex;align-items:center;justify-content:space-between;gap:.4rem;text-align:left;}
+    .sc-btn .st{font-size:.7rem;font-weight:800;padding:.1rem .4rem;border-radius:5px;background:var(--bg);color:var(--muted);}
+    .sc-btn .st.ok{background:rgba(46,204,113,.15);color:var(--green);}
+    .sc-btn .st.ng{background:rgba(233,69,96,.18);color:#ff8a8a;}
+    .sc-btn .st.run{color:var(--gold);}
+    .sc-result{margin-top:.5rem;max-height:240px;overflow:auto;font-size:.74rem;}
+    .sc-row{display:flex;gap:.35rem;padding:.22rem 0;border-bottom:1px solid rgba(255,255,255,.04);animation:scIn .25s var(--ease) both;}
+    .sc-row .m{flex:none;width:1rem;font-weight:800;}
+    .sc-row.ok .m{color:var(--green);} .sc-row.ng .m{color:#ff8a8a;}
+    .sc-row .d{color:var(--muted);display:block;}
     .team-label{font-size:.7rem;color:var(--muted);margin:.6rem 0 .2rem;font-weight:700;}
 
     iframe{width:100%;height:100%;border:none;background:var(--bg);display:block;}
@@ -97,7 +109,7 @@
                 <h3>새 테스트 이벤트</h3>
                 <label>참가 인원</label>
                 <select id="memberCount">
-                    <option>8</option><option selected>16</option><option>12</option><option>20</option><option>24</option>
+                    <option>8</option><option selected>16</option><option>12</option><option>20</option><option>24</option><option>32</option>
                 </select>
                 <label>팀당 인원</label>
                 <select id="teamSize"><option>2</option><option>3</option><option selected>4</option></select>
@@ -144,6 +156,14 @@
     <div class="col">
         <div class="col-head">시나리오 · 상태 · 로그</div>
         <div class="col-body">
+            <div class="box">
+                <h3>자동 검증 시나리오</h3>
+                <button class="btn btn-blue sc-btn" data-sc="weapons"><span>A · 무기군별 실험체 랜덤</span><span class="st" id="sc-st-weapons">대기</span></button>
+                <button class="btn btn-blue sc-btn" data-sc="recruit32"><span>B · 32명 모집 후 16명 진행</span><span class="st" id="sc-st-recruit32">대기</span></button>
+                <button class="btn btn-blue sc-btn" data-sc="teams"><span>C · 팀 수 변경 (4·5·6·8팀)</span><span class="st" id="sc-st-teams">대기</span></button>
+                <div class="sc-result" id="sc-result"></div>
+            </div>
+
             <div class="box">
                 <h3>순서대로 실행</h3>
                 <div id="steps"></div>
@@ -388,6 +408,27 @@ async function refresh(){
         if (current.role === 'participant') document.querySelector(`.actor[data-token="${current.token}"]`)?.classList.add('on');
         else $('actor-admin').classList.add('on'); }
 }
+
+// ── 자동 검증 시나리오 ───────────────────────────────
+// 서버가 실제 관리자 API를 순서대로 호출해 검증하고, 끝나면 그 테스트 이벤트를 선택해 결과를 바로 볼 수 있게 한다.
+document.querySelectorAll('.sc-btn').forEach(btn => btn.addEventListener('click', async () => {
+    const name = btn.dataset.sc;
+    const st = $(`sc-st-${name}`);
+    document.querySelectorAll('.sc-btn').forEach(b => b.disabled = true);
+    st.className = 'st run'; st.textContent = '실행 중…';
+    $('sc-result').innerHTML = '';
+    log(`${btn.textContent.replace(/실행 중…|대기|통과|실패.*/g,'').trim()} 실행`, 'info');
+    const r = await call(`/api/gentleman/dev/scenario/${name}`, { devToken: DEV });
+    document.querySelectorAll('.sc-btn').forEach(b => b.disabled = false);
+    if (r.error && !r.steps) { st.className = 'st ng'; st.textContent = '오류'; return; }
+    st.className = `st ${r.success ? 'ok' : 'ng'}`;
+    st.textContent = r.success ? `통과 ${r.passed}` : `실패 ${r.failed}`;
+    $('sc-result').innerHTML = `<div class="sc-row ${r.success?'ok':'ng'}"><span class="m">${r.success?'✓':'✗'}</span><span><b>${esc(r.title)}</b> — ${r.passed}개 통과 · ${r.failed}개 실패 · ${(r.ms/1000).toFixed(1)}초${r.fatal?`<span class="d">중단: ${esc(r.fatal)}</span>`:''}</span></div>`
+        + r.steps.map((x, i) => `<div class="sc-row ${x.ok?'ok':'ng'}" style="animation-delay:${Math.min(i*18,600)}ms"><span class="m">${x.ok?'✓':'✗'}</span><span>${esc(x.name)}${x.detail?`<span class="d">${esc(x.detail)}</span>`:''}</span></div>`).join('');
+    log(`${r.title}: ${r.passed}개 통과 · ${r.failed}개 실패`, r.success ? 'ok' : 'err');
+    for (const x of r.steps.filter(x => !x.ok)) log(`실패 — ${x.name}: ${x.detail}`, 'err');
+    await loadEvents(r.eventId);          // 시나리오가 만든 이벤트를 열어 관리자·참가자 화면으로 결과를 확인한다
+}));
 
 $('btn-outbox-clear').addEventListener('click', async () => { await dev('outbox/clear'); await refresh(); });
 
