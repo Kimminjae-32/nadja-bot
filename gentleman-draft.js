@@ -42,6 +42,8 @@ function membersOfTeam(participants, teamNum) {
 function createState({ round = 1, type = 'normal' } = {}) {
     return {
         round,
+        // 회차마다 다른 식별자. 이전 회차 화면에서 온 요청을 걸러내는 데 쓴다.
+        roundId: `r${round}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
         type,                       // 'normal'(일반 회차) | 'prize'(상품 회차)
         phase: PHASE.IDLE,
         createdAt: now(),
@@ -362,6 +364,7 @@ function participantView(state, participant, participants) {
     const isEditor = !!team.lock && team.lock.token === participant.cancel_token;
     return {
         round: state.round,
+        roundId: state.roundId ?? null,
         phase: state.phase,
         teamNum: t,
         candidates: team.candidates,

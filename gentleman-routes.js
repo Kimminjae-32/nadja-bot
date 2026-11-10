@@ -97,6 +97,7 @@ router.get('/admin/state', requireAdmin, (req, res) => {
     res.json({
         exists: !!g,
         round: g?.round ?? 0,
+        roundId: g?.roundId ?? null,
         type: g?.type ?? 'normal',
         phase: g?.phase ?? D.PHASE.IDLE,
         teamsLocked: !!g && [D.PHASE.DRAFTING, D.PHASE.ASSIGNED, D.PHASE.PUBLISHED].includes(g.phase),
@@ -145,17 +146,44 @@ router.post('/admin/setup', requireAdmin, (req, res) => {
 
 // ── 관리자: 드래프트 시작 ────────────────────────────
 router.post('/admin/start', requireAdmin, async (req, res) => {
+    const confirmReset = !!req.body.confirmReset;
     const r = db.withGentleman(req.eventId, (g, ev, participants, setState) => {
-        const state = g ?? D.createState();
+        let state = g ?? D.createState();
         if (state.phase === D.PHASE.DRAFTING) return { error: '이미 드래프트가 진행 중이에요.' };
-        if (state.assignments) return { error: '이미 배정이 끝났어요. 다음 회차를 시작해주세요.' };
+
+        // 이미 한 바퀴 돌린 회차라면 새 회차를 만들어 처음부터 시작한다.
+        // 이전 회차의 선택·배정·공지·투표·수상·지급 기록은 모두 비운다.
+        const finished = !!state.assignments
+            || state.phase === D.PHASE.ASSIGNED
+            || state.phase === D.PHASE.PUBLISHED
+            || state.phase === D.PHASE.CLOSED;
+        if (finished) {
+            if (!confirmReset) {
+                return {
+                    error: '이전 회차 기록이 남아 있어요. 새 회차로 시작하려면 확인이 필요해요.',
+                    needsReset: true,
+                    wouldClear: {
+                        round: state.round ?? 1,
+                        publishedTeams: Object.keys(state.teamMessages ?? {}).length,
+                        hasWinner: state.winnerTeam != null,
+                        voteStatus: state.vote?.status ?? 'none',
+                        unluckyPublished: !!state.unlucky?.published,
+                        pendingPayouts: Object.values(state.payouts ?? {}).filter(v => v === 'pending').length,
+                    },
+                };
+            }
+            // 이미 올린 디스코드 메시지는 지우지 않되, 나중에 정리할 수 있게 ID만 보관해 둔다
+            ev.gentlemanSentMessages = collectMessageIds(ev);
+            state = D.createState({ round: (state.round ?? 1) + 1, type: state.type ?? 'normal' });
+            setState(state);
+        }
 
         const started = D.startDraft(state, participants, ev.bannedCharacters ?? []);
         if (started.error) return { error: started.error };
         setState(state);
-        return { success: true, perTeam: started.perTeam, teamCount: started.teamCount };
+        return { success: true, perTeam: started.perTeam, teamCount: started.teamCount, round: state.round, reset: finished };
     });
-    if (r.error) return fail(res, r);
+    if (r.error) return res.status(400).json(r);     // needsReset 정보를 함께 돌려준다
 
     // 참가자에게 선택 페이지로 가는 버튼을 보낸다
     const ev = db.getEvent(req.eventId);
@@ -592,8 +620,10 @@ router.post('/me/unlock', requireParticipant, (req, res) => {
 });
 
 router.post('/me/picks', requireParticipant, (req, res) => {
-    const { picks, rev } = req.body;
+    const { picks, rev, roundId } = req.body;
     const r = db.withGentleman(req.eventId, g => {
+        if (roundId && g?.roundId && roundId !== g.roundId)
+            return { error: '새 회차가 시작됐어요. 화면을 새로고침해주세요.', code: 'stale_round' };
         const team = g?.teams?.[req.me.team_num];
         if (!team) return { error: '팀을 찾을 수 없어요.' };
         return D.savePicks(team, req.me.cancel_token, picks, rev);
@@ -602,11 +632,24 @@ router.post('/me/picks', requireParticipant, (req, res) => {
     res.json(r);
 });
 
+// 확정 — 고르는 동안에는 서버에 보내지 않으므로, 제출할 때 선택 내용을 함께 받아 저장하고 확정한다.
+// 관리자가 먼저 강제 확정했다면 savePicks가 거부하므로 늦게 도착한 제출은 반영되지 않는다.
 router.post('/me/confirm', requireParticipant, (req, res) => {
+    const { picks, rev, roundId } = req.body;
     const r = db.withGentleman(req.eventId, g => {
+        if (roundId && g?.roundId && roundId !== g.roundId)
+            return { error: '새 회차가 시작됐어요. 화면을 새로고침해주세요.', code: 'stale_round' };
         const team = g?.teams?.[req.me.team_num];
         if (!team) return { error: '팀을 찾을 수 없어요.' };
-        return D.confirmTeam(team, req.me.cancel_token);
+
+        if (Array.isArray(picks)) {
+            // rev는 넘기지 않는다. 고르는 동안 저장을 하지 않아 화면의 rev가 오래됐을 수 있고,
+            // 권한과 확정 여부는 savePicks가 다시 검사한다.
+            const saved = D.savePicks(team, req.me.cancel_token, picks, null);
+            if (saved.error) return { error: saved.error };
+        }
+        const done = D.confirmTeam(team, req.me.cancel_token);
+        return done.error ? { error: done.error } : { ...done, rev: team.rev };
     });
     r.error ? fail(res, r) : res.json(r);
 });

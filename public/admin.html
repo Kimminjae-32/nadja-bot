@@ -983,7 +983,9 @@ async function gmRefresh(){
     document.getElementById('gm-prize').style.display = s.type === 'prize' ? '' : 'none';
 
     const drafting = s.phase === 'drafting';
-    document.getElementById('gm-start').disabled    = drafting || s.phase === 'assigned' || s.phase === 'published';
+    // 진행 중일 때만 막는다. 끝난 회차에서 누르면 새 회차로 다시 시작한다.
+    document.getElementById('gm-start').disabled    = drafting;
+    document.getElementById('gm-start').textContent = (s.exists && s.phase !== 'idle') ? '새 회차로 다시 시작' : '드래프트 시작';
     document.getElementById('gm-redraw').disabled   = !drafting;
     document.getElementById('gm-close').disabled    = !s.exists || s.phase === 'idle' || s.phase === 'closed';
     document.getElementById('gm-finalize').disabled = !s.summary?.allConfirmed || s.exchangeReady;
@@ -1105,9 +1107,28 @@ async function gmSetType(){
 
 async function gmStart(){
     if (!confirm('실험체 드래프트를 시작할까요?\n시작하면 종료할 때까지 팀 구성을 바꿀 수 없어요.')) return;
-    const r = await gmApi('start', {});
+    let r = await gmApi('start', {});
+
+    // 이전 회차 기록이 남아 있으면 무엇이 지워지는지 알리고 다시 묻는다
+    if (r.needsReset) {
+        const w = r.wouldClear ?? {};
+        const lines = [
+            `${w.round}회차 기록이 남아 있어요. 새 회차로 시작하면 아래 내용이 모두 지워집니다.`,
+            '',
+            '· 팀별 실험체 선택과 확정 상태',
+            '· 선물 교환 순서와 참가자별 배정 결과',
+        ];
+        if (w.publishedTeams)   lines.push(`· 결과 공지 기록 (${w.publishedTeams}개 팀)`);
+        if (w.hasWinner)        lines.push('· 우승팀 지정');
+        if (w.voteStatus && w.voteStatus !== 'none') lines.push(`· 불행상 투표 (${w.voteStatus})`);
+        if (w.unluckyPublished) lines.push('· 불행상 수상 결과');
+        if (w.pendingPayouts)   lines.push(`· 지급 대기 중인 상품 ${w.pendingPayouts}건`);
+        lines.push('', '이미 디스코드에 올린 메시지는 그대로 남습니다.', '계속할까요?');
+        if (!confirm(lines.join('\n'))) return;
+        r = await gmApi('start', { confirmReset: true });
+    }
     if (r.error) { toast(r.error, true); return; }
-    toast(`드래프트 시작 · 팀당 후보 ${r.perTeam}명`);
+    toast(r.reset ? `${r.round}회차 시작 · 팀당 후보 ${r.perTeam}명` : `드래프트 시작 · 팀당 후보 ${r.perTeam}명`);
     gmRefresh();
 }
 

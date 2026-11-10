@@ -250,24 +250,31 @@ async function doVote(){
     $('mask').classList.remove('on');
     if (r.error) { toast(r.error, true); return; }
     toast(r.changed ? '표를 바꿨어요!' : '투표했어요!');
-    await load();
+    await load(true);
 }
 
-async function load(){
+// 후보 목록·마감 여부·내 표가 바뀌었을 때만 다시 그린다.
+// 참여 인원만 바뀐 경우에는 글자만 고쳐서 이미지가 다시 그려지지 않게 한다.
+let viewKey = null;
+async function load(force){
     const data = await api('/api/gentleman/me/vote');
     if (!data.available) { showCenter('지금은 투표할 수 없어요', data.error); return; }
     view = data;
-    selected = data.myVote ?? selected;
+    if (selected == null) selected = data.myVote ?? null;      // 고르는 중이면 내 선택을 유지한다
+
     $('subtitle').textContent = `${data.nickname}님 · 가장 불운한 선물을 받은 분에게 한 표를 주세요 `
         + `(${data.votedCount}/${data.totalVoters}명 참여)`;
-    render();
+
+    const key = JSON.stringify([data.closed, data.myVote, data.candidates.map(c => c.token)]);
+    if (force || key !== viewKey) { viewKey = key; render(); }
+    else updateDock();                                          // 목록은 그대로 두고 아래 버튼만 갱신
 }
 
 async function boot(){
     if (!EVENT || !TOKEN) { showCenter('링크가 올바르지 않아요', '디스코드의 투표 버튼을 눌러 다시 들어와주세요.'); return; }
     try { charEn = (await (await fetch('/api/gentleman/chars')).json()).charEn ?? {}; } catch {}
-    await load();
-    setInterval(load, 5000);
+    await load(true);
+    setInterval(() => load(false), 5000);
 }
 boot();
 </script>

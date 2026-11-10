@@ -11,7 +11,9 @@ const BG = '#0f0f1a', CARD = '#1a1a2e', LINE = '#2a2a4a', TEXT = '#e0e0f0', MUTE
 
 const teamColor = n => TEAM_COLORS[(Number(n) - 1) % TEAM_COLORS.length] || '#5865F2';
 // 값은 후보 ID("1:15")·표시 이름("단검 재키")·실험체 이름 모두 받는다
-const charKey = value => CHAR_EN[W.describe(value)?.characterName];
+// 함수 안에 캔버스 너비 변수 W가 있어 모듈이 가려진다. 별칭으로 안전하게 쓴다.
+const describeChar = value => W.describe(value);
+const charKey = value => CHAR_EN[describeChar(value)?.characterName];
 const charUrl = value => {
     const en = charKey(value);
     return en ? `https://cdn.dak.gg/assets/er/game-assets/${DAK_VER}/CharResult_${en}_S000.png` : null;
@@ -41,7 +43,7 @@ async function drawCharTile(ctx, F, x, y, w, h, value, { dim = false, label = nu
     ctx.fillStyle = CARD;
     rc.roundedRect(ctx, x, y, w, h, 8); ctx.fill();
 
-    const info = value != null ? W.describe(value) : null;
+    const info = value != null ? describeChar(value) : null;
     const name = info?.characterName ?? null;
     const img = name ? await rc.cachedImg(`result_${charKey(value)}`, charUrl(value)) : null;
     ctx.save();
@@ -81,7 +83,11 @@ async function generateGiftCard(teamNum, assignment, teamName) {
     const F = await rc.fontFamily();
 
     const TILE_W = 300, TILE_H = 238, GAP = 14, PAD = 28;
-    const HEAD_H = 150, NAME_H = 46, FOOT_H = assignment.leftover.length ? 172 : PAD;
+    const HEAD_H = 150, NAME_H = 46;
+    // 미배정 칸도 배정 카드와 같은 비율로 그린다 (조금 작게)
+    const LEFT_W = Math.round(TILE_W * 0.72), LEFT_H = Math.round(TILE_H * 0.72);
+    const LEFT_HEAD = 56;                       // '미배정 실험체 · 사용 불가' 제목 높이
+    const FOOT_H = assignment.leftover.length ? LEFT_HEAD + LEFT_H + NAME_H + PAD : PAD;
     const cols = Math.max(1, Math.min(assignment.members.length, 4));
     const rows = Math.ceil(assignment.members.length / cols);
 
@@ -126,32 +132,21 @@ async function generateGiftCard(teamNum, assignment, teamName) {
         ctx.fillStyle = MUTED;
         ctx.fillText('미배정 실험체 · 사용 불가', PAD, fy + 24);
 
-        const SW = 156, SH = 100;     // 무기군이 붙은 이름(예: 레이피어 피오라)이 잘리지 않을 만큼
-        // 동기로 그리기 전에 이미지를 미리 받아 캐시에 넣는다
-        await Promise.all(assignment.leftover.map(n => rc.cachedImg(`result_${charKey(n)}`, charUrl(n))));
-        assignment.leftover.forEach((name, k) => {
-            drawCharTileSync(ctx, F, PAD + k * (SW + 10), fy + 38, SW, SH, name);
-        });
+        // 배정 카드와 같은 방식으로 그린다. 이름은 카드 아래에 따로 적는다.
+        const ty = fy + LEFT_HEAD - 10;
+        for (let k = 0; k < assignment.leftover.length; k++) {
+            const name = assignment.leftover[k];
+            const cx = PAD + k * (LEFT_W + GAP);
+            await drawCharTile(ctx, F, cx, ty, LEFT_W, LEFT_H, name, { dim: true, color: LINE });
+
+            ctx.font = `20px ${F}`;
+            ctx.fillStyle = MUTED;
+            ctx.textAlign = 'center';
+            ctx.fillText(rc.fitText(ctx, describeChar(name)?.displayName ?? String(name), LEFT_W - 10), cx + LEFT_W / 2, ty + LEFT_H + 28);
+            ctx.textAlign = 'left';
+        }
     }
     return canvas.toBuffer('image/png');
-}
-
-// 미배정 칸은 이미 캐시된 이미지만 쓰므로 동기로 그린다
-function drawCharTileSync(ctx, F, x, y, w, h, value) {
-    ctx.fillStyle = CARD;
-    rc.roundedRect(ctx, x, y, w, h, 6); ctx.fill();
-    const name = W.describe(value)?.displayName ?? String(value);
-    const img = rc.peekImg(`result_${charKey(value)}`);
-    ctx.save();
-    rc.roundedRect(ctx, x, y, w, h, 6); ctx.clip();
-    if (img) { ctx.globalAlpha = 0.3; ctx.drawImage(img, x, y, w, h); ctx.globalAlpha = 1; }
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x, y + h - 26, w, 26);
-    ctx.font = `16px ${F}`;
-    ctx.fillStyle = MUTED;
-    ctx.fillText(rc.fitText(ctx, name, w - 12), x + 6, y + h - 8);
-    ctx.restore();
-    ctx.strokeStyle = LINE; ctx.lineWidth = 1.5;
-    rc.roundedRect(ctx, x, y, w, h, 6); ctx.stroke();
 }
 
 /** i번째 칸의 x 좌표 — 각 줄(마지막 줄 포함)을 캔버스 가운데에 맞춘다. */
