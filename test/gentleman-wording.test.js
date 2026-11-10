@@ -62,3 +62,26 @@ test('진행 단계 이름이 바뀐 흐름에 맞다', () => {
     assert.match(admin, /data-step="publish"[\s\S]{0,80}결과 자동 공지/);
     assert.match(admin, /data-step="close"[\s\S]{0,80}드래프트 종료/);
 });
+
+test('배정 수정의 팀 선택 드롭다운이 실제로 동작하도록 연결돼 있다', () => {
+    const admin = read('public/admin.html');
+    // 드롭다운에 바꿈 처리가 없으면 1팀에서 넘어갈 수 없다
+    assert.match(admin, /id="gm-fix-team"[^>]*onchange="gmFixPickTeam\(/,
+        '팀 선택 드롭다운에 change 처리가 없다');
+    assert.match(admin, /function gmFixPickTeam/, 'gmFixPickTeam 함수가 없다');
+
+    const i = admin.indexOf('function gmFixPickTeam');
+    const body = admin.slice(i, admin.indexOf('\nfunction ', i + 10));
+    assert.match(body, /fixTeam\s*=/, '고른 팀을 반영하지 않는다');
+    assert.match(body, /fixSel\s*=\s*\[\]/, '이전 팀에서 고른 사람을 놓지 않는다');
+    assert.match(body, /fixRenderList\(\)/, '목록을 다시 그리지 않는다');
+});
+
+test('새로고침이 관리자가 고른 팀을 되돌리지 않는다', () => {
+    const admin = read('public/admin.html');
+    const i = admin.indexOf('async function gmFixLoad');
+    const body = admin.slice(i, admin.indexOf('\n/** 드롭다운에서', i));
+    // 그 팀이 아직 있으면 fixTeam을 건드리지 않아야 한다
+    assert.match(body, /if \(!r\.teams\.some\(t => t\.teamNum === fixTeam\)\) fixTeam =/,
+        '고른 팀이 남아 있을 때도 덮어쓰고 있다');
+});

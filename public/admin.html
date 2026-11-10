@@ -434,7 +434,7 @@
             <div class="gm-panel-head">실험체 배정 수정</div>
             <div class="gm-note" id="gm-fix-note"></div>
             <div class="gm-step" id="gm-fix-head" style="display:none">
-                <select class="team-select" id="gm-fix-team" style="width:auto"></select>
+                <select class="team-select" id="gm-fix-team" style="width:auto" onchange="gmFixPickTeam(this.value)"></select>
                 <span style="flex:1"></span>
                 <span class="fix-state" id="gm-fix-state"></span>
             </div>
@@ -1350,8 +1350,19 @@ async function gmFixLoad(){
     const sel = document.getElementById('gm-fix-team');
     const opts = r.teams.map(t => `<option value="${t.teamNum}">${t.teamNum}팀</option>`).join('');
     if (sel.innerHTML !== opts) sel.innerHTML = opts;
+    // 관리자가 고른 팀을 그대로 둔다. 그 팀이 사라졌을 때만 첫 팀으로 되돌린다.
     if (!r.teams.some(t => t.teamNum === fixTeam)) fixTeam = r.teams[0]?.teamNum ?? null;
-    sel.value = String(fixTeam);
+    if (sel.value !== String(fixTeam)) sel.value = String(fixTeam);
+    fixRenderList();
+}
+
+/** 드롭다운에서 다른 팀을 고르면 그 팀 목록으로 바꾼다. */
+function gmFixPickTeam(value){
+    const n = Number(value);
+    if (!Number.isFinite(n) || n === fixTeam) return;
+    fixTeam = n;
+    fixSel = [];                      // 이전 팀에서 고른 사람은 놓는다 (팀을 넘어선 교환 방지)
+    fixSetState('', '');
     fixRenderList();
 }
 
