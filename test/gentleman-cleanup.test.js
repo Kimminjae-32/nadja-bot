@@ -93,3 +93,23 @@ test('다음 회차로 넘어가도 이전 회차 메시지 ID가 보존된다',
     const r = await routes.cleanupMessages(EV);
     assert.strictEqual(r.deleted, 2, '다음 회차에서도 이전 메시지를 지울 수 있어야 한다');
 });
+
+test('안내를 여러 번 보내거나 초기화해도 보낸 메시지를 모두 지운다', async () => {
+    const EV = 'ev-repeat';
+    db.createEvent(EV, 'g', 'ch', 'u', 2, '내전', '코발트');
+
+    // 드래프트 안내를 보낸 뒤 이벤트를 초기화하고 다시 보낸다
+    const first = await routes.sendDraftMessage(db.getEvent(EV));
+    db.withGentleman(EV, (g, e, p, setState) => { setState({ round: 1, phase: 'drafting', draftMessageId: first.messageId, teams: {}, payouts: {} }); return {}; });
+    db.setGentleman(EV, null);
+    const second = await routes.sendDraftMessage(db.getEvent(EV));
+    db.withGentleman(EV, (g, e, p, setState) => { setState({ round: 1, phase: 'drafting', draftMessageId: second.messageId, teams: {}, payouts: {} }); return {}; });
+
+    const ids = routes.collectMessageIds(db.getEvent(EV));
+    assert.ok(ids.includes(first.messageId), '초기화 전에 보낸 안내도 남아 있어야 한다');
+    assert.ok(ids.includes(second.messageId), '다시 보낸 안내도 남아 있어야 한다');
+
+    discord.clearMockOutbox();
+    const r = await routes.cleanupMessages(EV);
+    assert.strictEqual(r.deleted, 2, '두 안내 메시지를 모두 지워야 한다');
+});

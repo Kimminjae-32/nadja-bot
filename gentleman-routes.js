@@ -64,6 +64,21 @@ function requireDevTestEvent(req, res, next) {
 // 공통 응답 도우미
 const fail = (res, r, code = 400) => res.status(code).json({ error: r.error });
 
+/**
+ * 메시지를 보내고, 보낸 메시지 ID를 이벤트에 바로 기록한다.
+ * 같은 안내를 여러 번 보내거나 이벤트를 초기화해도 ID가 덮어써지지 않아 모집 종료 시 모두 지울 수 있다.
+ */
+async function sendTracked(ev, payload, meta) {
+    const sent = await discord.sendWithRetry(ev, payload, meta);
+    if (sent.ok && sent.messageId && ev?.id) {
+        db.withGentleman(ev.id, (g, e) => {
+            e.gentlemanSentMessages = [...new Set([...(e.gentlemanSentMessages ?? []), sent.messageId])];
+            return {};
+        });
+    }
+    return sent;
+}
+
 // 실험체 초상화 주소를 만들기 위한 이름 매핑 (비밀 정보가 아니라 누구나 받을 수 있다)
 router.get('/chars', (req, res) => {
     const { CHAR_EN, DAK_VER } = require('./constants');
@@ -171,7 +186,7 @@ async function sendDraftMessage(ev) {
         embeds = [{ data: { title: '저쪽 신사분이 주신 겁니다' } }];
         components = [{ components: [{ label: '실험체 선택' }] }];
     }
-    return discord.sendWithRetry(ev, { embeds, components, content: null }, { kind: 'draft-start' });
+    return sendTracked(ev, { embeds, components, content: null }, { kind: 'draft-start' });
 }
 
 // ── 관리자: 진행 제어 ────────────────────────────────
@@ -260,7 +275,7 @@ router.post('/admin/publish', requireAdmin, async (req, res) => {
             }
         }
         const content = `**${teamName(t)}** · ${a.from}팀이 보내온 선물입니다!`;   // 멘션은 넣지 않는다
-        const sent = await discord.sendWithRetry(ev, { content, files }, { kind: 'gift-result', teamNum: t });
+        const sent = await sendTracked(ev, { content, files }, { kind: 'gift-result', teamNum: t });
         results.push({ teamNum: t, ...sent });
     }
 
@@ -331,7 +346,7 @@ router.post('/admin/winner/publish', requireAdmin, async (req, res) => {
     }
     const mentions = withAvatar.filter(m => m.discordId).map(m => `<@${m.discordId}>`).join(' ');
     const content = `축하합니다! **${teamName(g.winnerTeam)}**이 이번 「저쪽 신사분이 주신 겁니다」의 주인공입니다!\n${mentions}`;
-    const sent = await discord.sendWithRetry(ev, { content, files }, { kind: 'winner' });
+    const sent = await sendTracked(ev, { content, files }, { kind: 'winner' });
 
     db.withGentleman(req.eventId, gg => {
         if (!gg) return {};
@@ -383,7 +398,7 @@ async function sendVoteMessage(ev, voterCount, remind = false, votedCount = 0) {
         embeds = [{ data: { title: remind ? '불행상 투표가 진행 중입니다' : '불행상 투표를 시작합니다' } }];
         components = [{ components: [{ label: '불행상 투표하기' }] }];
     }
-    return discord.sendWithRetry(ev, { embeds, components }, { kind: remind ? 'vote-remind' : 'vote-open' });
+    return sendTracked(ev, { embeds, components }, { kind: remind ? 'vote-remind' : 'vote-open' });
 }
 
 router.post('/admin/vote/remind', requireAdmin, async (req, res) => {
@@ -433,7 +448,7 @@ router.post('/admin/vote/cancel', requireAdmin, async (req, res) => {
     const ev = db.getEvent(req.eventId);
     const ids = [ev.gentleman.vote.messageId, ...(ev.gentleman.vote.remindMessageIds ?? [])].filter(Boolean);
     for (const id of ids) await discord.disableButtons(ev, id);
-    if (notify) await discord.sendWithRetry(ev, { content: '불행상 투표가 취소되었습니다. 다시 열리면 안내드릴게요.' }, { kind: 'vote-cancel' });
+    if (notify) await sendTracked(ev, { content: '불행상 투표가 취소되었습니다. 다시 열리면 안내드릴게요.' }, { kind: 'vote-cancel' });
     res.json({ success: true, notified: notify });
 });
 
@@ -462,7 +477,7 @@ router.post('/admin/unlucky/publish', requireAdmin, async (req, res) => {
         .filter(Boolean).map(id => `<@${id}>`).join(' ');
     const title = winners.length > 1 ? '공동 불행상 수상자를 발표합니다!' : '불행상 수상자를 발표합니다!';
     const content = `${title}\n저쪽 신사분의 선물이 조금 가혹했네요. 위로의 박수를 보냅니다.\n${mentions}`;
-    const sent = await discord.sendWithRetry(ev, { content, files }, { kind: 'unlucky' });
+    const sent = await sendTracked(ev, { content, files }, { kind: 'unlucky' });
 
     db.withGentleman(req.eventId, gg => {
         if (!gg) return {};
