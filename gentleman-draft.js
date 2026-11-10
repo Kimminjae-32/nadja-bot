@@ -256,6 +256,142 @@ function unconfirmTeam(team) {
     return { success: true };
 }
 
+// ── 관리자 배정 수정 ─────────────────────────────────
+// 배정된 실험체를 보유하지 않아 쓸 수 없는 참가자를 위한 예외 기능이다.
+// 참가자가 스스로 바꾸는 기능이 아니라, 관리자만 쓸 수 있다.
+
+/** 참가자 한 명의 배정 칸을 찾는다. */
+function findAssigned(state, teamNum, token) {
+    const a = state?.assignments?.[teamNum];
+    if (!a) return null;
+    const i = a.members.findIndex(m => m.token === token);
+    return i < 0 ? null : { assignment: a, index: i, member: a.members[i] };
+}
+
+/** 배정 칸에 후보 ID를 채운다. 표시 이름과 무기군도 함께 맞춘다. */
+function setCharacter(member, candidateId, source) {
+    const info = candidateId != null ? W.describe(candidateId) : null;
+    member.character   = candidateId ?? null;
+    member.displayName = info?.displayName ?? null;
+    member.weaponName  = info?.weaponName ?? null;
+    // null이면 원래대로 '보내온 팀'이 출처다. 'admin'이면 관리자가 새로 뽑아준 실험체다.
+    if (source === undefined) return;
+    if (source) member.source = source; else delete member.source;
+}
+
+/**
+ * 같은 팀의 두 참가자가 배정받은 실험체를 서로 바꾼다.
+ * 실험체를 보낸 팀은 그대로이므로 출처 표시도 따라서 함께 옮긴다.
+ */
+function swapMembers(state, teamNum, tokenA, tokenB) {
+    if (!state?.assignments) return { error: '아직 배정이 끝나지 않았어요.' };
+    if (!tokenA || !tokenB || tokenA === tokenB) return { error: '서로 다른 두 사람을 골라주세요.' };
+
+    const a = findAssigned(state, teamNum, tokenA);
+    const b = findAssigned(state, teamNum, tokenB);
+    // 다른 팀 사람은 같은 팀에서 찾을 수 없으므로 여기서 걸러진다
+    if (!a || !b) return { error: '같은 팀의 참가자끼리만 교환할 수 있어요.' };
+
+    const before = { [tokenA]: a.member.displayName, [tokenB]: b.member.displayName };
+    const keep   = { char: a.member.character, source: a.member.source ?? null };
+    setCharacter(a.member, b.member.character, b.member.source ?? null);
+    setCharacter(b.member, keep.char, keep.source);
+
+    return {
+        success: true, teamNum,
+        changed: [
+            { token: tokenA, nickname: a.member.nickname, before: before[tokenA], after: a.member.displayName },
+            { token: tokenB, nickname: b.member.nickname, before: before[tokenB], after: b.member.displayName },
+        ],
+    };
+}
+
+/**
+ * 이번 회차에서 이미 쓰이고 있는 후보 ID를 모은다.
+ * 배정된 것뿐 아니라 미배정 칸도 포함한다. 결과 이미지에서 같은 실험체가
+ * 배정과 미배정에 동시에 나오면 혼동되기 때문이다.
+ */
+function charactersInUse(state) {
+    const used = new Set();
+    for (const a of Object.values(state?.assignments ?? {})) {
+        for (const m of a.members) if (m.character != null) used.add(m.character);
+        for (const c of a.leftover ?? []) used.add(c);
+    }
+    return used;
+}
+
+/**
+ * 참가자 한 명에게 줄 새 실험체를 뽑는다. 아직 적용하지는 않는다.
+ * 후보 12개에 묶이지 않고 쓸 수 있는 전체 실험체·무기군에서 고른다.
+ * @param banned 관리자가 막은 실험체 이름 목록
+ */
+function pickReroll(state, teamNum, token, banned = []) {
+    if (!state?.assignments) return { error: '아직 배정이 끝나지 않았어요.' };
+    const found = findAssigned(state, teamNum, token);
+    if (!found) return { error: '그 팀에서 참가자를 찾을 수 없어요.' };
+
+    const used = charactersInUse(state);
+    // 같은 실험체라도 무기군이 다르면 다른 후보다. 후보 ID로 비교하므로 자연히 구분된다.
+    const pool = W.candidatePool(banned).filter(c => !used.has(c.id));
+    if (!pool.length) {
+        return { error: '다시 뽑을 수 있는 실험체가 없어요. 밴 목록을 줄이거나 기존 배정을 유지해주세요.' };
+    }
+
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    return {
+        success: true, teamNum, token,
+        nickname: found.member.nickname,
+        before:   { character: found.member.character, displayName: found.member.displayName, weaponName: found.member.weaponName },
+        after:    { character: picked.id, displayName: picked.displayName, weaponName: picked.weaponName },
+        poolSize: pool.length,
+    };
+}
+
+/**
+ * 미리 본 재추첨 결과를 실제로 적용한다.
+ * 다른 참가자의 배정은 건드리지 않는다. 연쇄 변경은 일어나지 않는다.
+ */
+function applyReroll(state, teamNum, token, candidateId, banned = []) {
+    if (!state?.assignments) return { error: '아직 배정이 끝나지 않았어요.' };
+    const found = findAssigned(state, teamNum, token);
+    if (!found) return { error: '그 팀에서 참가자를 찾을 수 없어요.' };
+    if (candidateId == null) return { error: '적용할 실험체가 없어요.' };
+
+    const info = W.describe(candidateId);
+    if (!info?.characterName) return { error: '알 수 없는 실험체예요.' };
+    if (banned.includes(info.characterName)) return { error: `${info.characterName}은(는) 밴된 실험체예요.` };
+
+    // 미리 보기와 적용 사이에 다른 수정이 있었을 수 있으므로 다시 확인한다
+    const used = charactersInUse(state);
+    used.delete(found.member.character ?? undefined);
+    if (used.has(candidateId)) return { error: '그 사이에 다른 참가자에게 배정된 실험체예요. 다시 뽑아주세요.' };
+
+    const before = found.member.displayName;
+    // 관리자가 새로 뽑아준 실험체는 어느 팀이 보낸 것도 아니므로 출처를 따로 표시한다
+    setCharacter(found.member, candidateId, 'admin');
+
+    return {
+        success: true, teamNum,
+        changed: [{ token, nickname: found.member.nickname, before, after: found.member.displayName }],
+    };
+}
+
+/** 관리자 화면에 보여줄 팀별 배정 내용 (결과를 공지한 뒤에만 쓴다) */
+function assignmentView(state, teamNum) {
+    const a = state?.assignments?.[teamNum];
+    if (!a) return null;
+    return {
+        teamNum: Number(teamNum),
+        from: a.from,
+        members: a.members.map(m => ({
+            token: m.token, nickname: m.nickname,
+            character: m.character, displayName: m.displayName, weaponName: m.weaponName,
+            source: m.source ?? null,                 // 'admin'이면 관리자 재배정
+        })),
+        leftover: (a.leftover ?? []).map(c => ({ character: c, displayName: W.describe(c)?.displayName ?? String(c) })),
+    };
+}
+
 // ── 원형 선물 교환 ───────────────────────────────────
 /**
  * 팀 번호로 하나의 원형 순서를 만든다. 예) 1 → 4 → 2 → 6 → 3 → 5 → 1
@@ -388,6 +524,7 @@ module.exports = {
     acquireLock, releaseLock, forceReleaseLock, reapLock, lockExpired,
     savePicks, confirmTeam, forceConfirmTeam, unconfirmTeam,
     buildExchange, finalizeAssignments,
+    swapMembers, pickReroll, applyReroll, assignmentView, charactersInUse,
     adminSummary, participantView,
     teamNumbers, membersOfTeam, shuffle,
 };

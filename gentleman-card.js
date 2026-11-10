@@ -8,6 +8,7 @@ const W = require('./character-weapons');
 
 const TEAM_COLORS = ['#3498db', '#e74c3c', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#95a5a6', '#1abc9c'];
 const BG = '#0f0f1a', CARD = '#1a1a2e', LINE = '#2a2a4a', TEXT = '#e0e0f0', MUTED = '#8888aa';
+const ACCENT = '#e94560';            // 관리자가 손댄 칸을 눈에 띄게 표시할 때 쓴다
 
 const teamColor = n => TEAM_COLORS[(Number(n) - 1) % TEAM_COLORS.length] || '#5865F2';
 // 값은 후보 ID("1:15")·표시 이름("단검 재키")·실험체 이름 모두 받는다
@@ -111,13 +112,19 @@ async function generateGiftCard(teamNum, assignment, teamName) {
     ctx.fillText(teamName || `${teamNum}팀`, PAD, 68);
     ctx.font = `bold 30px ${F}`;
     ctx.fillStyle = color;
-    ctx.fillText(`${assignment.from}팀이 보내온 실험체입니다!`, PAD, 112);
+    const 수정됨 = assignment.members.some(m => m.source === 'admin');
+    ctx.fillText(`${assignment.from}팀이 보내온 실험체입니다!${수정됨 ? ' (관리자 수정)' : ''}`, PAD, 112);
 
     let i = 0;
     for (const m of assignment.members) {
         const cx = PAD + (i % cols) * (TILE_W + GAP);
         const cy = HEAD_H + Math.floor(i / cols) * (TILE_H + NAME_H + GAP);
-        await drawCharTile(ctx, F, cx, cy, TILE_W, TILE_H, m.character, { color });
+        // 관리자가 새로 뽑아준 실험체는 어느 팀이 보낸 것도 아니므로 따로 표시한다
+        const admin = m.source === 'admin';
+        await drawCharTile(ctx, F, cx, cy, TILE_W, TILE_H, m.character, {
+            color: admin ? ACCENT : color,
+            label: admin ? '관리자 재배정' : null,
+        });
 
         ctx.font = `bold 26px ${F}`;
         ctx.fillStyle = TEXT;

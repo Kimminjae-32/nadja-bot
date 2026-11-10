@@ -324,6 +324,28 @@ const STEPS = [
     ['나머지 팀 자동 선택·확정', async () => { const r = await dev('auto-pick'); if (!r.error) log(`자동 확정: ${r.teams.join(', ')}팀`, 'ok'); }],
     ['전 팀 확정 → 실험체 교환·배정 및 공지', async () => { const r = await adm('finalize'); if (!r.error) log(`원형 교환: ${r.order?.join(' → ')}`, 'ok'); }],
     ['결과 공지 (이미지 미리 보기)', async () => { const r = await adm('publish'); if (!r.error) log(`팀별 결과 ${r.results.length}건 전송 · 실패 ${r.failed.length}건`, 'ok'); }],
+    ['1팀 두 명 실험체 교환 (관리자)', async () => {
+        const view = await admg('assignments');
+        if (view.error || !view.available) return log(view.reason ?? view.error, 'err');
+        const t1 = view.teams.find(t => t.teamNum === 1);
+        const [a, b] = t1.members;
+        const r = await adm('assignments/swap', { teamNum: 1, tokenA: a.token, tokenB: b.token });
+        if (r.error) return log(r.error, 'err');
+        log(r.changed.map(c => `${c.nickname}: ${c.before} → ${c.after}`).join(' / '), 'ok');
+        log(r.republished ? '1팀 수정 공지 완료' : `공지 실패: ${r.publishError}`, r.republished ? 'ok' : 'err');
+    }],
+    ['1팀 한 명만 재추첨 (관리자)', async () => {
+        const view = await admg('assignments');
+        if (view.error || !view.available) return log(view.reason ?? view.error, 'err');
+        const target = view.teams.find(t => t.teamNum === 1).members[0];
+        const pick = await adm('assignments/reroll', { teamNum: 1, memberToken: target.token });
+        if (pick.error) return log(pick.error, 'err');
+        log(`미리 보기 · ${pick.nickname}: ${pick.before.displayName} → ${pick.after.displayName} (남은 후보 ${pick.poolSize}개)`, 'info');
+        const applied = await adm('assignments/reroll/apply', { teamNum: 1, memberToken: target.token, character: pick.after.character });
+        if (applied.error) return log(applied.error, 'err');
+        log(`적용 완료 · 출처는 '관리자 재배정'으로 표시됩니다`, 'ok');
+        log(applied.republished ? '1팀 수정 공지 완료' : `공지 실패: ${applied.publishError}`, applied.republished ? 'ok' : 'err');
+    }],
     ['우승팀 1팀 지정 + 공지', async () => {
         await adm('winner', { teamNum: 1 });
         const r = await adm('winner/publish');

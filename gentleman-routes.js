@@ -359,6 +359,139 @@ router.post('/admin/publish', requireAdmin, async (req, res) => {
     }
 });
 
+// ── 관리자: 배정 수정 ────────────────────────────────
+// 배정받은 실험체를 보유하지 않아 쓸 수 없는 참가자를 위한 예외 기능이다.
+// 참가자는 쓸 수 없고 관리자만 쓸 수 있다.
+
+/**
+ * 배정을 고칠 수 있는 상태인지 확인한다.
+ * 불행상 투표는 공개 시점의 배정을 그대로 담아 두기 때문에, 투표가 열려 있으면 먼저 정리해야 한다.
+ */
+function canEditAssignments(g) {
+    if (!g?.assignments)        return { error: '아직 실험체 교환·배정이 끝나지 않았어요.' };
+    if (!g.resultsPublished)    return { error: '결과를 공지한 뒤에 수정할 수 있어요.' };
+    if (g.unlucky?.published)   return { error: '불행상 수상 결과가 이미 발표돼서 배정을 바꿀 수 없어요.' };
+    if (g.vote?.status === V.STATUS.OPEN)
+        return { error: '불행상 투표가 진행 중이에요. 투표를 취소한 뒤 배정을 고치고, 새 배정으로 다시 열어주세요.', voteOpen: true };
+    if (g.vote?.status === V.STATUS.CLOSED)
+        return { error: '불행상 투표가 마감돼 있어요. 투표를 취소한 뒤 배정을 고치고, 새 배정으로 다시 열어주세요.', voteOpen: true };
+    return null;
+}
+
+// 팀별 배정 내용 — 결과를 공지한 뒤에만 내려준다 (공개 전 비공개 규칙 유지)
+router.get('/admin/assignments', requireAdmin, (req, res) => {
+    const g = req.event?.gentleman;
+    if (!g?.assignments) return res.json({ available: false, reason: '아직 실험체 교환·배정이 끝나지 않았어요.' });
+    if (!g.resultsPublished) return res.json({ available: false, reason: '결과를 공지하면 참가자별 배정을 볼 수 있어요.' });
+
+    const blocked = canEditAssignments(g);
+    res.json({
+        available: true,
+        editable: !blocked,
+        reason: blocked?.error ?? null,
+        voteOpen: !!blocked?.voteOpen,
+        teams: D.teamNumbers(db.getParticipants(req.eventId))
+            .map(t => D.assignmentView(g, t))
+            .filter(Boolean),
+        teamMessages: g.teamMessages ?? {},
+    });
+});
+
+/** 배정을 고친 뒤 그 팀만 다시 공지한다. */
+async function republishTeam(eventId, teamNum, note) {
+    if (publishing.has(eventId)) return { ok: false, error: '공지를 보내는 중이에요. 잠시만 기다려주세요.' };
+    publishing.add(eventId);
+    try {
+        const ev = db.getEvent(eventId);
+        const a  = ev?.gentleman?.assignments?.[teamNum];
+        if (!a) return { ok: false, error: '배정 정보가 없어요.' };
+
+        let files = [];
+        if (card) {
+            try {
+                const buf = await card.generateGiftCard(teamNum, a, teamName(teamNum));
+                files = [{ name: `gentleman-team${teamNum}-fix.png`, buffer: buf }];
+            } catch (e) {
+                console.error(`[gentleman] ${teamNum}팀 수정 이미지 생성 실패:`, e.message);
+            }
+        }
+        const content = [
+            `**[실험체 배정 수정 안내]**`,
+            `**${teamName(teamNum)}**의 실험체 배정이 변경되었습니다.`,
+            `이전 결과 대신 아래 수정된 결과를 기준으로 경기를 진행해 주세요.`,
+            note ? `· ${note}` : null,
+        ].filter(Boolean).join('\n');                      // 멘션은 넣지 않는다
+
+        const sent = await sendTracked(ev, { content, files }, { kind: 'gift-fix', teamNum });
+
+        db.withGentleman(eventId, gg => {
+            if (!gg) return {};
+            (gg.teamFixes ??= {})[teamNum] = {
+                ok: !!sent.ok, messageId: sent.messageId ?? null, error: sent.error ?? null, at: Date.now(),
+            };
+            return {};
+        });
+        return sent;
+    } finally {
+        publishing.delete(eventId);
+    }
+}
+
+// 같은 팀 두 사람의 실험체를 맞바꾼다
+router.post('/admin/assignments/swap', requireAdmin, async (req, res) => {
+    const teamNum = Number(req.body.teamNum);
+    const { tokenA, tokenB } = req.body;
+
+    const r = db.withGentleman(req.eventId, g => {
+        const blocked = canEditAssignments(g);
+        if (blocked) return blocked;
+        return D.swapMembers(g, teamNum, tokenA, tokenB);
+    });
+    if (r.error) return res.status(400).json(r);
+
+    const note = r.changed.map(c => `${c.nickname}: ${c.before ?? '없음'} → ${c.after ?? '없음'}`).join(' / ');
+    const sent = await republishTeam(req.eventId, teamNum, note);
+    res.json({ ...r, republished: !!sent.ok, publishError: sent.ok ? null : sent.error });
+});
+
+// 참가자 한 명의 새 실험체를 뽑아 본다 (아직 적용하지 않는다)
+router.post('/admin/assignments/reroll', requireAdmin, (req, res) => {
+    const teamNum = Number(req.body.teamNum);
+    const r = db.withGentleman(req.eventId, (g, ev) => {
+        const blocked = canEditAssignments(g);
+        if (blocked) return blocked;
+        // 미리 보기이므로 상태를 바꾸지 않는다. 다른 참가자의 배정도 그대로다.
+        // 관리자 토큰과 이름이 겹치지 않도록 참가자 쪽은 memberToken으로 받는다
+        return D.pickReroll(g, teamNum, req.body.memberToken, ev.bannedCharacters ?? []);
+    });
+    r.error ? res.status(400).json(r) : res.json(r);
+});
+
+// 미리 본 재추첨 결과를 적용하고 그 팀만 다시 공지한다
+router.post('/admin/assignments/reroll/apply', requireAdmin, async (req, res) => {
+    const teamNum = Number(req.body.teamNum);
+    const r = db.withGentleman(req.eventId, (g, ev) => {
+        const blocked = canEditAssignments(g);
+        if (blocked) return blocked;
+        return D.applyReroll(g, teamNum, req.body.memberToken, req.body.character, ev.bannedCharacters ?? []);
+    });
+    if (r.error) return res.status(400).json(r);
+
+    const note = r.changed.map(c => `${c.nickname}: ${c.before ?? '없음'} → ${c.after ?? '없음'} (관리자 재배정)`).join(' / ');
+    const sent = await republishTeam(req.eventId, teamNum, note);
+    res.json({ ...r, republished: !!sent.ok, publishError: sent.ok ? null : sent.error });
+});
+
+// 수정 공지가 실패했을 때 그 팀만 다시 보낸다
+router.post('/admin/assignments/republish', requireAdmin, async (req, res) => {
+    const teamNum = Number(req.body.teamNum);
+    const g = db.getEvent(req.eventId)?.gentleman;
+    if (!g?.assignments?.[teamNum]) return res.status(400).json({ error: '배정 정보가 없어요.' });
+
+    const sent = await republishTeam(req.eventId, teamNum, null);
+    sent.ok ? res.json({ success: true, teamNum }) : res.status(400).json({ error: sent.error });
+});
+
 // 드래프트 종료 — 이 시점부터 팀 구성을 다시 바꿀 수 있다
 router.post('/admin/close-draft', requireAdmin, (req, res) => {
     const r = db.withGentleman(req.eventId, g => {

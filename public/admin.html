@@ -148,6 +148,49 @@
         .tp-stat b.bump{animation:tpBump .35s ease;}
         .tp-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.7rem;}
         .tp-label{font-size:.85rem;color:var(--muted);min-width:4.5rem;}
+        /* 관리자 공용 모달 */
+        #gm-modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
+            align-items:center;justify-content:center;z-index:200;padding:1rem;}
+        #gm-modal-mask.on{display:flex;}
+        .gm-modal{background:var(--panel);border:1px solid var(--border);border-radius:13px;
+            padding:1.1rem 1.2rem;max-width:26rem;width:100%;box-shadow:0 18px 44px rgba(0,0,0,.55);}
+        .gm-modal h3{margin:0 0 .5rem;font-size:1rem;}
+        .gm-modal-who{font-weight:800;margin:.2rem 0 .5rem;}
+        .gm-modal-change{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin:.3rem 0 .6rem;font-size:.95rem;}
+        .gm-modal-change .old{color:var(--muted);text-decoration:line-through;}
+        .gm-modal-change .arrow{color:var(--muted);}
+        .gm-modal-change .new{color:var(--green);font-weight:800;}
+        .gm-modal-sub{font-size:.76rem;color:var(--muted);margin:0 0 .8rem;}
+        .gm-modal-btns{display:flex;gap:.4rem;justify-content:flex-end;flex-wrap:wrap;}
+
+        /* 실험체 배정 수정 */
+        .fix-row{display:flex;align-items:center;gap:.6rem;padding:.45rem .55rem;border-radius:9px;
+            border:1px solid var(--border);background:var(--bg);margin-bottom:.4rem;cursor:pointer;
+            transition:border-color .18s,background .18s;}
+        .fix-row:hover{border-color:var(--accent);}
+        .fix-row.sel{border-color:var(--gold,#f1c40f);background:rgba(241,196,15,.08);}
+        .fix-row input{accent-color:var(--accent);pointer-events:none;}
+        .fix-who{font-weight:700;min-width:7.5rem;}
+        /* 실험체 이름만 바꿔 넣는 칸. 이 칸만 고쳐서 목록 전체를 다시 만들지 않는다. */
+        .fix-char{color:var(--text);font-size:.86rem;}
+        .fix-char .wn{color:var(--muted);}
+        .fix-badge{font-size:.66rem;font-weight:800;padding:.1rem .35rem;border-radius:5px;
+            background:var(--accent);color:#fff;margin-left:.35rem;}
+        .fix-state{font-size:.76rem;color:var(--muted);}
+        .fix-state.ok{color:var(--green);}
+        .fix-state.err{color:var(--accent);}
+        /* 교환 — 두 칸이 서로 스쳐 지나가는 느낌만 준다 */
+        @keyframes fixSwapUp{0%{transform:translateY(0)}50%{transform:translateY(-9px)}100%{transform:translateY(0)}}
+        @keyframes fixSwapDown{0%{transform:translateY(0)}50%{transform:translateY(9px)}100%{transform:translateY(0)}}
+        .fix-row.swap-a .fix-char{animation:fixSwapUp .45s var(--ease,ease);display:inline-block;}
+        .fix-row.swap-b .fix-char{animation:fixSwapDown .45s var(--ease,ease);display:inline-block;}
+        /* 재추첨 — 글자만 짧게 흔든다 (이미지를 다시 만들지 않는다) */
+        @keyframes fixShuffle{0%,100%{opacity:1;transform:none}25%{opacity:.35;transform:translateX(-4px)}75%{opacity:.35;transform:translateX(4px)}}
+        .fix-row.shuffling .fix-char{animation:fixShuffle .28s linear infinite;display:inline-block;}
+        @media (prefers-reduced-motion:reduce){
+            .fix-row.swap-a .fix-char,.fix-row.swap-b .fix-char,.fix-row.shuffling .fix-char{animation:none;}
+        }
+
         /* 모집 정원 관리 */
         .cap-panel{background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:.85rem 1rem;margin-bottom:.9rem;}
         .cap-title{font-weight:800;font-size:.9rem;margin-bottom:.6rem;}
@@ -384,6 +427,22 @@
                 <button class="btn btn-secondary btn-sm" id="gm-publish" onclick="gmPublish()" style="display:none">못 올린 팀 다시 보내기</button>
             </div>
             <div class="gm-note" id="gm-publish-state"></div>
+        </div>
+
+        <!-- 배정받은 실험체를 못 쓰는 참가자를 위한 관리자 수정 -->
+        <div id="gm-fix" class="gm-panel" style="display:none">
+            <div class="gm-panel-head">실험체 배정 수정</div>
+            <div class="gm-note" id="gm-fix-note"></div>
+            <div class="gm-step" id="gm-fix-head" style="display:none">
+                <select class="team-select" id="gm-fix-team" style="width:auto"></select>
+                <span style="flex:1"></span>
+                <span class="fix-state" id="gm-fix-state"></span>
+            </div>
+            <div id="gm-fix-list"></div>
+            <div class="gm-step" id="gm-fix-btns" style="display:none">
+                <button class="btn btn-secondary btn-sm" id="gm-fix-swap" onclick="gmFixSwap()" disabled>팀원끼리 교환</button>
+                <button class="btn btn-secondary btn-sm" id="gm-fix-reroll" onclick="gmFixReroll()" disabled>개인 재추첨</button>
+            </div>
         </div>
 
         <!-- 상품 회차 전용 -->
@@ -1089,6 +1148,7 @@ async function gmRefresh(){
     gmRenderTeams(s);
     gmRenderPublish(s);
     if (s.type === 'prize') gmRenderPrize(s);
+    gmFixLoad();                         // 배정 수정 영역 (결과 공지 후에만 내용이 나온다)
 }
 
 // 지금 어느 단계인지 색으로 보여준다
@@ -1237,6 +1297,223 @@ async function gmTeamAction(action, teamNum){
     const r = await gmApi(action, { teamNum });
     r.error ? toast(r.error, true) : toast('처리했어요');
     gmRefresh();
+}
+
+// 관리자 화면 공용 간이 모달 (다크 테마 유지)
+function openGmModal(html){
+    let mask = document.getElementById('gm-modal-mask');
+    if (!mask) {
+        mask = document.createElement('div');
+        mask.id = 'gm-modal-mask';
+        mask.innerHTML = '<div class="gm-modal" id="gm-modal"></div>';
+        mask.addEventListener('click', e => { if (e.target === mask) closeGmModal(); });
+        document.body.appendChild(mask);
+    }
+    document.getElementById('gm-modal').innerHTML = html;
+    mask.classList.add('on');
+}
+function closeGmModal(){ document.getElementById('gm-modal-mask')?.classList.remove('on'); }
+
+// ── 실험체 배정 수정 ────────────────────────────────
+// 배정받은 실험체를 보유하지 않아 못 쓰는 참가자를 위한 관리자 전용 기능이다.
+let fixView = null;        // 서버에서 받은 배정 내용
+let fixTeam = null;        // 지금 보고 있는 팀
+let fixSel  = [];          // 고른 참가자 토큰 (최대 2명)
+
+function fixSetState(kind, text){
+    const el = document.getElementById('gm-fix-state');
+    el.className = 'fix-state' + (kind ? ' ' + kind : '');
+    el.textContent = text ?? '';
+}
+
+async function gmFixLoad(){
+    const panel = document.getElementById('gm-fix');
+    const r = await gmApi('assignments');          // 본문 없이 부르면 GET으로 나간다
+    if (r.error || !r.available) {
+        // 결과를 공지하기 전에는 참가자별 배정을 보여주지 않는다
+        panel.style.display = r.reason ? '' : 'none';
+        document.getElementById('gm-fix-note').textContent = r.reason ?? '';
+        document.getElementById('gm-fix-head').style.display = 'none';
+        document.getElementById('gm-fix-btns').style.display = 'none';
+        document.getElementById('gm-fix-list').innerHTML = '';
+        fixView = null;
+        return;
+    }
+    panel.style.display = '';
+    fixView = r;
+    document.getElementById('gm-fix-note').textContent = r.editable
+        ? '배정받은 실험체를 가지고 있지 않은 참가자가 있을 때만 사용하세요. 수정하면 그 팀만 다시 공지합니다.'
+        : (r.reason ?? '');
+    document.getElementById('gm-fix-head').style.display = '';
+    document.getElementById('gm-fix-btns').style.display = '';
+
+    const sel = document.getElementById('gm-fix-team');
+    const opts = r.teams.map(t => `<option value="${t.teamNum}">${t.teamNum}팀</option>`).join('');
+    if (sel.innerHTML !== opts) sel.innerHTML = opts;
+    if (!r.teams.some(t => t.teamNum === fixTeam)) fixTeam = r.teams[0]?.teamNum ?? null;
+    sel.value = String(fixTeam);
+    fixRenderList();
+}
+
+function fixTeamData(){ return fixView?.teams.find(t => t.teamNum === fixTeam) ?? null; }
+
+// 목록은 사람이 바뀔 때만 다시 만들고, 실험체 이름은 칸만 고쳐 넣는다
+let fixListKey = null;
+function fixRenderList(){
+    const el = document.getElementById('gm-fix-list');
+    const t = fixTeamData();
+    if (!t) { el.innerHTML = ''; fixListKey = null; return; }
+
+    const key = t.teamNum + '|' + t.members.map(m => m.token).join('|');
+    if (key !== fixListKey) {
+        fixListKey = key;
+        el.innerHTML = t.members.map(m => `
+            <label class="fix-row" data-token="${esc(m.token)}">
+                <input type="checkbox">
+                <span class="fix-who">${esc(m.nickname)}</span>
+                <span class="fix-char"></span>
+            </label>`).join('');
+        el.querySelectorAll('.fix-row').forEach(row => {
+            row.addEventListener('click', e => { e.preventDefault(); fixToggle(row.dataset.token); });
+        });
+    }
+    fixSyncChars();
+    fixSyncSelection();
+}
+
+/** 실험체 이름 칸만 갱신한다 (목록 전체를 다시 만들지 않아 깜빡이지 않는다) */
+function fixSyncChars(){
+    const t = fixTeamData();
+    if (!t) return;
+    for (const row of document.querySelectorAll('#gm-fix-list .fix-row')) {
+        const m = t.members.find(x => x.token === row.dataset.token);
+        if (!m) continue;
+        const html = m.displayName
+            ? esc(m.displayName) + (m.source === 'admin' ? '<span class="fix-badge">관리자 재배정</span>' : '')
+            : '<span class="wn">배정 없음</span>';
+        const cell = row.querySelector('.fix-char');
+        if (cell.innerHTML !== html) cell.innerHTML = html;
+    }
+}
+
+function fixSyncSelection(){
+    for (const row of document.querySelectorAll('#gm-fix-list .fix-row')) {
+        const on = fixSel.includes(row.dataset.token);
+        row.classList.toggle('sel', on);
+        row.querySelector('input').checked = on;
+    }
+    const editable = !!fixView?.editable;
+    document.getElementById('gm-fix-swap').disabled   = !editable || fixSel.length !== 2;
+    document.getElementById('gm-fix-reroll').disabled = !editable || fixSel.length !== 1;
+}
+
+function fixToggle(token){
+    const i = fixSel.indexOf(token);
+    if (i >= 0) fixSel.splice(i, 1);
+    else {
+        if (fixSel.length >= 2) fixSel.shift();      // 셋째를 고르면 가장 먼저 고른 사람을 놓는다
+        fixSel.push(token);
+    }
+    fixSyncSelection();
+}
+
+function fixRow(token){ return document.querySelector(`#gm-fix-list .fix-row[data-token="${CSS.escape(token)}"]`); }
+const fixName = token => fixTeamData()?.members.find(m => m.token === token) ?? {};
+
+async function gmFixSwap(){
+    if (fixSel.length !== 2) return;
+    const [a, b] = fixSel.map(fixName);
+    if (!confirm(`${fixTeam}팀에서 두 사람의 실험체를 서로 바꿉니다.\n\n`
+               + `${a.nickname}: ${a.displayName ?? '없음'} → ${b.displayName ?? '없음'}\n`
+               + `${b.nickname}: ${b.displayName ?? '없음'} → ${a.displayName ?? '없음'}\n\n`
+               + `바꾸면 ${fixTeam}팀 결과를 디스코드에 다시 공지합니다. 계속할까요?`)) return;
+
+    fixSetState('', '교환하는 중...');
+    const rowA = fixRow(fixSel[0]), rowB = fixRow(fixSel[1]);
+    rowA?.classList.add('swap-a'); rowB?.classList.add('swap-b');
+
+    const r = await gmApi('assignments/swap', { teamNum: fixTeam, tokenA: fixSel[0], tokenB: fixSel[1] });
+    setTimeout(() => { rowA?.classList.remove('swap-a'); rowB?.classList.remove('swap-b'); }, 460);
+
+    if (r.error) { fixSetState('err', r.error); toast(r.error, true); await gmFixLoad(); return; }
+    fixSel = [];
+    await gmFixLoad();
+    fixAfterPublish(r);
+}
+
+async function gmFixReroll(){
+    if (fixSel.length !== 1) return;
+    const token = fixSel[0];
+    const row = fixRow(token);
+    row?.classList.add('shuffling');
+    fixSetState('', '다시 뽑는 중...');
+
+    const r = await gmApi('assignments/reroll', { teamNum: fixTeam, memberToken: token });
+    await new Promise(res => setTimeout(res, 420));       // 셔플 연출을 잠깐 보여준다
+    row?.classList.remove('shuffling');
+
+    if (r.error) { fixSetState('err', r.error); toast(r.error, true); return; }
+    fixSetState('', '');
+    fixShowPreview(token, r);
+}
+
+// 재추첨 결과를 먼저 보여주고, 적용·다시 뽑기·취소를 고르게 한다
+function fixShowPreview(token, r){
+    const who = esc(r.nickname);
+    openGmModal(`
+        <h3>재추첨 결과</h3>
+        <p class="gm-modal-who">${who}</p>
+        <p class="gm-modal-change">
+            <span class="old">${esc(r.before.displayName ?? '배정 없음')}</span>
+            <span class="arrow">→</span>
+            <span class="new">${esc(r.after.displayName ?? '-')}</span>
+        </p>
+        <p class="gm-modal-sub">남은 후보 ${r.poolSize}개 · 적용하면 ${fixTeam}팀 결과를 다시 공지합니다.</p>
+        <div class="gm-modal-btns">
+            <button class="btn btn-secondary btn-sm" id="fx-cancel">취소</button>
+            <button class="btn btn-secondary btn-sm" id="fx-again">다시 추첨</button>
+            <button class="btn btn-success btn-sm" id="fx-apply">적용</button>
+        </div>`);
+
+    document.getElementById('fx-cancel').onclick = () => { closeGmModal(); fixSetState('', '취소했어요. 기존 배정을 그대로 둡니다.'); };
+    document.getElementById('fx-again').onclick = async () => {
+        const again = await gmApi('assignments/reroll', { teamNum: fixTeam, memberToken: token });
+        if (again.error) { toast(again.error, true); return; }
+        fixShowPreview(token, again);                      // 같은 창 내용만 바꾼다
+    };
+    document.getElementById('fx-apply').onclick = async () => {
+        const btn = document.getElementById('fx-apply');
+        btn.disabled = true; btn.textContent = '적용 중...';
+        const applied = await gmApi('assignments/reroll/apply', {
+            teamNum: fixTeam, memberToken: token, character: r.after.character,
+        });
+        closeGmModal();
+        if (applied.error) { fixSetState('err', applied.error); toast(applied.error, true); await gmFixLoad(); return; }
+        fixSel = [];
+        await gmFixLoad();
+        fixAfterPublish(applied);
+    };
+}
+
+function fixAfterPublish(r){
+    if (r.republished) {
+        fixSetState('ok', `${r.teamNum}팀 수정 공지 완료`);
+        toast(`${r.teamNum}팀 배정을 바꾸고 다시 공지했어요`);
+    } else {
+        fixSetState('err', `수정은 저장했지만 공지에 실패했어요: ${r.publishError ?? ''}`);
+        toast('공지에 실패했어요. 다시 보내기를 눌러주세요.', true);
+        const el = document.getElementById('gm-fix-state');
+        el.innerHTML += ` <button class="btn btn-secondary btn-sm" style="margin-left:.3rem" onclick="gmFixRepublish(${r.teamNum})">${r.teamNum}팀 공지 다시 보내기</button>`;
+    }
+    gmRefresh();
+}
+
+async function gmFixRepublish(teamNum){
+    fixSetState('', `${teamNum}팀 공지를 다시 보내는 중...`);
+    const r = await gmApi('assignments/republish', { teamNum });
+    if (r.error) { fixSetState('err', r.error); toast(r.error, true); return; }
+    fixSetState('ok', `${teamNum}팀 수정 공지 완료`);
+    toast('다시 공지했어요');
 }
 
 // 교환·배정과 디스코드 공지를 한 번에 진행한다
