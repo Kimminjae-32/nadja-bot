@@ -189,14 +189,6 @@
     </div>
 
     <div class="actions">
-        <div class="action-group" id="group-team">
-            <div class="action-group-label">팀 배정</div>
-            <div class="action-group-btns">
-                <button class="btn btn-primary" id="shuffle-btn">자동 배정</button>
-                <button class="btn btn-primary" id="shuffle-tier-btn">팀 섞기(티어)</button>
-            </div>
-            <div id="team-plan" style="font-size:.76rem;color:var(--muted)"></div>
-        </div>
         <div class="action-group" id="group-char">
             <div class="action-group-label">실험체 (선택)</div>
             <div class="action-group-btns">
@@ -576,7 +568,6 @@ async function load(){
 
     const isTeamMode = eventData?.gameType === '내전';
     // 팀 배정 구역: 내전(팀 모드)에서만
-    document.getElementById('group-team').style.display = isTeamMode ? '' : 'none';
     document.getElementById('voice-group').style.display = isTeamMode ? '' : 'none';
     document.getElementById('tab-event').style.display = isTeamMode ? '' : 'none';
     // 실험체 구역(팀 공용 풀): 일반 코발트에서만. 토너먼트는 경기별 배정 사용, 루미아/론울프는 없음
@@ -834,16 +825,11 @@ async function toggleRole(){
 // 지금 인원이면 몇 팀 × 몇 명이 되는지 안내 (상단 요약 + 팀 구성 패널)
 let teamPlan = null;
 async function refreshTeamPlan(){
-    const el = document.getElementById('team-plan');
+    // 팀 구성 정보는 '팀 배정' 탭의 패널에서만 보여준다 (상단 요약은 중복이라 없앴다)
     const d = await api(`/api/admin/team-plan?event=${EVENT}&token=${TOKEN}`).catch(()=>null);
-    if(!d || d.error) { if(el) el.textContent=''; return; }
+    if(!d || d.error) return;
     teamPlan = d;
     renderTeamPanel();
-    if(!el || document.getElementById('group-team').style.display === 'none'){ if(el) el.textContent=''; return; }
-    const warn = d.noTierCount ? ` · 티어 미설정 ${d.noTierCount}명` : '';
-    const lock = d.lockedCount ? ` · 고정 ${d.lockedCount}명` : '';
-    const off  = d.inactiveCount ? ` · 미참여 ${d.inactiveCount}명` : '';
-    el.textContent = d.count ? `${d.text}${off}${lock}${warn}` : '실제 진행할 참가자가 없어요';
 }
 
 // ── 팀 구성 패널: 실제 진행 인원 선택 + 팀 수 조절 ──
@@ -1521,7 +1507,7 @@ async function runShuffle(kind){
     const lockMsg = lockedNow ? `\n고정된 ${lockedNow}명은 지금 팀에 그대로 둡니다.` : '';
     if(!confirm(`${planText} 으로 ${label}할까요?${extra}${lockMsg}${kind==='tier'?warn:''}`)) return;
 
-    const btns = [document.getElementById(kind==='tier' ? 'shuffle-tier-btn' : 'shuffle-btn'), document.getElementById(kind==='tier' ? 'tp-tier' : 'tp-random')];
+    const btns = [document.getElementById(kind==='tier' ? 'tp-tier' : 'tp-random')];
     btns.forEach(b=>b.disabled=true);
     const data = await api(kind==='tier' ? '/api/admin/shuffle-tier' : '/api/admin/shuffle', { event:EVENT, token:TOKEN });
     btns.forEach(b=>b.disabled=false);
@@ -1534,8 +1520,6 @@ async function runShuffle(kind){
     else toast(shuffleResultMsg(data, label));
 }
 
-document.getElementById('shuffle-btn').addEventListener('click', ()=>runShuffle('random'));
-document.getElementById('shuffle-tier-btn').addEventListener('click', ()=>runShuffle('tier'));
 
 document.getElementById('char-btn').addEventListener('click', async ()=>{
     const assigned = participants.filter(p=>p.team_num);
