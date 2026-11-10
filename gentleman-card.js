@@ -87,11 +87,16 @@ async function generateGiftCard(teamNum, assignment, teamName) {
     // 미배정 칸도 배정 카드와 같은 비율로 그린다 (조금 작게)
     const LEFT_W = Math.round(TILE_W * 0.72), LEFT_H = Math.round(TILE_H * 0.72);
     const LEFT_HEAD = 56;                       // '미배정 실험체 · 사용 불가' 제목 높이
-    const FOOT_H = assignment.leftover.length ? LEFT_HEAD + LEFT_H + NAME_H + PAD : PAD;
     const cols = Math.max(1, Math.min(assignment.members.length, 4));
     const rows = Math.ceil(assignment.members.length / cols);
 
     const W = PAD * 2 + cols * TILE_W + (cols - 1) * GAP;
+
+    // 미배정 칸은 가로 폭에 맞춰 줄을 나눈다 (지금 규칙에서는 최대 2개라 한 줄이면 충분하다)
+    const LEFT_COLS = Math.max(1, Math.floor((W - PAD * 2 + GAP) / (LEFT_W + GAP)));
+    const leftRows  = Math.ceil(assignment.leftover.length / LEFT_COLS);
+    const FOOT_H    = leftRows ? LEFT_HEAD + leftRows * (LEFT_H + NAME_H) + (leftRows - 1) * GAP + PAD : PAD;
+
     const H = HEAD_H + rows * (TILE_H + NAME_H + GAP) + FOOT_H;
 
     const canvas = createCanvas(W, H);
@@ -136,13 +141,14 @@ async function generateGiftCard(teamNum, assignment, teamName) {
         const ty = fy + LEFT_HEAD - 10;
         for (let k = 0; k < assignment.leftover.length; k++) {
             const name = assignment.leftover[k];
-            const cx = PAD + k * (LEFT_W + GAP);
-            await drawCharTile(ctx, F, cx, ty, LEFT_W, LEFT_H, name, { dim: true, color: LINE });
+            const cx = PAD + (k % LEFT_COLS) * (LEFT_W + GAP);
+            const cy = ty + Math.floor(k / LEFT_COLS) * (LEFT_H + NAME_H + GAP);
+            await drawCharTile(ctx, F, cx, cy, LEFT_W, LEFT_H, name, { dim: true, color: LINE });
 
             ctx.font = `20px ${F}`;
             ctx.fillStyle = MUTED;
             ctx.textAlign = 'center';
-            ctx.fillText(rc.fitText(ctx, describeChar(name)?.displayName ?? String(name), LEFT_W - 10), cx + LEFT_W / 2, ty + LEFT_H + 28);
+            ctx.fillText(rc.fitText(ctx, describeChar(name)?.displayName ?? String(name), LEFT_W - 10), cx + LEFT_W / 2, cy + LEFT_H + 28);
             ctx.textAlign = 'left';
         }
     }
