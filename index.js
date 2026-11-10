@@ -13,6 +13,7 @@ const webServer = require('./server');
 const { TEAM_EMOJIS, TEAM_NAMES, CHARACTERS, CHAR_CODE } = require('./constants');
 const poke = require('./pokemon');
 const schedule = require('./schedule');
+const { fetchDisplayNames } = require('./display-names');
 webServer.start(Number(process.env.WEB_PORT) || 3000);
 
 const client = new Client({
@@ -176,19 +177,15 @@ async function createRecruitEmbed(data) {
     const teamCount = data.teamCount || 2;
     const teams     = data.teams || Array.from({ length: teamCount }, () => []);
 
-    const nameCache = new Map();
-    const getName = async (id) => {
-        if (nameCache.has(id)) return nameCache.get(id);
-        const u = await client.users.fetch(id).catch(() => null);
-        // 표시 이름(별명·본명)이 아니라 디스코드 아이디(핸들)로 표기
-        const name = u ? (u.username || u.globalName || id) : id;
-        nameCache.set(id, name);
-        return name;
-    };
+    // 모집이 올라간 서버를 기준으로 이름을 읽는다. 서버마다 별명이 다를 수 있으므로
+    // 반드시 이 모집의 서버에서 조회해야 한다.
+    const names = await fetchDisplayNames(client, data.guildId, [
+        data.creatorId, ...data.participants, ...teams.flat(),
+    ]);
+    const getName = id => names.get(id) ?? `<@${id}>`;
 
-    const participantNames = await Promise.all(data.participants.map(getName));
-    const participantsList = participantNames.join(', ') || '없음';
-    const creatorName = await getName(data.creatorId);
+    const participantsList = data.participants.map(getName).join(', ') || '없음';
+    const creatorName = getName(data.creatorId);
 
     const title = data.mapType
         ? `🎮 [${data.gameType} / ${data.mapType}] 구인 중`
@@ -211,8 +208,7 @@ async function createRecruitEmbed(data) {
             for (let i = 0; i < teamCount; i++) {
                 const team = teams[i] || [];
                 if (team.length === 0) continue;
-                const names = await Promise.all(team.map(getName));
-                embed.addFields({ name: `${TEAM_EMOJIS[i]} ${TEAM_NAMES[i]}`, value: names.join('\n'), inline: true });
+                embed.addFields({ name: `${TEAM_EMOJIS[i]} ${TEAM_NAMES[i]}`, value: team.map(getName).join('\n'), inline: true });
             }
         }
     }
