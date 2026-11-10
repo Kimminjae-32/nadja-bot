@@ -163,7 +163,7 @@ function showCenter(title, desc){
 
 function render(){
     const closed = view.closed;
-    // 선물을 보낸 팀별로 묶어서 보여준다
+    // 실험체를 보낸 팀별로 묶어서 보여준다
     const groups = {};
     for (const c of view.candidates) (groups[c.fromTeam ?? '-'] ??= []).push(c);
 
@@ -184,14 +184,14 @@ function render(){
 
     let delay = 0;
     for (const [team, list] of Object.entries(groups).sort((a,b)=>Number(a[0])-Number(b[0]))) {
-        html += `<div class="group-title" style="animation-delay:${delay}ms">${esc(team)}팀이 보낸 선물</div><div class="grid">`;
+        html += `<div class="group-title" style="animation-delay:${delay}ms">${esc(team)}팀이 보낸 실험체</div><div class="grid">`;
         for (const c of list) {
             const src = candImg(c);
             const cls = [ 'cand', closed ? 'locked' : '', view.myVote === c.token ? 'mine' : (selected === c.token ? 'sel' : '') ].filter(Boolean).join(' ');
             html += `<div class="${cls}" data-token="${esc(c.token)}" style="animation-delay:${Math.min(delay,420)}ms">
                 <div class="ph">${src?`<img src="${src}" alt="" loading="lazy" onerror="this.style.display='none'">`:''}</div>
                 <div class="meta"><div class="nick">${esc(c.nickname)}</div>
-                <div class="info">${esc(candLabel(c) ?? '실험체 없음')} · ${esc(c.fromTeam)}팀의 선물</div></div>
+                <div class="info">${esc(candLabel(c) ?? '실험체 없음')} · ${esc(c.fromTeam)}팀이 보낸 실험체</div></div>
             </div>`;
             delay += 55;
         }
@@ -232,7 +232,7 @@ $('submit-btn').addEventListener('click', () => {
     $('modal').innerHTML = `
         <h2>${view.myVote ? '이 분으로 바꿀까요?' : '이 분에게 투표할까요?'}</h2>
         ${src?`<div class="pv"><img src="${src}" onerror="this.remove()"></div>`:''}
-        <p><b style="color:var(--text)">${esc(cand.nickname)}</b><br>${esc(candLabel(cand) ?? '-')} · ${esc(cand.fromTeam)}팀의 선물</p>
+        <p><b style="color:var(--text)">${esc(cand.nickname)}</b><br>${esc(candLabel(cand) ?? '-')} · ${esc(cand.fromTeam)}팀이 보낸 실험체</p>
         <p style="margin-top:.5rem;font-size:.8rem">투표는 익명이며, 마감 전까지 언제든 바꿀 수 있어요.</p>
         <div class="modal-btns">
             <button class="btn btn-ghost" id="cancel">다시 고를게요</button>
@@ -262,7 +262,7 @@ async function load(force){
     view = data;
     if (selected == null) selected = data.myVote ?? null;      // 고르는 중이면 내 선택을 유지한다
 
-    $('subtitle').textContent = `${data.nickname}님 · 가장 불운한 선물을 받은 분에게 한 표를 주세요 `
+    $('subtitle').textContent = `${data.nickname}님 · 가장 불운한 실험체를 받은 분에게 한 표를 주세요 `
         + `(${data.votedCount}/${data.totalVoters}명 참여)`;
 
     const key = JSON.stringify([data.closed, data.myVote, data.candidates.map(c => c.token)]);

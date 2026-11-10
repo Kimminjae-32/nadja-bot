@@ -71,7 +71,7 @@ async function runDraftToPublish(c, rec, label) {
     const pick = await c.dev('auto-pick');
     rec.must(`${label}전 팀 실험체 4개 선택·확정`, pick.data.success, pick.data.error ?? `${pick.data.teams?.length}팀 확정`);
     const fin = await c.gm('finalize');
-    rec.must(`${label}선물 교환·참가자별 배정`, fin.data.success, fin.data.error ?? `순서 ${fin.data.order?.join('→')}`);
+    rec.must(`${label}실험체 교환·참가자별 배정`, fin.data.success, fin.data.error ?? `순서 ${fin.data.order?.join('→')}`);
     discord.clearMockOutbox(c.eventId);
     const pub = await c.gm('publish');
     const okResults = (pub.data.results ?? []).filter(r => r.ok);

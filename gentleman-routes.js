@@ -106,7 +106,7 @@ router.get('/admin/state', requireAdmin, (req, res) => {
         participantCount: participants.length,
         bannedCount: (ev.bannedCharacters ?? []).length,
         resultsPublished: !!g?.resultsPublished,
-        exchangeReady: !!g?.assignments,        // 선물 교환·배정이 끝났는지 (결과 공지 가능 여부)
+        exchangeReady: !!g?.assignments,        // 실험체 교환·배정이 끝났는지 (결과 공지 가능 여부)
         allConfirmed: !!summary?.allConfirmed,
         teamMessages: g?.teamMessages ?? {},
         // 상품 회차
@@ -200,8 +200,8 @@ async function sendDraftMessage(ev) {
         embeds = [new EmbedBuilder()
             .setTitle('저쪽 신사분이 주신 겁니다')
             .setDescription([
-                '팀마다 실험체 **4명**을 골라 다른 팀에 선물하는 이벤트입니다.',
-                '아래 버튼을 눌러 우리 팀 후보 중에서 선물할 실험체를 골라주세요.',
+                '팀마다 실험체 **4명**을 골라 다른 팀에 전달하는 이벤트입니다.',
+                '아래 버튼을 눌러 우리 팀 후보 중에서 전달할 실험체를 골라주세요.',
                 '',
                 '한 팀에서 한 번에 한 명만 수정할 수 있고, 선택은 자동으로 저장됩니다.',
             ].join('\n'))
@@ -266,24 +266,47 @@ router.post('/admin/redraw', requireAdmin, (req, res) => {
 });
 
 // 전 팀 확정 → 원형 교환과 배정 (결과는 공지 전까지 비공개)
-router.post('/admin/finalize', requireAdmin, (req, res) => {
-    const r = db.withGentleman(req.eventId, (g, ev, participants) => {
-        if (!g) return { error: '드래프트가 시작되지 않았어요.' };
-        const fin = D.finalizeAssignments(g, participants);
-        return fin.error ? { error: fin.error } : { success: true, already: !!fin.already, order: g.exchange.order };
-    });
-    r.error ? fail(res, r) : res.json(r);
+/**
+ * 실험체 교환·배정을 하고, 이어서 디스코드 공지까지 보낸다.
+ * 배정은 최초 1회만 정해지고, 공지에 실패해도 다시 뽑지 않는다.
+ */
+router.post('/admin/finalize', requireAdmin, async (req, res) => {
+    if (publishing.has(req.eventId)) return res.status(409).json({ error: '처리 중이에요. 잠시만 기다려주세요.' });
+    publishing.add(req.eventId);
+    try {
+        const r = db.withGentleman(req.eventId, (g, ev, participants) => {
+            if (!g) return { error: '드래프트가 시작되지 않았어요.' };
+            const fin = D.finalizeAssignments(g, participants);
+            return fin.error ? { error: fin.error } : { success: true, already: !!fin.already, order: g.exchange.order };
+        });
+        if (r.error) return fail(res, r);
+
+        // 배정이 끝났으니 곧바로 공지한다. 이미 올린 팀은 건너뛴다.
+        const pub = await publishResults(req.eventId, null);
+        if (pub.error) return res.json({ ...r, published: false, publishError: pub.error });
+        res.json({ ...r, published: true, results: pub.results, failed: pub.failed, allPublished: pub.allPublished });
+    } finally {
+        publishing.delete(req.eventId);
+    }
 });
 
 // ── 관리자: 결과 공지 ────────────────────────────────
-router.post('/admin/publish', requireAdmin, async (req, res) => {
-    const only = req.body.teamNum != null ? Number(req.body.teamNum) : null;   // 특정 팀만 재게시
-    const ev = db.getEvent(req.eventId);
-    const g = ev?.gentleman;
-    if (!g?.assignments) return res.status(400).json({ error: '아직 배정이 끝나지 않았어요.' });
+// 같은 이벤트에서 공지가 겹쳐 돌지 않게 막는다 (중복 클릭 방지)
+const publishing = new Set();
 
-    const participants = db.getParticipants(req.eventId);
-    const targets = only != null ? [only] : D.teamNumbers(participants);
+/**
+ * 팀별 결과를 디스코드에 올린다. 배정 결과는 건드리지 않고 전송만 한다.
+ * @param only  특정 팀 번호만 다시 올릴 때 지정한다. 비우면 아직 못 올린 팀을 모두 올린다.
+ * @returns { error } 또는 { results, failed, allPublished }
+ */
+async function publishResults(eventId, only = null) {
+    const ev = db.getEvent(eventId);
+    const g = ev?.gentleman;
+    if (!g?.assignments) return { error: '아직 배정이 끝나지 않았어요.' };
+
+    const participants = db.getParticipants(eventId);
+    const teams   = D.teamNumbers(participants);
+    const targets = only != null ? [only] : teams;
     const results = [];
 
     for (const t of targets) {
@@ -302,22 +325,38 @@ router.post('/admin/publish', requireAdmin, async (req, res) => {
                 console.error(`[gentleman] ${t}팀 결과 이미지 생성 실패:`, e.message);
             }
         }
-        const content = `**${teamName(t)}** · ${a.from}팀이 보내온 선물입니다!`;   // 멘션은 넣지 않는다
+        const content = `**${teamName(t)}** · ${a.from}팀이 보내온 실험체입니다!`;   // 멘션은 넣지 않는다
         const sent = await sendTracked(ev, { content, files }, { kind: 'gift-result', teamNum: t });
         results.push({ teamNum: t, ...sent });
     }
 
-    db.withGentleman(req.eventId, gg => {
-        if (!gg) return {};
+    const after = db.withGentleman(eventId, gg => {
+        if (!gg) return { allPublished: false };
         for (const r of results) {
             if (r.skipped) continue;
             gg.teamMessages[r.teamNum] = { ok: !!r.ok, messageId: r.messageId ?? null, error: r.error ?? null, at: Date.now() };
         }
-        if (results.some(r => r.ok)) { gg.resultsPublished = true; gg.phase = D.PHASE.PUBLISHED; }
-        return {};
+        // 모든 팀이 올라갔을 때만 공지 완료로 본다. 일부만 성공하면 미완료로 남겨 재시도할 수 있게 한다.
+        const allPublished = teams.length > 0 && teams.every(t => gg.teamMessages?.[t]?.ok);
+        gg.resultsPublished = allPublished;
+        if (allPublished) gg.phase = D.PHASE.PUBLISHED;
+        return { allPublished };
     });
 
-    res.json({ success: true, results, failed: results.filter(r => !r.ok) });
+    return { results, failed: results.filter(r => !r.ok), allPublished: !!after.allPublished };
+}
+
+router.post('/admin/publish', requireAdmin, async (req, res) => {
+    const only = req.body.teamNum != null ? Number(req.body.teamNum) : null;   // 특정 팀만 재게시
+    if (publishing.has(req.eventId)) return res.status(409).json({ error: '공지를 보내는 중이에요. 잠시만 기다려주세요.' });
+    publishing.add(req.eventId);
+    try {
+        const r = await publishResults(req.eventId, only);
+        if (r.error) return fail(res, r);
+        res.json({ success: true, ...r });
+    } finally {
+        publishing.delete(req.eventId);
+    }
 });
 
 // 드래프트 종료 — 이 시점부터 팀 구성을 다시 바꿀 수 있다
@@ -504,7 +543,7 @@ router.post('/admin/unlucky/publish', requireAdmin, async (req, res) => {
         .map(w => participants.find(p => p.cancel_token === w.token)?.discord_id)
         .filter(Boolean).map(id => `<@${id}>`).join(' ');
     const title = winners.length > 1 ? '공동 불행상 수상자를 발표합니다!' : '불행상 수상자를 발표합니다!';
-    const content = `${title}\n저쪽 신사분의 선물이 조금 가혹했네요. 위로의 박수를 보냅니다.\n${mentions}`;
+    const content = `${title}\n저쪽 신사분이 주신 실험체가 조금 가혹했네요. 위로의 박수를 보냅니다.\n${mentions}`;
     const sent = await sendTracked(ev, { content, files }, { kind: 'unlucky' });
 
     db.withGentleman(req.eventId, gg => {

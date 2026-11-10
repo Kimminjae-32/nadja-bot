@@ -323,7 +323,7 @@ const TEAM_LOCK_PHASES = ['drafting', 'assigned', 'published'];
 function teamChangeBlocked(eventId) {
     const phase = db.getEvent(eventId)?.gentleman?.phase;
     return TEAM_LOCK_PHASES.includes(phase)
-        ? '선물 드래프트가 진행 중이라 팀 구성을 바꿀 수 없어요. 이벤트 탭에서 드래프트를 종료한 뒤 다시 시도해주세요.'
+        ? '실험체 드래프트가 진행 중이라 팀 구성을 바꿀 수 없어요. 이벤트 탭에서 드래프트를 종료한 뒤 다시 시도해주세요.'
         : null;
 }
 

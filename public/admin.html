@@ -346,13 +346,13 @@
     <!-- 저쪽 신사분이 주신 겁니다 -->
     <div id="gm-section" class="section-card" style="display:none" data-pane="event">
         <div class="section-title">저쪽 신사분이 주신 겁니다</div>
-        <div class="section-sub">팀마다 실험체 4명을 골라 다른 팀에 선물하고, 받은 실험체를 팀원에게 나눠주는 이벤트입니다.</div>
+        <div class="section-sub">팀마다 실험체 4명을 골라 다른 팀에 전달하고, 받은 실험체를 팀원에게 나눠주는 이벤트입니다.</div>
 
         <!-- 지금 어느 단계인지 한눈에 -->
         <div class="gm-steps" id="gm-stepbar">
             <div class="gm-stepbox" data-step="draft"><div class="num">1단계</div><div class="ttl">실험체 선택</div></div>
-            <div class="gm-stepbox" data-step="assign"><div class="num">2단계</div><div class="ttl">선물 교환·배정</div></div>
-            <div class="gm-stepbox" data-step="publish"><div class="num">3단계</div><div class="ttl">결과 공지</div></div>
+            <div class="gm-stepbox" data-step="assign"><div class="num">2단계</div><div class="ttl">실험체 교환·배정</div></div>
+            <div class="gm-stepbox" data-step="publish"><div class="num">3단계</div><div class="ttl">결과 자동 공지</div></div>
             <div class="gm-stepbox" data-step="close"><div class="num">4단계</div><div class="ttl">드래프트 종료</div></div>
         </div>
 
@@ -378,10 +378,10 @@
         </div>
 
         <div class="gm-panel">
-            <div class="gm-panel-head">2~3단계 · 교환과 공지</div>
+            <div class="gm-panel-head">2~3단계 · 실험체 교환과 공지</div>
             <div class="gm-step">
-                <button class="btn btn-secondary btn-sm" id="gm-finalize" onclick="gmFinalize()">선물 교환·배정</button>
-                <button class="btn btn-success btn-sm" id="gm-publish" onclick="gmPublish()">실험체 결과 공지</button>
+                <button class="btn btn-success btn-sm" id="gm-finalize" onclick="gmFinalize()">실험체 교환·배정 및 공지</button>
+                <button class="btn btn-secondary btn-sm" id="gm-publish" onclick="gmPublish()" style="display:none">못 올린 팀 다시 보내기</button>
             </div>
             <div class="gm-note" id="gm-publish-state"></div>
         </div>
@@ -1073,8 +1073,13 @@ async function gmRefresh(){
     document.getElementById('gm-start').textContent = (s.exists && s.phase !== 'idle') ? '새 회차로 다시 시작' : '드래프트 시작';
     document.getElementById('gm-redraw').disabled   = !drafting;
     document.getElementById('gm-close').disabled    = !s.exists || s.phase === 'idle' || s.phase === 'closed';
-    document.getElementById('gm-finalize').disabled = !s.summary?.allConfirmed || s.exchangeReady;
-    document.getElementById('gm-publish').disabled  = !s.exchangeReady;
+    // 교환·배정과 공지는 한 번에 진행한다. 공지까지 모두 끝나면 버튼을 잠근다.
+    document.getElementById('gm-finalize').disabled = !s.summary?.allConfirmed || !!s.resultsPublished;
+    // 못 올린 팀이 남아 있을 때만 다시 보내기 버튼을 띄운다
+    const 남은팀 = s.exchangeReady && !s.resultsPublished;
+    const pubBtn = document.getElementById('gm-publish');
+    pubBtn.style.display = 남은팀 ? '' : 'none';
+    pubBtn.disabled = !남은팀;
 
     document.getElementById('gm-note').textContent = s.teamsLocked
         ? '드래프트가 진행 중이라 팀 구성을 바꿀 수 없어요. 바꾸려면 드래프트를 종료해주세요.'
@@ -1131,7 +1136,7 @@ function gmRenderTeams(s){
 function gmRenderPublish(s){
     const el = document.getElementById('gm-publish-state');
     const msgs = Object.entries(s.teamMessages ?? {});
-    if (!msgs.length) { el.textContent = s.exchangeReady ? '배정이 끝났어요. 결과를 공지할 수 있습니다.' : ''; return; }
+    if (!msgs.length) { el.textContent = s.exchangeReady ? '배정은 끝났지만 아직 공지하지 못했어요.' : ''; return; }
     const failed = msgs.filter(([, m]) => !m.ok);
     el.innerHTML = failed.length
         ? `<span style="color:var(--accent)">전송 실패: ${failed.map(([t,m])=>`${t}팀(${esc(m.error ?? '사유 불명')})`).join(', ')}</span>
@@ -1201,7 +1206,7 @@ async function gmStart(){
             `${w.round}회차 기록이 남아 있어요. 새 회차로 시작하면 아래 내용이 모두 지워집니다.`,
             '',
             '· 팀별 실험체 선택과 확정 상태',
-            '· 선물 교환 순서와 참가자별 배정 결과',
+            '· 실험체 교환 순서와 참가자별 배정 결과',
         ];
         if (w.publishedTeams)   lines.push(`· 결과 공지 기록 (${w.publishedTeams}개 팀)`);
         if (w.hasWinner)        lines.push('· 우승팀 지정');
@@ -1234,16 +1239,28 @@ async function gmTeamAction(action, teamNum){
     gmRefresh();
 }
 
+// 교환·배정과 디스코드 공지를 한 번에 진행한다
 async function gmFinalize(){
-    if (!confirm('모든 팀의 선물을 교환하고 팀원에게 배정할까요?\n배정은 한 번만 정해지며 다시 뽑히지 않습니다.')) return;
+    if (!confirm('팀끼리 실험체를 교환하고 팀원에게 배정한 뒤, 팀별 결과를 디스코드에 바로 공지합니다.\n'
+               + '배정은 한 번만 정해지며 다시 뽑히지 않습니다.\n\n계속할까요?')) return;
+    const btn = document.getElementById('gm-finalize');
+    btn.disabled = true;
+    const before = btn.textContent;
+    btn.textContent = '진행 중...';
     const r = await gmApi('finalize', {});
+    btn.textContent = before;
+    btn.disabled = false;
     if (r.error) { toast(r.error, true); return; }
-    toast(r.already ? '이미 배정이 끝나 있어요' : '선물 교환과 배정을 마쳤어요');
+
+    if (!r.published)        toast(`배정은 마쳤지만 공지에 실패했어요: ${r.publishError ?? ''}`, true);
+    else if (r.failed?.length) toast(`${r.failed.length}개 팀 전송 실패 · 다시 보내기를 눌러주세요`, true);
+    else                     toast(r.already ? '이미 배정이 끝나 있어서 공지만 했어요' : '교환·배정과 공지를 마쳤어요');
     gmRefresh();
 }
 
+// 전송에 실패한 팀만 다시 보낸다 (성공한 팀은 건너뛴다)
 async function gmPublish(){
-    if (!confirm('팀별 결과를 디스코드에 공지할까요?\n이미 올린 팀은 건너뜁니다.')) return;
+    if (!confirm('아직 올리지 못한 팀의 결과를 다시 보낼까요?\n이미 올린 팀은 건너뜁니다.')) return;
     const r = await gmApi('publish', {});
     if (r.error) { toast(r.error, true); return; }
     toast(r.failed.length ? `${r.failed.length}개 팀 전송 실패` : '결과를 공지했어요', !!r.failed.length);

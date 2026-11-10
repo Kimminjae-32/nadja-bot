@@ -111,7 +111,7 @@ async function generateGiftCard(teamNum, assignment, teamName) {
     ctx.fillText(teamName || `${teamNum}팀`, PAD, 68);
     ctx.font = `bold 30px ${F}`;
     ctx.fillStyle = color;
-    ctx.fillText(`${assignment.from}팀이 보내온 선물입니다!`, PAD, 112);
+    ctx.fillText(`${assignment.from}팀이 보내온 실험체입니다!`, PAD, 112);
 
     let i = 0;
     for (const m of assignment.members) {
@@ -251,7 +251,7 @@ async function generateUnluckyCard(winners) {
     ctx.fillText('불행상', W / 2, 78);
     ctx.font = `26px ${F}`;
     ctx.fillStyle = MUTED;
-    ctx.fillText(winners.length > 1 ? '가장 불운한 선물을 받은 분들입니다' : '가장 불운한 선물을 받은 분입니다', W / 2, 122);
+    ctx.fillText(winners.length > 1 ? '가장 불운한 실험체를 받은 분들입니다' : '가장 불운한 실험체를 받은 분입니다', W / 2, 122);
     ctx.textAlign = 'left';
 
     let i = 0;
@@ -266,7 +266,7 @@ async function generateUnluckyCard(winners) {
         ctx.fillText(rc.fitText(ctx, w.nickname, TILE_W - 10), cx + TILE_W / 2, cy + TILE_H + 34);
         ctx.font = `20px ${F}`;
         ctx.fillStyle = MUTED;
-        ctx.fillText(`${w.fromTeam}팀의 선물 · ${w.votes}표`, cx + TILE_W / 2, cy + TILE_H + 64);
+        ctx.fillText(`${w.fromTeam}팀이 보낸 실험체 · ${w.votes}표`, cx + TILE_W / 2, cy + TILE_H + 64);
         ctx.textAlign = 'left';
         i += 1;
     }

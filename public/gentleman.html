@@ -304,7 +304,7 @@ function renderStatus(){
     $('status-panel').style.display = '';
     const dot = $('dot'), txt = $('status-text'), sub = $('status-sub');
     dot.className = 'dot';
-    if (state.confirmed)      { txt.textContent = '확정 완료'; sub.textContent = '우리 팀의 선물이 정해졌어요'; dot.classList.add('live'); }
+    if (state.confirmed)      { txt.textContent = '확정 완료'; sub.textContent = '우리 팀이 전달할 실험체가 정해졌어요'; dot.classList.add('live'); }
     else if (state.role === 'editor') { txt.textContent = '내가 선택 중'; sub.textContent = '4개를 고르고 최종 확정을 눌러야 제출돼요'; dot.classList.add('live'); }
     else                      { txt.textContent = '다른 팀원이 선택 중입니다'; sub.textContent = '잠시만 기다려주세요'; dot.classList.add('wait'); }
 
@@ -374,7 +374,7 @@ function renderConfirmed(){
     $('main').innerHTML = `
         <div class="panel">
             <div class="done-mark"><svg viewBox="0 0 24 24"><polyline points="4 12.5 9.5 18 20 6.5"/></svg></div>
-            <div style="text-align:center;font-size:1.1rem;font-weight:800;margin-bottom:.3rem">선물할 실험체가 확정됐어요</div>
+            <div style="text-align:center;font-size:1.1rem;font-weight:800;margin-bottom:.3rem">전달할 실험체가 확정됐어요</div>
             <p style="text-align:center">이 4명은 다른 팀에게 전달됩니다. 어느 팀에 가는지는 결과 발표 때 공개돼요.</p>
             <div class="modal-grid" style="margin-top:1.1rem">
                 ${state.picks.map((n, i) => charCard(n, { readonly: true, auto: auto.has(n), delay: Math.min(i * 55, 300) })).join('')}
@@ -454,7 +454,7 @@ $('mask').addEventListener('click', e => { if (e.target === $('mask')) closeModa
 $('confirm-btn').addEventListener('click', () => {
     if (picks.length !== state.picksRequired || state.confirmed) return;
     openModal(`
-        <h2>이 4명을 선물할까요?</h2>
+        <h2>이 실험체 4명을 전달할까요?</h2>
         <p>확정하면 더 이상 바꿀 수 없어요. 어느 팀에게 가는지는 결과 발표 때 공개됩니다.</p>
         <div class="modal-grid">
             ${picks.map((n, i) => charCard(n, { readonly: true, delay: Math.min(i * 55, 300) })).join('')}
@@ -512,7 +512,7 @@ async function refresh(force){
     const wasEditor = state?.role === 'editor';
     state = data;
     $('title').textContent = `${data.teamNum}팀 실험체 선택`;
-    $('subtitle').textContent = `${data.nickname}님 · 후보 ${data.candidates.length}개 중 ${data.picksRequired}개를 골라 다른 팀에 선물합니다`;
+    $('subtitle').textContent = `${data.nickname}님 · 후보 ${data.candidates.length}개 중 ${data.picksRequired}개를 골라 다른 팀에 전달합니다`;
 
     // 권한을 새로 얻었거나 잃었으면 화면의 선택 내용을 서버 기준으로 되돌린다
     if (!wasEditor || force || !dirty) {
