@@ -12,7 +12,7 @@ process.env.DEV_TOKEN = 'submit-dev';
 process.env.GENTLEMAN_MOCK_DISCORD = '1';
 
 const web = require(path.join(origCwd, 'server.js'));
-const PORT = 3800 + Math.floor(Math.random() * 150);
+const PORT = 3800 + Math.floor(Math.random() * 80);
 const B = `http://localhost:${PORT}`;
 const DEV = 'submit-dev';
 let server;

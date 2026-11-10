@@ -13,7 +13,7 @@ process.env.GENTLEMAN_MOCK_DISCORD = '1';
 
 const discord = require(path.join(origCwd, 'gentleman-discord.js'));
 const web = require(path.join(origCwd, 'server.js'));
-const PORT = 3500 + Math.floor(Math.random() * 120);
+const PORT = 3500 + Math.floor(Math.random() * 80);
 const B = `http://localhost:${PORT}`;
 let server;
 

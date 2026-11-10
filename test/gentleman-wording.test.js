@@ -85,3 +85,33 @@ test('새로고침이 관리자가 고른 팀을 되돌리지 않는다', () => 
     assert.match(body, /if \(!r\.teams\.some\(t => t\.teamNum === fixTeam\)\) fixTeam =/,
         '고른 팀이 남아 있을 때도 덮어쓰고 있다');
 });
+
+test('배정 수정은 팀원 교환과 실험체 변경 두 가지만 제공한다', () => {
+    const admin = read('public/admin.html');
+    assert.match(admin, /id="gm-fix-swap"[^>]*>팀원끼리 교환</);
+    assert.match(admin, /id="gm-fix-change"[^>]*>실험체 변경</);
+    // 무작위 재추첨은 더 이상 쓰지 않는다
+    assert.ok(!/gm-fix-reroll/.test(admin), '예전 재추첨 버튼이 남아 있다');
+    assert.ok(!/gmFixReroll/.test(admin), '예전 재추첨 함수가 남아 있다');
+    assert.ok(!/assignments\/reroll/.test(admin), '예전 재추첨 API를 아직 부른다');
+});
+
+test('서버에도 재추첨 경로가 남아 있지 않다', () => {
+    const routes = read('gentleman-routes.js');
+    assert.ok(!/assignments\/reroll/.test(routes), '예전 재추첨 경로가 남아 있다');
+    assert.match(routes, /router\.get\('\/admin\/assignments\/choices'/, '실험체 목록 조회가 없다');
+    assert.match(routes, /router\.post\('\/admin\/assignments\/set'/, '실험체 변경 적용이 없다');
+    assert.match(routes, /router\.post\('\/admin\/assignments\/swap'/, '팀원 교환이 사라졌다');
+});
+
+test('실험체 고르는 창이 검색과 초상화를 갖춘다', () => {
+    const admin = read('public/admin.html');
+    assert.match(admin, /id="pick-q"/, '검색 칸이 없다');
+    assert.match(admin, /data-find=/, '검색에 쓸 값이 없다');
+    assert.match(admin, /charImg\(c\.characterName/, '초상화를 쓰지 않는다');
+    assert.match(admin, /class="pick-wp">\$\{esc\(c\.weaponName/, '무기군을 보여주지 않는다');
+    // 고를 때 목록을 다시 만들면 이미지가 깜빡인다
+    const i = admin.indexOf('function fixChoose');
+    const body = admin.slice(i, admin.indexOf('\nfunction ', i + 10));
+    assert.ok(!/innerHTML/.test(body), '고를 때 목록을 다시 만든다');
+});

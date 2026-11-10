@@ -321,37 +321,47 @@ function charactersInUse(state) {
 }
 
 /**
- * 참가자 한 명에게 줄 새 실험체를 뽑는다. 아직 적용하지는 않는다.
- * 후보 12개에 묶이지 않고 쓸 수 있는 전체 실험체·무기군에서 고른다.
+ * 참가자 한 명에게 지정할 수 있는 실험체 목록을 만든다.
+ * 후보 12개에 묶이지 않고 쓸 수 있는 전체 실험체·무기군을 대상으로 한다.
  * @param banned 관리자가 막은 실험체 이름 목록
  */
-function pickReroll(state, teamNum, token, banned = []) {
+function availableChoices(state, teamNum, token, banned = []) {
     if (!state?.assignments) return { error: '아직 배정이 끝나지 않았어요.' };
     const found = findAssigned(state, teamNum, token);
     if (!found) return { error: '그 팀에서 참가자를 찾을 수 없어요.' };
 
     const used = charactersInUse(state);
+    // 고치려는 본인의 실험체는 '현재'로 따로 보여주고 후보에서는 뺀다
+    const mine = found.member.character;
     // 같은 실험체라도 무기군이 다르면 다른 후보다. 후보 ID로 비교하므로 자연히 구분된다.
-    const pool = W.candidatePool(banned).filter(c => !used.has(c.id));
-    if (!pool.length) {
-        return { error: '다시 뽑을 수 있는 실험체가 없어요. 밴 목록을 줄이거나 기존 배정을 유지해주세요.' };
-    }
+    const choices = W.candidatePool(banned).filter(c => !used.has(c.id));
 
-    const picked = pool[Math.floor(Math.random() * pool.length)];
     return {
         success: true, teamNum, token,
         nickname: found.member.nickname,
-        before:   { character: found.member.character, displayName: found.member.displayName, weaponName: found.member.weaponName },
-        after:    { character: picked.id, displayName: picked.displayName, weaponName: picked.weaponName },
-        poolSize: pool.length,
+        current: mine == null ? null : {
+            character: mine,
+            displayName: found.member.displayName,
+            weaponName:  found.member.weaponName,
+            characterName: W.describe(mine)?.characterName ?? null,
+        },
+        choices: choices.map(c => ({
+            character: c.id,
+            displayName: c.displayName,
+            characterName: c.characterName,
+            weaponName: c.weaponName,
+            weaponKey: c.weaponKey ?? null,
+        })),
+        reason: choices.length ? null
+            : '고를 수 있는 실험체가 없어요. 밴 목록을 줄이거나 기존 배정을 유지해주세요.',
     };
 }
 
 /**
- * 미리 본 재추첨 결과를 실제로 적용한다.
+ * 관리자가 고른 실험체를 적용한다.
  * 다른 참가자의 배정은 건드리지 않는다. 연쇄 변경은 일어나지 않는다.
  */
-function applyReroll(state, teamNum, token, candidateId, banned = []) {
+function setMemberCharacter(state, teamNum, token, candidateId, banned = []) {
     if (!state?.assignments) return { error: '아직 배정이 끝나지 않았어요.' };
     const found = findAssigned(state, teamNum, token);
     if (!found) return { error: '그 팀에서 참가자를 찾을 수 없어요.' };
@@ -364,10 +374,10 @@ function applyReroll(state, teamNum, token, candidateId, banned = []) {
     // 미리 보기와 적용 사이에 다른 수정이 있었을 수 있으므로 다시 확인한다
     const used = charactersInUse(state);
     used.delete(found.member.character ?? undefined);
-    if (used.has(candidateId)) return { error: '그 사이에 다른 참가자에게 배정된 실험체예요. 다시 뽑아주세요.' };
+    if (used.has(candidateId)) return { error: '그 사이에 다른 참가자에게 배정된 실험체예요. 다시 골라주세요.' };
 
     const before = found.member.displayName;
-    // 관리자가 새로 뽑아준 실험체는 어느 팀이 보낸 것도 아니므로 출처를 따로 표시한다
+    // 관리자가 직접 지정한 실험체는 어느 팀이 보낸 것도 아니므로 출처를 따로 표시한다
     setCharacter(found.member, candidateId, 'admin');
 
     return {
@@ -524,7 +534,7 @@ module.exports = {
     acquireLock, releaseLock, forceReleaseLock, reapLock, lockExpired,
     savePicks, confirmTeam, forceConfirmTeam, unconfirmTeam,
     buildExchange, finalizeAssignments,
-    swapMembers, pickReroll, applyReroll, assignmentView, charactersInUse,
+    swapMembers, availableChoices, setMemberCharacter, assignmentView, charactersInUse,
     adminSummary, participantView,
     teamNumbers, membersOfTeam, shuffle,
 };

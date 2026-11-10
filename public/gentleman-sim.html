@@ -219,7 +219,8 @@ async function call(path, body, method='POST'){
 const dev  = (p, b) => call(`/api/gentleman/dev/${p}`, { devToken: DEV, event: EV, ...b });
 const devg = (p) => call(`/api/gentleman/dev/${p}?devToken=${DEV}${EV?`&event=${EV}`:''}`, null, 'GET');
 const adm  = (p, b) => call(`/api/gentleman/admin/${p}`, { event: EV, token: ADM, ...b });
-const admg = (p) => call(`/api/gentleman/admin/${p}?event=${EV}&token=${ADM}`, null, 'GET');
+// 경로에 이미 질의 문자열이 있으면 ?가 아니라 &로 이어 붙인다
+const admg = (p) => call(`/api/gentleman/admin/${p}${p.includes('?') ? '&' : '?'}event=${EV}&token=${ADM}`, null, 'GET');
 
 // ── 이벤트 관리 ──────────────────────────────────────
 $('btn-create').addEventListener('click', async () => {
@@ -334,16 +335,21 @@ const STEPS = [
         log(r.changed.map(c => `${c.nickname}: ${c.before} → ${c.after}`).join(' / '), 'ok');
         log(r.republished ? '1팀 수정 공지 완료' : `공지 실패: ${r.publishError}`, r.republished ? 'ok' : 'err');
     }],
-    ['1팀 한 명만 재추첨 (관리자)', async () => {
+    ['1팀 한 명의 실험체 직접 변경 (관리자)', async () => {
         const view = await admg('assignments');
         if (view.error || !view.available) return log(view.reason ?? view.error, 'err');
         const target = view.teams.find(t => t.teamNum === 1).members[0];
-        const pick = await adm('assignments/reroll', { teamNum: 1, memberToken: target.token });
-        if (pick.error) return log(pick.error, 'err');
-        log(`미리 보기 · ${pick.nickname}: ${pick.before.displayName} → ${pick.after.displayName} (남은 후보 ${pick.poolSize}개)`, 'info');
-        const applied = await adm('assignments/reroll/apply', { teamNum: 1, memberToken: target.token, character: pick.after.character });
+
+        const list = await admg(`assignments/choices?teamNum=1&memberToken=${encodeURIComponent(target.token)}`);
+        if (list.error) return log(list.error, 'err');
+        if (!list.choices.length) return log(list.reason ?? '고를 수 있는 실험체가 없어요.', 'err');
+        log(`${list.nickname} · 현재 ${list.current?.displayName ?? '없음'} · 고를 수 있는 실험체 ${list.choices.length}개`, 'info');
+
+        // 화면에서는 관리자가 직접 고른다. 여기서는 첫 번째 후보를 골라 흐름만 확인한다.
+        const chosen = list.choices[0];
+        const applied = await adm('assignments/set', { teamNum: 1, memberToken: target.token, character: chosen.character });
         if (applied.error) return log(applied.error, 'err');
-        log(`적용 완료 · 출처는 '관리자 재배정'으로 표시됩니다`, 'ok');
+        log(`변경 완료 · ${list.current?.displayName ?? '없음'} → ${chosen.displayName} (출처: 관리자 재배정)`, 'ok');
         log(applied.republished ? '1팀 수정 공지 완료' : `공지 실패: ${applied.publishError}`, applied.republished ? 'ok' : 'err');
     }],
     ['우승팀 1팀 지정 + 공지', async () => {

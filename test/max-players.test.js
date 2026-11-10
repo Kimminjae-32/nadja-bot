@@ -12,7 +12,7 @@ process.env.DEV_TOKEN = 'cap-dev';
 process.env.GENTLEMAN_MOCK_DISCORD = '1';
 
 const web = require(path.join(origCwd, 'server.js'));
-const PORT = 3650 + Math.floor(Math.random() * 120);
+const PORT = 3700 + Math.floor(Math.random() * 80);
 const B = `http://localhost:${PORT}`;
 let server;
 

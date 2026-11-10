@@ -16,7 +16,7 @@ process.env.DEV_TOKEN = 'test-dev-token';
 process.env.GENTLEMAN_MOCK_DISCORD = '1';
 
 const web = require(path.join(origCwd, 'server.js'));
-const PORT = 3400 + Math.floor(Math.random() * 400);
+const PORT = 3400 + Math.floor(Math.random() * 80);   // 파일마다 겹치지 않는 범위를 쓴다
 const B = `http://localhost:${PORT}`;
 const DEV = 'test-dev-token';
 let server;

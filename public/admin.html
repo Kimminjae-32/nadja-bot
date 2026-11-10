@@ -152,7 +152,7 @@
         #gm-modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
             align-items:center;justify-content:center;z-index:200;padding:1rem;}
         #gm-modal-mask.on{display:flex;}
-        .gm-modal{background:var(--panel);border:1px solid var(--border);border-radius:13px;
+        .gm-modal{background:var(--card);border:1px solid var(--border);border-radius:13px;
             padding:1.1rem 1.2rem;max-width:26rem;width:100%;box-shadow:0 18px 44px rgba(0,0,0,.55);}
         .gm-modal h3{margin:0 0 .5rem;font-size:1rem;}
         .gm-modal-who{font-weight:800;margin:.2rem 0 .5rem;}
@@ -162,6 +162,37 @@
         .gm-modal-change .new{color:var(--green);font-weight:800;}
         .gm-modal-sub{font-size:.76rem;color:var(--muted);margin:0 0 .8rem;}
         .gm-modal-btns{display:flex;gap:.4rem;justify-content:flex-end;flex-wrap:wrap;}
+        .gm-modal.wide{max-width:46rem;}
+
+        /* 실험체 고르는 창 */
+        .pick-current{font-size:.84rem;color:var(--muted);margin:.1rem 0 .7rem;}
+        .pick-current b{color:var(--text);}
+        .pick-search{width:100%;box-sizing:border-box;background:var(--bg);color:var(--text);
+            border:1px solid var(--border);border-radius:9px;padding:.5rem .65rem;font-size:.88rem;}
+        .pick-search:focus{outline:none;border-color:var(--accent);}
+        .pick-count{font-size:.72rem;color:var(--muted);margin:.45rem 0 .35rem;}
+        .pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(5.6rem,1fr));gap:.45rem;
+            max-height:46vh;overflow-y:auto;padding:.15rem;}
+        .pick-card{background:var(--bg);border:2px solid var(--border);border-radius:10px;
+            padding:.5rem .3rem .4rem;text-align:center;cursor:pointer;user-select:none;
+            transition:transform .16s,border-color .16s,background .16s;}
+        .pick-card:hover{transform:translateY(-3px);border-color:var(--accent);}
+        .pick-card.on{border-color:var(--gold,#f1c40f);background:rgba(241,196,15,.1);}
+        .pick-card img{width:54px;height:54px;}
+        .pick-nm{font-size:.76rem;font-weight:700;margin-top:.15rem;}
+        .pick-wp{font-size:.68rem;color:var(--muted);}
+        /* 창이 열릴 때만 한 번 등장한다. 고를 때는 다시 재생되지 않는다. */
+        @keyframes pickIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+        .pick-card.enter{animation:pickIn .3s ease both;animation-delay:var(--d,0ms);}
+        .pick-picked{margin:.6rem 0 .75rem;font-size:.84rem;color:var(--muted);}
+        .pick-picked.has{color:var(--green);font-weight:800;}
+        @media(max-width:560px){
+            .pick-grid{grid-template-columns:repeat(auto-fill,minmax(4.6rem,1fr));max-height:40vh;}
+            /* charImg가 인라인으로 크기를 넣으므로 !important로 덮어쓴다 */
+            .pick-card img{width:44px !important;height:44px !important;}
+            .gm-modal-btns button{flex:1;}
+        }
+        @media (prefers-reduced-motion:reduce){ .pick-card.enter{animation:none;} }
 
         /* 실험체 배정 수정 */
         .fix-row{display:flex;align-items:center;gap:.6rem;padding:.45rem .55rem;border-radius:9px;
@@ -184,15 +215,12 @@
         @keyframes fixSwapDown{0%{transform:translateY(0)}50%{transform:translateY(9px)}100%{transform:translateY(0)}}
         .fix-row.swap-a .fix-char{animation:fixSwapUp .45s var(--ease,ease);display:inline-block;}
         .fix-row.swap-b .fix-char{animation:fixSwapDown .45s var(--ease,ease);display:inline-block;}
-        /* 재추첨 — 글자만 짧게 흔든다 (이미지를 다시 만들지 않는다) */
-        @keyframes fixShuffle{0%,100%{opacity:1;transform:none}25%{opacity:.35;transform:translateX(-4px)}75%{opacity:.35;transform:translateX(4px)}}
-        .fix-row.shuffling .fix-char{animation:fixShuffle .28s linear infinite;display:inline-block;}
         @media (prefers-reduced-motion:reduce){
-            .fix-row.swap-a .fix-char,.fix-row.swap-b .fix-char,.fix-row.shuffling .fix-char{animation:none;}
+            .fix-row.swap-a .fix-char,.fix-row.swap-b .fix-char{animation:none;}
         }
 
         /* 모집 정원 관리 */
-        .cap-panel{background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:.85rem 1rem;margin-bottom:.9rem;}
+        .cap-panel{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:.85rem 1rem;margin-bottom:.9rem;}
         .cap-title{font-weight:800;font-size:.9rem;margin-bottom:.6rem;}
         .cap-stats{display:flex;gap:1.4rem;flex-wrap:wrap;margin-bottom:.7rem;}
         .cap-stats > div{display:flex;flex-direction:column;gap:.15rem;}
@@ -441,7 +469,7 @@
             <div id="gm-fix-list"></div>
             <div class="gm-step" id="gm-fix-btns" style="display:none">
                 <button class="btn btn-secondary btn-sm" id="gm-fix-swap" onclick="gmFixSwap()" disabled>팀원끼리 교환</button>
-                <button class="btn btn-secondary btn-sm" id="gm-fix-reroll" onclick="gmFixReroll()" disabled>개인 재추첨</button>
+                <button class="btn btn-secondary btn-sm" id="gm-fix-change" onclick="gmFixChange()" disabled>실험체 변경</button>
             </div>
         </div>
 
@@ -1108,7 +1136,9 @@ async function gmApi(path, body){
     const opt = body
         ? { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ event:EVENT, token:TOKEN, ...body }) }
         : { method:'GET' };
-    const res = await fetch(body ? url : `${url}?event=${EVENT}&token=${TOKEN}`, opt);
+    // 경로에 이미 질의 문자열이 있으면 ?가 아니라 &로 이어 붙인다
+    const sep = url.includes('?') ? '&' : '?';
+    const res = await fetch(body ? url : `${url}${sep}event=${EVENT}&token=${TOKEN}`, opt);
     return res.json().catch(()=>({ error:'응답을 해석할 수 없어요.' }));
 }
 
@@ -1300,7 +1330,7 @@ async function gmTeamAction(action, teamNum){
 }
 
 // 관리자 화면 공용 간이 모달 (다크 테마 유지)
-function openGmModal(html){
+function openGmModal(html, size){
     let mask = document.getElementById('gm-modal-mask');
     if (!mask) {
         mask = document.createElement('div');
@@ -1309,7 +1339,9 @@ function openGmModal(html){
         mask.addEventListener('click', e => { if (e.target === mask) closeGmModal(); });
         document.body.appendChild(mask);
     }
-    document.getElementById('gm-modal').innerHTML = html;
+    const box = document.getElementById('gm-modal');
+    box.className = 'gm-modal' + (size === 'wide' ? ' wide' : '');
+    box.innerHTML = html;
     mask.classList.add('on');
 }
 function closeGmModal(){ document.getElementById('gm-modal-mask')?.classList.remove('on'); }
@@ -1415,7 +1447,7 @@ function fixSyncSelection(){
     }
     const editable = !!fixView?.editable;
     document.getElementById('gm-fix-swap').disabled   = !editable || fixSel.length !== 2;
-    document.getElementById('gm-fix-reroll').disabled = !editable || fixSel.length !== 1;
+    document.getElementById('gm-fix-change').disabled = !editable || fixSel.length !== 1;
 }
 
 function fixToggle(token){
@@ -1452,58 +1484,121 @@ async function gmFixSwap(){
     fixAfterPublish(r);
 }
 
-async function gmFixReroll(){
+// ── 실험체 직접 변경 ────────────────────────────────
+let pickData = null;        // { nickname, current, choices }
+let pickChosen = null;      // 고른 후보 ID
+
+async function gmFixChange(){
     if (fixSel.length !== 1) return;
     const token = fixSel[0];
-    const row = fixRow(token);
-    row?.classList.add('shuffling');
-    fixSetState('', '다시 뽑는 중...');
+    fixSetState('', '고를 수 있는 실험체를 불러오는 중...');
 
-    const r = await gmApi('assignments/reroll', { teamNum: fixTeam, memberToken: token });
-    await new Promise(res => setTimeout(res, 420));       // 셔플 연출을 잠깐 보여준다
-    row?.classList.remove('shuffling');
-
+    const r = await gmApi(`assignments/choices?teamNum=${fixTeam}&memberToken=${encodeURIComponent(token)}`);
     if (r.error) { fixSetState('err', r.error); toast(r.error, true); return; }
+    if (!r.choices.length) { fixSetState('err', r.reason ?? '고를 수 있는 실험체가 없어요.'); toast(r.reason, true); return; }
+
     fixSetState('', '');
-    fixShowPreview(token, r);
+    pickData = r; pickChosen = null;
+    fixOpenPicker(token);
 }
 
-// 재추첨 결과를 먼저 보여주고, 적용·다시 뽑기·취소를 고르게 한다
-function fixShowPreview(token, r){
-    const who = esc(r.nickname);
+function fixOpenPicker(token){
     openGmModal(`
-        <h3>재추첨 결과</h3>
-        <p class="gm-modal-who">${who}</p>
-        <p class="gm-modal-change">
-            <span class="old">${esc(r.before.displayName ?? '배정 없음')}</span>
-            <span class="arrow">→</span>
-            <span class="new">${esc(r.after.displayName ?? '-')}</span>
-        </p>
-        <p class="gm-modal-sub">남은 후보 ${r.poolSize}개 · 적용하면 ${fixTeam}팀 결과를 다시 공지합니다.</p>
+        <h3>실험체 변경</h3>
+        <p class="gm-modal-who">${fixTeam}팀 · ${esc(pickData.nickname)}</p>
+        <p class="pick-current">현재 실험체 ·
+            <b>${esc(pickData.current?.displayName ?? '배정 없음')}</b></p>
+        <input class="pick-search" id="pick-q" type="search" placeholder="실험체 이름이나 무기군으로 찾기 (예: 재키, 단검)" autocomplete="off">
+        <div class="pick-count" id="pick-count"></div>
+        <div class="pick-grid" id="pick-grid"></div>
+        <div class="pick-picked" id="pick-picked">고른 실험체 없음</div>
         <div class="gm-modal-btns">
-            <button class="btn btn-secondary btn-sm" id="fx-cancel">취소</button>
-            <button class="btn btn-secondary btn-sm" id="fx-again">다시 추첨</button>
-            <button class="btn btn-success btn-sm" id="fx-apply">적용</button>
-        </div>`);
+            <button class="btn btn-secondary btn-sm" id="pk-cancel">취소</button>
+            <button class="btn btn-success btn-sm" id="pk-ok" disabled>변경 확정</button>
+        </div>`, 'wide');
 
-    document.getElementById('fx-cancel').onclick = () => { closeGmModal(); fixSetState('', '취소했어요. 기존 배정을 그대로 둡니다.'); };
-    document.getElementById('fx-again').onclick = async () => {
-        const again = await gmApi('assignments/reroll', { teamNum: fixTeam, memberToken: token });
-        if (again.error) { toast(again.error, true); return; }
-        fixShowPreview(token, again);                      // 같은 창 내용만 바꾼다
+    fixRenderChoices('');
+    const q = document.getElementById('pick-q');
+    q.addEventListener('input', () => fixRenderChoices(q.value));
+    document.getElementById('pk-cancel').onclick = () => {
+        closeGmModal(); pickData = null; pickChosen = null;
+        fixSetState('', '취소했어요. 기존 배정을 그대로 둡니다.');
     };
-    document.getElementById('fx-apply').onclick = async () => {
-        const btn = document.getElementById('fx-apply');
-        btn.disabled = true; btn.textContent = '적용 중...';
-        const applied = await gmApi('assignments/reroll/apply', {
-            teamNum: fixTeam, memberToken: token, character: r.after.character,
+    document.getElementById('pk-ok').onclick = () => fixConfirmChange(token);
+    setTimeout(() => q.focus(), 50);
+}
+
+/**
+ * 검색 결과에 맞춰 카드를 보여준다.
+ * 카드는 한 번만 만들고 이후에는 숨기거나 보이기만 한다. 이미지를 다시 받지 않아 깜빡이지 않는다.
+ */
+function fixRenderChoices(query){
+    const grid = document.getElementById('pick-grid');
+    if (!grid) return;
+
+    if (!grid.dataset.built) {
+        grid.innerHTML = pickData.choices.map((c, i) => `
+            <div class="pick-card enter" data-id="${esc(c.character)}"
+                 data-find="${esc((c.characterName + ' ' + (c.weaponName ?? '') + ' ' + c.displayName).toLowerCase())}"
+                 style="--d:${Math.min(i * 12, 320)}ms">
+                ${charImg(c.characterName, 54)}
+                <div class="pick-nm">${esc(c.characterName)}</div>
+                <div class="pick-wp">${esc(c.weaponName ?? '-')}</div>
+            </div>`).join('');
+        grid.dataset.built = '1';
+        grid.querySelectorAll('.pick-card').forEach(el => {
+            el.addEventListener('click', () => fixChoose(el.dataset.id));
         });
-        closeGmModal();
-        if (applied.error) { fixSetState('err', applied.error); toast(applied.error, true); await gmFixLoad(); return; }
-        fixSel = [];
-        await gmFixLoad();
-        fixAfterPublish(applied);
-    };
+        // 등장 연출이 끝나면 클래스를 떼어 고를 때 다시 재생되지 않게 한다
+        setTimeout(() => grid.querySelectorAll('.pick-card.enter').forEach(e => {
+            e.classList.remove('enter'); e.style.removeProperty('--d');
+        }), 900);
+    }
+
+    const q = (query ?? '').trim().toLowerCase();
+    let shown = 0;
+    for (const el of grid.querySelectorAll('.pick-card')) {
+        const hit = !q || el.dataset.find.includes(q);
+        el.style.display = hit ? '' : 'none';     // 지우지 않고 숨긴다
+        if (hit) shown++;
+    }
+    document.getElementById('pick-count').textContent =
+        q ? `${shown}개 찾음 (전체 ${pickData.choices.length}개)` : `고를 수 있는 실험체 ${pickData.choices.length}개`;
+}
+
+function fixChoose(id){
+    pickChosen = pickChosen === id ? null : id;      // 같은 카드를 다시 누르면 놓는다
+    for (const el of document.querySelectorAll('#pick-grid .pick-card')) {
+        el.classList.toggle('on', el.dataset.id === pickChosen);
+    }
+    const c = pickData.choices.find(x => x.character === pickChosen);
+    const box = document.getElementById('pick-picked');
+    box.textContent = c ? `고른 실험체 · ${c.displayName}` : '고른 실험체 없음';
+    box.classList.toggle('has', !!c);
+    document.getElementById('pk-ok').disabled = !c;
+}
+
+function fixConfirmChange(token){
+    const c = pickData.choices.find(x => x.character === pickChosen);
+    if (!c) return;
+    if (!confirm(`실험체를 변경할까요?\n\n${fixTeam}팀 · ${pickData.nickname}\n\n`
+               + `기존: ${pickData.current?.displayName ?? '배정 없음'}\n`
+               + `변경: ${c.displayName}\n\n`
+               + `적용하면 ${fixTeam}팀 결과를 디스코드에 다시 공지합니다.`)) return;
+    fixApplyChange(token, c);
+}
+
+async function fixApplyChange(token, c){
+    const btn = document.getElementById('pk-ok');
+    btn.disabled = true; btn.textContent = '적용 중...';
+    const applied = await gmApi('assignments/set', { teamNum: fixTeam, memberToken: token, character: c.character });
+    closeGmModal();
+    pickData = null; pickChosen = null;
+
+    if (applied.error) { fixSetState('err', applied.error); toast(applied.error, true); await gmFixLoad(); return; }
+    fixSel = [];
+    await gmFixLoad();
+    fixAfterPublish(applied);
 }
 
 function fixAfterPublish(r){

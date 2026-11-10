@@ -15,7 +15,7 @@ const discord = require(path.join(origCwd, 'gentleman-discord.js'));
 const W = require(path.join(origCwd, 'character-weapons.js'));
 const db = require(path.join(origCwd, 'db.js'));
 const web = require(path.join(origCwd, 'server.js'));
-const PORT = 3380 + Math.floor(Math.random() * 110);
+const PORT = 3600 + Math.floor(Math.random() * 80);
 const B = `http://localhost:${PORT}`;
 let server;
 
@@ -48,6 +48,10 @@ async function makeEvent({ type = 'normal' } = {}) {
     ctx.EV = c.data.eventId; ctx.AD = c.data.adminToken;
     ctx.A = (p, b = {}) => post(`/api/gentleman/admin/${p}`, { event: ctx.EV, token: ctx.AD, ...b });
     ctx.Aget = (p) => get(`/api/gentleman/admin/${p}?event=${ctx.EV}&token=${ctx.AD}`);
+    // 고를 수 있는 실험체 목록 (질의 문자열이 더 붙는다)
+    ctx.choicesOf = (teamNum, memberToken) =>
+        get(`/api/gentleman/admin/assignments/choices?event=${ctx.EV}&token=${ctx.AD}`
+            + `&teamNum=${teamNum}&memberToken=${encodeURIComponent(memberToken)}`);
     await ctx.A('start');
     await post('/api/gentleman/dev/auto-pick', { devToken: 'fx-dev', event: ctx.EV });
 }
@@ -126,43 +130,70 @@ test('교환해도 다른 팀의 배정은 그대로다', async () => {
     assert.deepStrictEqual(t2.members.map(m => m.character), ctx.t2.members.map(m => m.character));
 });
 
-// ── 2. 개인 재추첨 ───────────────────────────────────
-test('3. 한 명만 다시 뽑는다 — 미리 보기는 아무것도 바꾸지 않는다', async () => {
+// ── 2. 실험체 직접 변경 ──────────────────────────────
+test('3. 고를 수 있는 실험체 목록을 받는다 — 목록만 봐서는 아무것도 바뀌지 않는다', async () => {
     const teams = (await ctx.Aget('assignments')).data.teams;
     const t1 = teams.find(t => t.teamNum === 1);
     const target = t1.members[2];
     ctx.target = target;
     ctx.beforeAll = JSON.stringify(teams);
 
-    const r = await ctx.A('assignments/reroll', { teamNum: 1, memberToken: target.token });
+    const r = await ctx.choicesOf(1, target.token);
     assert.ok(r.data.success, r.data.error);
-    assert.strictEqual(r.data.before.character, target.character);
-    assert.notStrictEqual(r.data.after.character, target.character, '현재 실험체는 다시 나오지 않는다');
-    assert.ok(r.data.after.displayName, '표시 이름이 있어야 한다');
-    ctx.preview = r.data;
+    assert.strictEqual(r.data.nickname, target.nickname);
+    assert.strictEqual(r.data.current.character, target.character, '현재 실험체를 따로 알려줘야 한다');
+    assert.ok(r.data.choices.length > 50, `고를 수 있는 실험체가 ${r.data.choices.length}개뿐이다`);
+
+    for (const c of r.data.choices) {
+        assert.ok(c.character && c.displayName && c.characterName, '표시에 필요한 정보가 있어야 한다');
+    }
+    ctx.choices = r.data.choices;
 
     const now = JSON.stringify((await ctx.Aget('assignments')).data.teams);
-    assert.strictEqual(now, ctx.beforeAll, '미리 보기 단계에서는 배정이 바뀌면 안 된다');
+    assert.strictEqual(now, ctx.beforeAll, '목록을 보는 것만으로 배정이 바뀌면 안 된다');
 });
 
-test('7. 미리 보기만 하고 적용하지 않으면 기존 배정이 유지된다', async () => {
-    await ctx.A('assignments/reroll', { teamNum: 1, memberToken: ctx.target.token });   // 한 번 더 뽑아만 본다
+test('4. 현재 실험체는 고를 수 있는 목록에 들어가지 않는다', () => {
+    assert.ok(!ctx.choices.some(c => c.character === ctx.target.character),
+        '자기 실험체가 후보에 들어 있다');
+});
+
+test('7. 고르기만 하고 확정하지 않으면 기존 배정이 유지된다', async () => {
+    await ctx.choicesOf(1, ctx.target.token);
     const now = JSON.stringify((await ctx.Aget('assignments')).data.teams);
     assert.strictEqual(now, ctx.beforeAll);
 });
 
-test('3-1. 적용하면 그 사람만 바뀌고 출처가 관리자 재배정이 된다', async () => {
-    const r = await ctx.A('assignments/reroll/apply', {
-        teamNum: 1, memberToken: ctx.target.token, character: ctx.preview.after.character,
+test('3-1. 고른 실험체를 적용하면 그 사람만 바뀌고 출처가 관리자 재배정이 된다', async () => {
+    ctx.chosen = ctx.choices[7];                        // 관리자가 직접 고른 셈
+    const r = await ctx.A('assignments/set', {
+        teamNum: 1, memberToken: ctx.target.token, character: ctx.chosen.character,
     });
     assert.ok(r.data.success, r.data.error);
     assert.strictEqual(r.data.republished, true, r.data.publishError ?? '');
 
     const t1 = (await ctx.Aget('assignments')).data.teams.find(t => t.teamNum === 1);
     const me = t1.members.find(m => m.token === ctx.target.token);
-    assert.strictEqual(me.character, ctx.preview.after.character);
+    assert.strictEqual(me.character, ctx.chosen.character, '고른 그대로 들어가야 한다');
     assert.strictEqual(me.source, 'admin', '관리자 재배정 표시가 붙어야 한다');
-    assert.strictEqual(me.displayName, ctx.preview.after.displayName);
+    assert.strictEqual(me.displayName, ctx.chosen.displayName);
+});
+
+test('3-2. 같은 실험체라도 무기군이 다르면 고를 수 있다', async () => {
+    const t1 = (await ctx.Aget('assignments')).data.teams.find(t => t.teamNum === 1);
+    const other = t1.members.find(m => m.token !== ctx.target.token && m.character != null);
+    const 그사람실험체 = W.describe(other.character);
+
+    const r = await ctx.choicesOf(1, ctx.target.token);
+    const 같은실험체 = r.data.choices.filter(c => c.characterName === 그사람실험체.characterName);
+
+    // 그 사람이 쓰는 조합은 빠지고, 같은 실험체의 다른 무기군은 남아 있어야 한다
+    assert.ok(!r.data.choices.some(c => c.character === other.character), '쓰이는 조합이 남아 있다');
+    const 무기군수 = W.allCandidates().filter(c => c.characterName === 그사람실험체.characterName).length;
+    if (무기군수 > 1) {
+        assert.ok(같은실험체.length > 0,
+            `${그사람실험체.characterName}의 다른 무기군이 모두 빠졌다`);
+    }
 });
 
 test('4. 같은 팀 다른 참가자의 실험체는 그대로다', async () => {
@@ -184,7 +215,7 @@ test('4-1. 다른 팀의 배정도 그대로다', async () => {
         before.map(t => t.members.map(m => m.character)));
 });
 
-test('5. 이미 쓰이고 있는 실험체·무기군은 다시 뽑지 않는다', async () => {
+test('5. 이미 쓰이고 있는 실험체·무기군은 고를 수 없다', async () => {
     const teams = (await ctx.Aget('assignments')).data.teams;
     const used = new Set();
     for (const t of teams) {
@@ -192,13 +223,18 @@ test('5. 이미 쓰이고 있는 실험체·무기군은 다시 뽑지 않는다
         for (const l of t.leftover) used.add(l.character);
     }
     const target = teams.find(t => t.teamNum === 3).members[0];
+    const r = await ctx.choicesOf(3, target.token);
+    assert.ok(r.data.success, r.data.error);
 
-    for (let i = 0; i < 25; i++) {
-        const r = await ctx.A('assignments/reroll', { teamNum: 3, memberToken: target.token });
-        assert.ok(r.data.success, r.data.error);
-        assert.ok(!used.has(r.data.after.character),
-            `이미 쓰이는 ${r.data.after.displayName}이(가) 나왔다`);
-    }
+    // 모든 팀의 배정과 미배정을 통틀어 쓰이는 조합은 하나도 들어 있으면 안 된다
+    const 겹침 = r.data.choices.filter(c => used.has(c.character));
+    assert.deepStrictEqual(겹침, [], `쓰이는 조합이 들어 있다: ${겹침.map(c => c.displayName).join(', ')}`);
+
+    // 서버가 막는지도 확인한다 (화면을 거치지 않고 직접 보내는 경우)
+    const 남의것 = teams.find(t => t.teamNum === 2).members[0].character;
+    const bad = await ctx.A('assignments/set', { teamNum: 3, memberToken: target.token, character: 남의것 });
+    assert.strictEqual(bad.status, 400);
+    assert.match(bad.data.error, /다른 참가자에게 배정된/);
 });
 
 test('5-1. 같은 실험체라도 무기군이 다르면 다른 후보로 본다', () => {
@@ -209,27 +245,28 @@ test('5-1. 같은 실험체라도 무기군이 다르면 다른 후보로 본다
     assert.strictEqual(알렉스.length, 1, '알렉스는 하나로 처리한다');
 });
 
-test('6. 밴한 실험체는 다시 뽑지 않는다', async () => {
-    // 쓰이지 않는 실험체를 모두 밴하면 뽑을 후보가 없어야 한다
+test('6. 밴한 실험체는 고를 수 없다', async () => {
+    // 전부 밴하면 고를 수 있는 실험체가 없어야 한다
     const teams = (await ctx.Aget('assignments')).data.teams;
     const target = teams.find(t => t.teamNum === 4).members[0];
 
     const all = [...new Set(W.allCandidates().map(c => c.characterName))];
     db.setBannedCharacters(ctx.EV, all);                       // 전부 밴한다
 
-    const none = await ctx.A('assignments/reroll', { teamNum: 4, memberToken: target.token });
-    assert.strictEqual(none.status, 400);
-    assert.match(none.data.error, /뽑을 수 있는 실험체가 없어요/);
+    const none = await ctx.choicesOf(4, target.token);
+    assert.strictEqual(none.data.choices.length, 0);
+    assert.match(none.data.reason, /고를 수 있는 실험체가 없어요/);
 
     // 하나만 풀어 주면 그 실험체만 나와야 한다
     db.setBannedCharacters(ctx.EV, all.filter(n => n !== '재키'));
-    const ok = await ctx.A('assignments/reroll', { teamNum: 4, memberToken: target.token });
-    assert.ok(ok.data.success, ok.data.error);
-    assert.strictEqual(W.describe(ok.data.after.character).characterName, '재키');
+    const ok = await ctx.choicesOf(4, target.token);
+    assert.ok(ok.data.choices.length > 0, ok.data.reason ?? '');
+    assert.ok(ok.data.choices.every(c => c.characterName === '재키'),
+        '밴하지 않은 실험체만 나와야 한다');
 
-    // 밴된 실험체를 직접 적용하려 해도 막는다
+    // 밴된 실험체를 직접 보내도 막는다
     const 밴된후보 = W.allCandidates().find(c => c.characterName !== '재키');
-    const bad = await ctx.A('assignments/reroll/apply', { teamNum: 4, memberToken: target.token, character: 밴된후보.id });
+    const bad = await ctx.A('assignments/set', { teamNum: 4, memberToken: target.token, character: 밴된후보.id });
     assert.strictEqual(bad.status, 400);
     assert.match(bad.data.error, /밴된/);
 
@@ -324,9 +361,10 @@ test('12-2. 고친 배정이 새로 연 투표 후보에 반영된다', async ()
     // 우승팀(1팀)은 투표 후보에서 빠지므로 다른 팀에서 고친다
     const t3 = (await ctx.Aget('assignments')).data.teams.find(t => t.teamNum === 3);
     const target = t3.members[0];
-    const pick = await ctx.A('assignments/reroll', { teamNum: 3, memberToken: target.token });
-    assert.ok(pick.data.success, pick.data.error);
-    const applied = await ctx.A('assignments/reroll/apply', { teamNum: 3, memberToken: target.token, character: pick.data.after.character });
+    const list = await ctx.choicesOf(3, target.token);
+    assert.ok(list.data.success, list.data.error);
+    const chosen = list.data.choices[0];
+    const applied = await ctx.A('assignments/set', { teamNum: 3, memberToken: target.token, character: chosen.character });
     assert.ok(applied.data.success, applied.data.error);
 
     assert.ok((await ctx.A('vote/open')).data.success);
@@ -336,7 +374,7 @@ test('12-2. 고친 배정이 새로 연 투표 후보에 반영된다', async ()
 
     const cand = view.data.candidates.find(c => c.token === target.token);
     assert.ok(cand, '수정한 참가자가 투표 후보에 있어야 한다');
-    assert.strictEqual(cand.character, pick.data.after.character, '새 배정이 후보에 반영돼야 한다');
+    assert.strictEqual(cand.character, chosen.character, '새 배정이 후보에 반영돼야 한다');
 });
 
 test('수상 결과가 나온 뒤에는 배정을 고칠 수 없다', async () => {

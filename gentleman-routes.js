@@ -454,26 +454,26 @@ router.post('/admin/assignments/swap', requireAdmin, async (req, res) => {
     res.json({ ...r, republished: !!sent.ok, publishError: sent.ok ? null : sent.error });
 });
 
-// 참가자 한 명의 새 실험체를 뽑아 본다 (아직 적용하지 않는다)
-router.post('/admin/assignments/reroll', requireAdmin, (req, res) => {
-    const teamNum = Number(req.body.teamNum);
-    const r = db.withGentleman(req.eventId, (g, ev) => {
-        const blocked = canEditAssignments(g);
-        if (blocked) return blocked;
-        // 미리 보기이므로 상태를 바꾸지 않는다. 다른 참가자의 배정도 그대로다.
-        // 관리자 토큰과 이름이 겹치지 않도록 참가자 쪽은 memberToken으로 받는다
-        return D.pickReroll(g, teamNum, req.body.memberToken, ev.bannedCharacters ?? []);
-    });
+// 참가자 한 명에게 지정할 수 있는 실험체 목록 (고르는 창에서 쓴다)
+// 조회만 하므로 상태를 바꾸지 않는다. 다른 참가자의 배정도 그대로다.
+router.get('/admin/assignments/choices', requireAdmin, (req, res) => {
+    const teamNum = Number(req.query.teamNum);
+    const g = req.event?.gentleman;
+    const blocked = canEditAssignments(g);
+    if (blocked) return res.status(400).json(blocked);
+    // 관리자 토큰과 이름이 겹치지 않도록 참가자 쪽은 memberToken으로 받는다
+    const r = D.availableChoices(g, teamNum, req.query.memberToken, db.getEvent(req.eventId)?.bannedCharacters ?? []);
     r.error ? res.status(400).json(r) : res.json(r);
 });
 
-// 미리 본 재추첨 결과를 적용하고 그 팀만 다시 공지한다
-router.post('/admin/assignments/reroll/apply', requireAdmin, async (req, res) => {
+// 관리자가 고른 실험체를 적용하고 그 팀만 다시 공지한다
+router.post('/admin/assignments/set', requireAdmin, async (req, res) => {
     const teamNum = Number(req.body.teamNum);
     const r = db.withGentleman(req.eventId, (g, ev) => {
         const blocked = canEditAssignments(g);
         if (blocked) return blocked;
-        return D.applyReroll(g, teamNum, req.body.memberToken, req.body.character, ev.bannedCharacters ?? []);
+        // 저장 직전에 중복·밴을 다시 확인한다 (고르는 동안 다른 수정이 있었을 수 있다)
+        return D.setMemberCharacter(g, teamNum, req.body.memberToken, req.body.character, ev.bannedCharacters ?? []);
     });
     if (r.error) return res.status(400).json(r);
 
