@@ -148,6 +148,16 @@
         .tp-stat b.bump{animation:tpBump .35s ease;}
         .tp-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.7rem;}
         .tp-label{font-size:.85rem;color:var(--muted);min-width:4.5rem;}
+        /* 모집 정원 관리 */
+        .cap-panel{background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:.85rem 1rem;margin-bottom:.9rem;}
+        .cap-title{font-weight:800;font-size:.9rem;margin-bottom:.6rem;}
+        .cap-stats{display:flex;gap:1.4rem;flex-wrap:wrap;margin-bottom:.7rem;}
+        .cap-stats > div{display:flex;flex-direction:column;gap:.15rem;}
+        .cap-k{font-size:.72rem;color:var(--muted);font-weight:700;}
+        .cap-v{font-size:1.05rem;font-weight:800;}
+        .cap-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;}
+        .cap-hint{font-size:.74rem;color:var(--muted);margin-top:.5rem;min-height:1em;}
+        .cap-hint.err{color:var(--danger,#e94560);}
         .tp-stepper{display:inline-flex;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:9px;overflow:hidden;}
         .tp-stepper button{background:none;border:none;color:var(--text);width:2.2rem;height:2.1rem;font-size:1.1rem;cursor:pointer;transition:background .15s;}
         .tp-stepper button:hover:not(:disabled){background:rgba(255,255,255,.08);}
@@ -224,6 +234,25 @@
     </div>
 
     <div id="view-list" data-pane="list">
+        <!-- 모집 중에도 정원만 따로 바꾼다. 신청자·팀 구성은 그대로 둔다. -->
+        <div class="cap-panel">
+            <div class="cap-title">모집 인원 관리</div>
+            <div class="cap-stats">
+                <div><span class="cap-k">현재 신청 인원</span><span class="cap-v" id="cap-now">-</span></div>
+                <div><span class="cap-k">최대 모집 인원</span><span class="cap-v" id="cap-max">-</span></div>
+            </div>
+            <div class="cap-row">
+                <span class="cap-k">모집 정원</span>
+                <span class="tp-stepper">
+                    <button type="button" id="cap-minus" aria-label="정원 줄이기">−</button>
+                    <span class="num" id="cap-num">-</span>
+                    <button type="button" id="cap-plus" aria-label="정원 늘리기">+</button>
+                </span>
+                <button class="btn btn-primary btn-sm" id="cap-apply" disabled>변경 적용</button>
+            </div>
+            <div class="cap-hint" id="cap-hint"></div>
+        </div>
+
         <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
             <span style="font-size:.8rem;color:var(--muted)">정렬</span>
             <select class="team-select" id="sort-select" onchange="renderTable()">
@@ -599,6 +628,7 @@ function render(){
     document.getElementById('stat-teams').textContent    = eventData?.teamCount || 2;
     renderTable();
     renderTeams();
+    capRender();                         // 모집 정원 패널도 함께 맞춘다
 }
 
 function teamOptions(current, teamCount){
@@ -823,6 +853,61 @@ async function toggleRole(){
 }
 
 // 지금 인원이면 몇 팀 × 몇 명이 되는지 안내 (상단 요약 + 팀 구성 패널)
+// ── 모집 정원 관리 ──────────────────────────────────
+// 모집 중에도 정원만 바꾼다. 신청자와 팀 구성은 그대로 둔다.
+const CAP_MIN = 2, CAP_MAX = 32;
+let capDraft = null;            // 관리자가 조절 중인 값 (적용 전)
+
+function capRender(){
+    const panel = document.querySelector('.cap-panel');
+    if (!panel) return;
+    const now = participants.length;
+    const saved = eventData?.maxPlayers ?? null;
+    if (saved == null) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
+    if (capDraft == null) capDraft = saved;
+
+    document.getElementById('cap-now').textContent = `${now}명`;
+    document.getElementById('cap-max').textContent = `${saved}명`;
+    setNum('cap-num', `${capDraft}명`);
+
+    const floor = Math.max(CAP_MIN, now);           // 신청자보다 적게는 줄일 수 없다
+    document.getElementById('cap-minus').disabled = capDraft <= floor;
+    document.getElementById('cap-plus').disabled  = capDraft >= CAP_MAX;
+    document.getElementById('cap-apply').disabled = capDraft === saved;
+
+    const hint = document.getElementById('cap-hint');
+    hint.classList.remove('err');
+    hint.textContent = capDraft === saved
+        ? `${CAP_MIN}~${CAP_MAX}명까지 설정할 수 있어요. 신청자와 팀 구성은 바뀌지 않아요.`
+        : `${saved}명 → ${capDraft}명으로 바꿉니다.`;
+}
+
+function capStep(delta){
+    const floor = Math.max(CAP_MIN, participants.length);
+    capDraft = Math.min(CAP_MAX, Math.max(floor, (capDraft ?? 0) + delta));
+    capRender();
+}
+
+async function capApply(){
+    const btn = document.getElementById('cap-apply');
+    btn.disabled = true;
+    const r = await api('/api/admin/max-players', { event: EVENT, token: TOKEN, maxPlayers: capDraft });
+    const hint = document.getElementById('cap-hint');
+    if (r.error) {
+        hint.classList.add('err');
+        hint.textContent = r.error;
+        toast(r.error, true);
+        capDraft = eventData?.maxPlayers ?? capDraft;
+        capRender();
+        return;
+    }
+    if (eventData) eventData.maxPlayers = r.maxPlayers;
+    capDraft = r.maxPlayers;
+    toast(`모집 정원을 ${r.maxPlayers}명으로 바꿨어요`);
+    capRender();
+}
+
 let teamPlan = null;
 async function refreshTeamPlan(){
     // 팀 구성 정보는 '팀 배정' 탭의 패널에서만 보여준다 (상단 요약은 중복이라 없앴다)
@@ -1615,6 +1700,11 @@ document.getElementById('send-btn').addEventListener('click', async ()=>{
     btn.disabled=false;
     data.success ? toast('디스코드에 전송됐어요!') : toast('전송 실패: '+data.error, true);
 });
+
+// 모집 정원 조절 버튼
+document.getElementById('cap-minus').addEventListener('click', ()=>capStep(-1));
+document.getElementById('cap-plus') .addEventListener('click', ()=>capStep(+1));
+document.getElementById('cap-apply').addEventListener('click', capApply);
 
 // 탭 전환 — 각 묶음은 data-pane으로 구분한다.
 // 모드에 따라 쓰지 않는 항목(실험체 결과, 토너먼트 등)은 숨긴 채로 둔다.

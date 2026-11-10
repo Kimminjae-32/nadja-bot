@@ -41,6 +41,8 @@ let restoreCallback      = null;
 let createEmbedFn        = null;
 
 const VALID_POSITIONS = ['탱커', '전사', '암살자', '스킬 딜러', '원거리 딜러', '지원가'];
+// 모집 정원의 허용 범위 — 코발트 토너먼트의 32명까지 받을 수 있어야 한다
+const MIN_MAX_PLAYERS = 2, MAX_MAX_PLAYERS = 32;
 
 // ── ER API 티어 자동 조회 ──────────────────────────
 function mmrToTier(mmr, rank) {
@@ -260,6 +262,11 @@ app.post('/join', (req, res) => {
         syncEmbedParticipants(event);
         return res.json({ success: true, cancel_token: token, updated: true });
     }
+    // 새로 신청하는 경우에만 모집 정원을 확인한다 (수정은 위에서 이미 처리했다)
+    const cap = recruitMap?.get(event)?.maxPlayers ?? ev?.maxPlayers ?? null;
+    if (Number.isFinite(cap) && db.getParticipants(event).length >= cap)
+        return res.status(409).json({ error: `모집 인원이 모두 찼어요. (${cap}명)` });
+
     const cancel_token = db.addParticipant(event, discord_id || null, discord_nickname.trim(), ingame_nickname.trim(), position, validTier, chars, validMmr);
     syncEmbedParticipants(event);
     syncRoleMember(event, discord_id || null, true);
@@ -1105,6 +1112,35 @@ app.post('/api/admin/change-map', async (req, res) => {
 
     db.setMaxPlayers(event, recruit.maxPlayers);         // 바뀐 모집 정원도 이벤트에 기록한다
     res.json({ success: true, gameType: recruit.gameType, mapType: recruit.mapType, teamCount: newTeamCount });
+});
+
+/**
+ * POST /api/admin/max-players — 모집 중에도 모집 정원만 바꾼다.
+ * 신청자 목록·실제 진행 인원·팀 수는 건드리지 않는다. 맵 변경과 달리 기록을 지우지 않는다.
+ */
+app.post('/api/admin/max-players', async (req, res) => {
+    const { event, token, maxPlayers } = req.body;
+    if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
+    if (!db.eventExists(event)) return res.status(404).json({ error: '존재하지 않는 내전입니다.' });
+
+    const want = parseInt(maxPlayers, 10);
+    if (!Number.isFinite(want)) return res.json({ error: '모집 정원을 숫자로 입력해주세요.' });
+    if (want < MIN_MAX_PLAYERS || want > MAX_MAX_PLAYERS)
+        return res.json({ error: `모집 정원은 ${MIN_MAX_PLAYERS}~${MAX_MAX_PLAYERS}명이어야 해요.` });
+
+    // 이미 신청한 사람을 쫓아내지 않는다
+    const registered = db.getParticipants(event).length;
+    if (want < registered)
+        return res.json({ error: `이미 ${registered}명이 신청했어요. 모집 정원을 그보다 적게 줄일 수 없어요.` });
+
+    db.setMaxPlayers(event, want);
+    const recruit = recruitMap?.get(event);
+    if (recruit) {                      // 봇이 켜져 있으면 메모리 쪽 값과 디스코드 모집 글도 함께 맞춘다
+        recruit.maxPlayers = want;
+        saveDataFn?.();
+        await syncEmbedParticipants(event);
+    }
+    res.json({ success: true, maxPlayers: want, registered, embedUpdated: !!recruit });
 });
 
 // GET /api/admin/voice-channels?event=&token= — 서버 음성 채널 목록

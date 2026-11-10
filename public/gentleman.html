@@ -30,7 +30,9 @@
     @keyframes slideInRight{from{opacity:0;transform:translateX(22px)}to{opacity:1;transform:none}}
     @keyframes popIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
     /* 오른쪽 바깥에서 제자리로 미끄러져 들어온다 */
-    @keyframes cardIn{from{opacity:0;transform:translateX(64px) scale(.94)}to{opacity:1;transform:none}}
+    @keyframes cardIn{from{opacity:0;transform:translateX(44px) scale(.96)}to{opacity:1;transform:none}}
+    /* 선택 강조 — 크기만 바꾸고 투명도는 그대로 둔다 */
+    @keyframes bumpPop{0%{transform:scale(1)}45%{transform:scale(1.06)}100%{transform:scale(1)}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
     @keyframes spin{to{transform:rotate(360deg)}}
     @keyframes checkPop{0%{transform:scale(0) rotate(-20deg)}60%{transform:scale(1.18) rotate(4deg)}100%{transform:scale(1) rotate(0)}}
@@ -66,8 +68,10 @@
         position:relative;background:var(--card);border:2px solid var(--border);border-radius:12px;
         overflow:hidden;cursor:pointer;user-select:none;aspect-ratio:4/3.2;
         transition:transform .22s var(--ease),border-color .22s var(--ease),box-shadow .22s var(--ease);
-        animation:cardIn .45s var(--ease) both;
     }
+    /* 등장 연출은 .enter가 붙어 있는 동안에만 한다. 연출이 끝나면 JS가 클래스를 떼므로
+       이후 선택·해제로 클래스가 바뀌어도 애니메이션이 다시 시작되지 않는다. */
+    .char.enter{animation:cardIn .42s var(--ease) both;animation-delay:var(--d,0ms);}
     /* 초상화만 꽉 채운다. 무기 아이콘(.wpn img)은 아래에서 따로 크기를 정한다. */
     .char > img.portrait{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s var(--ease);}
     .char .nm{
@@ -85,7 +89,9 @@
     .char.disabled{opacity:.42;cursor:not-allowed;}
     .char.disabled:hover{transform:none;border-color:var(--border);box-shadow:none;}
     .char.disabled:hover > img.portrait{transform:none;}
-    .char.bump{animation:popIn .3s var(--ease);}
+    /* 선택했을 때 살짝 커졌다 돌아온다. 투명도는 건드리지 않아 초상화가 사라지지 않는다.
+       등장 연출이 남긴 지연값을 물려받지 않도록 지연을 0으로 고정한다. */
+    .char.bump{animation:bumpPop .3s var(--ease);animation-delay:0ms;}
     /* 읽기 전용 카드 — 확인 모달과 확정 완료 화면에서 쓴다 */
     .char.ro{cursor:default;border-color:var(--gold);}
     .char.ro:hover{transform:none;box-shadow:none;border-color:var(--gold);}
@@ -255,12 +261,27 @@ function charCard(id, opts = {}) {
         opts.disabled ? 'disabled' : '',
         opts.readonly ? 'ro'       : '',
         opts.auto     ? 'auto'     : ''].filter(Boolean).join(' ');
-    const delay = opts.delay != null ? ` style="animation-delay:${opts.delay}ms"` : '';
-    return `<div class="${cls}" data-name="${esc(id)}"${delay}>
-        ${src ? `<img class="portrait" src="${src}" alt="" loading="lazy" onerror="this.style.display='none'">` : '<div class="no-img">이미지 없음</div>'}
+    // 등장 연출은 .enter 클래스로만 한다. 지연은 CSS 변수로 넘겨 bump 같은 다른 애니메이션이 물려받지 않게 한다.
+    const delay = opts.delay != null ? ` style="--d:${opts.delay}ms"` : '';
+    return `<div class="${cls} enter" data-name="${esc(id)}"${delay}>
+        ${src ? `<img class="portrait" src="${src}" alt="" onerror="this.style.display='none'">` : '<div class="no-img">이미지 없음</div>'}
         ${wpnBadge(id)}
         <div class="nm">${esc(candLabel(id))}</div>
     </div>`;
+}
+
+/**
+ * 등장 연출이 끝난 카드에서 .enter를 뗀다.
+ * 클래스를 떼어 두어야 나중에 선택·해제로 클래스가 바뀌어도 등장 연출이 다시 시작되지 않는다.
+ */
+function settleCards(root){
+    if (!root) return;
+    root.querySelectorAll('.char.enter').forEach(el => {
+        const done = () => { el.classList.remove('enter'); el.style.removeProperty('--d'); };
+        el.addEventListener('animationend', e => { if (e.animationName === 'cardIn') done(); }, { once: true });
+        // 애니메이션이 아예 실행되지 않는 환경(동작 줄이기 설정 등)을 위한 대비책
+        setTimeout(done, (parseInt(el.style.getPropertyValue('--d')) || 0) + 900);
+    });
 }
 
 function toast(msg, isErr){
@@ -322,6 +343,7 @@ function renderGrid(force){
         .map((c, i) => charCard(c, { picked: picks.includes(c), disabled: !editable, delay: Math.min(i * 55, 760) }))
         .join('');
     if (editable) grid.querySelectorAll('.char').forEach(el => el.addEventListener('click', () => toggle(el.dataset.name, el)));
+    settleCards(grid);                      // 등장 연출이 끝나면 .enter를 떼어 다시 재생되지 않게 한다
 }
 
 // 격자를 다시 만들지 않고 선택 표시만 맞춘다
@@ -359,6 +381,7 @@ function renderConfirmed(){
             </div>
             ${auto.size?`<p style="text-align:center;color:var(--accent);font-size:.82rem">관리자가 확정해서 '자동' 표시된 실험체가 무작위로 채워졌어요.</p>`:''}
         </div>`;
+    settleCards($('main'));
 }
 
 let lastView = null;     // 'confirmed' | 'waiting' | 'editor'
@@ -424,7 +447,7 @@ async function submitPicks(){
 }
 
 // ── 확정 / 중단 ──────────────────────────────────────
-function openModal(html){ $('modal').innerHTML = html; $('mask').classList.add('on'); }
+function openModal(html){ $('modal').innerHTML = html; $('mask').classList.add('on'); settleCards($('modal')); }
 function closeModal(){ $('mask').classList.remove('on'); }
 $('mask').addEventListener('click', e => { if (e.target === $('mask')) closeModal(); });
 
