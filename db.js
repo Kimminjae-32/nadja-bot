@@ -448,6 +448,16 @@ module.exports = {
         if (data.events[eventId]) { data.events[eventId].rule = rule || null; save(data); }
     },
 
+    // 팀 구성 공지 기록 — 다음 공지 때 이 메시지를 고쳐 쓰고, 공지 뒤 팀이 바뀌었는지 알아내는 데 쓴다
+    // info = { messageId, channelId, signature, at, count, mock }
+    setTeamAnnounce(eventId, info) {
+        const data = load();
+        if (!data.events[eventId]) return false;
+        data.events[eventId].teamAnnounce = info;
+        save(data);
+        return true;
+    },
+
     // ── 보관함 (종료·만료된 내전을 7일간 보관) ────────
     // data.archive[id] = { event, participants, archivedAt, reason }
     ARCHIVE_DAYS: 7,

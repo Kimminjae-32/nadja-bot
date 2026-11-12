@@ -63,6 +63,43 @@ async function send(ev, payload, meta = {}) {
     }
 }
 
+/**
+ * 이미 보낸 메시지의 내용을 바꾼다. (팀 구성 공지 갱신 등)
+ * 첨부 이미지는 새 것으로 교체한다. 메시지가 지워졌거나 수정할 수 없으면 { ok: false }.
+ * Mock 모드에서는 보관함에 남은 그 메시지를 고친다. 보관함에서 지워졌으면 지워진 메시지로 본다.
+ */
+async function edit(ev, messageId, payload, meta = {}) {
+    if (!messageId) return { ok: false, error: '수정할 메시지가 없습니다.' };
+    if (isMockMode(ev)) {
+        const row = mockOutbox.find(m => m.id === messageId);
+        if (!row) return { ok: false, error: '메시지를 찾을 수 없습니다.', mock: true };
+        Object.assign(row, {
+            content: payload.content ?? '',
+            embedTitle: payload.embeds?.[0]?.data?.title ?? payload.embedTitle ?? null,
+            files: (payload.files ?? []).map(f => ({ name: f.name, bytes: f.buffer?.length ?? 0, dataUrl: f.buffer ? `data:image/png;base64,${f.buffer.toString('base64')}` : null })),
+            editedAt: Date.now(),
+            edits: (row.edits ?? 0) + 1,
+        });
+        return { ok: true, messageId, mock: true, edited: true };
+    }
+    try {
+        const { AttachmentBuilder } = require('discord.js');
+        const channel = await discordClient.channels.fetch(ev.channelId);
+        if (!channel) throw new Error('채널을 찾을 수 없습니다.');
+        const msg = await channel.messages.fetch(messageId);
+        await msg.edit({
+            content: payload.content ?? null,
+            embeds: payload.embeds ?? [],
+            attachments: [],                              // 예전 이미지를 지우고 새 이미지로 바꾼다
+            files: (payload.files ?? []).map(f => new AttachmentBuilder(f.buffer, { name: f.name })),
+        });
+        return { ok: true, messageId, edited: true };
+    } catch (e) {
+        console.error(`[gentleman-discord] 메시지 수정 실패 (${meta.kind ?? 'message'}):`, e.message);
+        return { ok: false, error: e.message };
+    }
+}
+
 /** 전송에 한 번 실패하면 짧게 쉬고 한 번 더 시도한다. */
 async function sendWithRetry(ev, payload, meta = {}, retryDelayMs = 800) {
     const first = await send(ev, payload, meta);
@@ -135,4 +172,4 @@ async function deleteMessages(ev, messageIds) {
     return { deleted, failed };
 }
 
-module.exports = { setClient, send, sendWithRetry, disableButtons, deleteMessages, avatarUrl, isMockMode, getMockOutbox, clearMockOutbox };
+module.exports = { setClient, send, edit, sendWithRetry, disableButtons, deleteMessages, avatarUrl, isMockMode, getMockOutbox, clearMockOutbox };

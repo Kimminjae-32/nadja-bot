@@ -7,6 +7,7 @@ const weapons  = require('./character-weapons');
 const gentleman = require('./gentleman-routes');
 const gentlemanDev = require('./gentleman-dev');
 const gentlemanDiscord = require('./gentleman-discord');
+const teamAnnounce = require('./team-announce');
 const VALID_TIERS = TIERS.map(t => t.name);
 
 let generateResultCard = null, generateBracketCard = null, generateCharPoolCard = null;
@@ -376,6 +377,7 @@ function teamPlanSummary(eventId, previewTeamCount) {
         lockedCount: active.filter(p => p.locked && p.team_num).length,
         locked: teamChangeBlocked(eventId),
         text: plan.error ? plan.error : teamUtil.describeDistribution(sizes, active.length),
+        announce: teamAnnounce.status(ev, participants),          // 팀 구성 공지 상태 (공지 뒤 바뀌었는지)
     };
 }
 
@@ -964,75 +966,19 @@ app.post('/api/admin/close', async (req, res) => {
     res.json({ success: true });
 });
 
-// POST /api/admin/send-discord  — 팀 배정 결과를 Discord 채널에 전송
+// POST /api/admin/send-discord  — 팀 구성 공지 (팀원 이름 · 티어 이미지)
+//   { dryRun: true }          미리 보기만 만든다 (보내지 않음)
+//   { expectSignature }       미리 본 구성과 지금 구성이 다르면 보내지 않는다
+//   { allowNew: true }        예전 공지를 고칠 수 없을 때 새 공지로 보내도 된다
+// 예전에 보낸 공지가 있으면 그 메시지를 고쳐서 갱신한다. 규칙은 team-announce.js에 있다.
 app.post('/api/admin/send-discord', async (req, res) => {
-    const { event, token } = req.body;
+    const { event, token, dryRun, expectSignature, allowNew } = req.body;
     if (!db.verifyAdmin(event, token)) return res.status(403).json({ error: 'Unauthorized' });
-    if (!discordClient) return res.status(500).json({ error: '봇 클라이언트가 없습니다.' });
-
-    const ev = db.getEvent(event);
-    const participants = db.getParticipants(event);
-    const teamCount = ev.teamCount || 2;
-
-    const teams = {};
-    for (let i = 1; i <= teamCount; i++) teams[i] = [];
-    const unassigned = [];
-    for (const p of participants) {
-        if (p.team_num && teams[p.team_num]) teams[p.team_num].push(p);
-        else unassigned.push(p);
-    }
-
     try {
-        const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
-
-        const channel = await discordClient.channels.fetch(ev.channelId).catch(() => null);
-        if (!channel) return res.status(404).json({ error: '채널을 찾을 수 없습니다.' });
-
-        // 이미지 카드 전송 (canvas 설치된 경우)
-        if (generateResultCard) {
-            try {
-                const imgBuf = await generateResultCard(teams, teamCount, participants.length);
-                const file   = new AttachmentBuilder(imgBuf, { name: 'teams.png' });
-                const embed  = new EmbedBuilder()
-                    .setColor(0xFF0000)
-                    .setImage('attachment://teams.png')
-                    .setFooter({ text: `총 ${participants.length}명` })
-                    .setTimestamp();
-                if (unassigned.length) {
-                    embed.addFields({ name: '❓ 미배정', value: unassigned.map(p => p.discord_nickname).join(', ') });
-                }
-                await channel.send({ embeds: [embed], files: [file] });
-                return res.json({ success: true });
-            } catch (imgErr) {
-                console.error('[result-card] 이미지 생성 실패, 텍스트 폴백:', imgErr.message);
-            }
-        }
-
-        // 폴백: 텍스트 임베드
-        const embed = new EmbedBuilder()
-            .setTitle('🎲 팀 배정 결과')
-            .setColor(0xFF0000)
-            .setFooter({ text: `총 ${participants.length}명` })
-            .setTimestamp();
-
-        const TIER_EMOJI_MAP = {'언랭크':'⬜','아이언':'🔩','브론즈':'🥉','실버':'🥈','골드':'🥇','플래티넘':'💎','다이아몬드':'💠','메테오라이트':'☄️','미스릴':'✨','데미갓':'⚔️','이터니티':'👑'};
-        for (let i = 1; i <= teamCount; i++) {
-            const team = teams[i];
-            if (!team.length) continue;
-            const lines = team.map(p => {
-                const tier = p.tier ? ` ${TIER_EMOJI_MAP[p.tier]||''}${p.tier}` : '';
-                const pos  = p.position ? `\n└ ${POS_EMOJI[p.position]||''}${p.position}` : '';
-                return `**${p.discord_nickname}**${tier} (${p.ingame_nickname})${pos}`;
-            });
-            embed.addFields({ name: `${TEAM_EMOJIS[i-1]} ${TEAM_NAMES[i-1]} (${team.length}명)`, value: lines.join('\n\n'), inline: true });
-        }
-        if (unassigned.length) {
-            embed.addFields({ name: '❓ 미배정', value: unassigned.map(p => p.discord_nickname).join(', '), inline: false });
-        }
-        await channel.send({ embeds: [embed] });
-        res.json({ success: true });
+        const r = await teamAnnounce.announce(event, { dryRun: !!dryRun, expectSignature, allowNew: !!allowNew, client: discordClient });
+        res.status(r.status).json(r.body);
     } catch (e) {
-        console.error(e);
+        console.error('[team-announce]', e);
         res.status(500).json({ error: '전송 실패: ' + e.message });
     }
 });

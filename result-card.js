@@ -134,6 +134,27 @@ function roundedRect(ctx, x, y, w, h, r, topOnly = false) {
     ctx.closePath();
 }
 
+// ── 티어 엠블럼 (팀 배정 결과 카드 · 팀 구성 공지 카드 공용) ──
+// 받아 오다가 멈추면 공지 전체가 멈추므로 기다리는 시간을 제한한다. 실패하면 null (그 참가자만 글자로 대신한다)
+// 순간적인 네트워크 오류로 한 번 실패하면 잠깐 쉬고 한 번 더 받아 본다
+function loadTierEmblem(tier, timeoutMs = 8000) {
+    if (!tier || !TIER_URLS[tier]) return Promise.resolve(null);
+    const key = `tier_${tier}`;
+    const attempt = async () => (await cachedImg(key, TIER_URLS[tier]))
+        ?? (await new Promise(r => setTimeout(r, 400)), await cachedImg(key, TIER_URLS[tier]));
+    return Promise.race([attempt(), new Promise(r => setTimeout(() => r(null), timeoutMs))]);
+}
+// 봇이 켜질 때 엠블럼을 미리 받아 둔다 — 재시작 직후 첫 공지에서 엠블럼이 빠지지 않게 (실패해도 공지할 때 다시 받는다)
+initPromise.then(() => Promise.all(Object.keys(TIER_URLS).map(t => loadTierEmblem(t)))).catch(() => {});
+// 높이 h로 그릴 때의 폭 (원본 비율 유지)
+const tierEmblemWidth = (img, h) => Math.round(h * img.width / img.height);
+// 왼쪽 x, 세로 가운데 mid에 높이 h로 그린다 (원본 비율 유지). 그린 폭을 돌려준다
+function drawTierEmblem(ctx, img, x, mid, h) {
+    const w = tierEmblemWidth(img, h);
+    ctx.drawImage(img, x, mid - h / 2, w, h);
+    return w;
+}
+
 async function generateResultCard(teamMap, teamCount, totalCount) {
     await initPromise;
 
@@ -208,13 +229,10 @@ async function generateResultCard(teamMap, teamCount, totalCount) {
 
             // 티어 아이콘 먼저 그려서 닉네임 maxW 계산에 반영
             let tierW = 0;
-            if (p.tier && TIER_URLS[p.tier]) {
-                const tierImg = await cachedImg(`tier_${p.tier}`, TIER_URLS[p.tier]);
-                if (tierImg) {
-                    const tierH = ROW_H - 10;
-                    tierW = Math.round(tierH * tierImg.width / tierImg.height);
-                    ctx.drawImage(tierImg, cx + CARD_W - tierW - 10, mid - tierH / 2, tierW, tierH);
-                }
+            const tierImg = await loadTierEmblem(p.tier);
+            if (tierImg) {
+                const tierH = ROW_H - 10;
+                tierW = drawTierEmblem(ctx, tierImg, cx + CARD_W - tierEmblemWidth(tierImg, tierH) - 10, mid, tierH);
             }
 
             ctx.fillStyle = '#e0e0f0';
@@ -476,6 +494,130 @@ async function generateCharPoolCard(title, groups) {
     return canvas.toBuffer('image/png');
 }
 
+// ---------------------------------------------------------------------------
+// 팀 구성 공지 카드 — 팀 배정 결과에서 이름(왼쪽)과 티어 엠블럼(오른쪽)만 크게 보여준다
+// teams: [{ teamNum, members: [{ name, tier }] }]
+//   - 티어 엠블럼은 모두 같은 높이로, 원본 비율 그대로 그린다 (팀 배정 결과 카드와 같은 drawTierEmblem)
+//   - 티어가 없으면 '티어 미설정', 엠블럼이 없는 티어(언랭크)나 엠블럼을 받지 못한 참가자는 티어 이름을 글자로 쓴다
+// 팀이 2·4·6·8팀이어도 이름과 엠블럼이 겹치거나 잘리지 않도록 가장 긴 이름에 맞춰 카드 폭을 정한다
+// opts: { total, title, loadEmblem(tier) — 테스트에서 엠블럼 로딩 실패를 흉내 낼 때,
+//         report — 넘기면 report.missingEmblems에 엠블럼을 받지 못해 글자로 대신한 티어 목록을 채운다 }
+// ---------------------------------------------------------------------------
+const UNSET_TIER_LABEL = '티어 미설정';
+
+async function generateTeamRosterCard(teams, opts = {}) {
+    await initPromise;
+    const F = fontLoaded ? '"CardFont",sans-serif' : 'sans-serif';
+
+    const PAD = 28, GAP = 20, TITLE_H = 116, HDR_H = 62, ROW_H = 78, ROW_PAD = 18, NAME_GAP = 28;
+    const EMBLEM_H = 66;                                   // 모든 엠블럼의 높이 (원본 290×370 → 폭 52)
+    const NAME_FONT = 27, MIN_NAME_FONT = 18, TIER_FONT = 21;
+    const MIN_CARD_W = 400, MAX_CARD_W = 660;
+
+    const n = Math.max(teams.length, 1);
+    // 기존 팀 배정 이미지처럼 최대 2열 — 가로로 길어지면 휴대폰 디스코드에서 글자가 너무 작아진다 (6팀 3줄, 8팀 4줄)
+    const COLS = Math.min(n, 2);
+    const ROWS = Math.ceil(n / COLS);
+    const total = opts.total ?? teams.reduce((s, t) => s + t.members.length, 0);
+
+    // 엠블럼은 미리 한 번에 받아 둔다. 못 받은 티어는 null → 그 참가자만 티어 이름 글자로 대신한다
+    const loadEmblem = opts.loadEmblem ?? loadTierEmblem;
+    const emblems = new Map();
+    // 엠블럼이 없는 티어(언랭크)는 받지 않는다 → 글자로 표시
+    const tiers = [...new Set(teams.flatMap(t => t.members.map(m => m.tier)).filter(t => t && TIER_URLS[t]))];
+    await Promise.all(tiers.map(async t => emblems.set(t, await Promise.resolve().then(() => loadEmblem(t)).catch(() => null))));
+    if (opts.report) opts.report.missingEmblems = tiers.filter(t => !emblems.get(t));
+
+    // 참가자마다 오른쪽 칸에 들어갈 것: 엠블럼 이미지 또는 글자
+    const slotOf = m => {
+        const img = m.tier ? emblems.get(m.tier) : null;
+        return img ? { img } : { text: m.tier || UNSET_TIER_LABEL, muted: !m.tier };
+    };
+
+    // 글자 폭을 먼저 재서 오른쪽 칸 폭과 카드 폭을 정한다
+    const probe = createCanvas(10, 10).getContext('2d');
+    probe.font = `bold ${NAME_FONT}px ${F}`;
+    const maxNameW = Math.max(0, ...teams.flatMap(t => t.members.map(m => probe.measureText(m.name).width)));
+    probe.font = `${TIER_FONT}px ${F}`;
+    const slotW = s => s.img ? tierEmblemWidth(s.img, EMBLEM_H) : probe.measureText(s.text).width;
+    const TIER_W = Math.ceil(Math.max(tierEmblemWidth({ width: 290, height: 370 }, EMBLEM_H),
+        ...teams.flatMap(t => t.members.map(m => slotW(slotOf(m))))));
+    const CARD_W = Math.round(Math.min(MAX_CARD_W, Math.max(MIN_CARD_W, ROW_PAD + maxNameW + NAME_GAP + TIER_W + ROW_PAD)));
+    const nameMaxW = CARD_W - ROW_PAD * 2 - NAME_GAP - TIER_W;   // 이름은 이 폭을 넘지 않으므로 엠블럼과 겹치지 않는다
+
+    const maxMembers = Math.max(1, ...teams.map(t => t.members.length));
+    const CARD_H = HDR_H + ROW_H * maxMembers + 10;
+    const W = PAD * 2 + COLS * CARD_W + (COLS - 1) * GAP;
+    const H = TITLE_H + ROWS * CARD_H + (ROWS - 1) * GAP + PAD;
+
+    const canvas = createCanvas(W, H);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f0f1a';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#e0e0f0';
+    ctx.font = `bold 40px ${F}`;
+    ctx.fillText(opts.title || '팀 구성 결과', PAD, 60);
+    ctx.fillStyle = '#8888aa';
+    ctx.font = `22px ${F}`;
+    ctx.fillText(`${teams.length}팀 · 총 ${total}명`, PAD, 90);
+
+    // 이름이 길면 글자를 조금씩 줄이고, 최소 크기에서도 넘칠 때만 말줄임표를 붙인다
+    const drawName = (text, x, y) => {
+        for (let size = NAME_FONT; size >= MIN_NAME_FONT; size--) {
+            ctx.font = `bold ${size}px ${F}`;
+            if (ctx.measureText(text).width <= nameMaxW) { ctx.fillText(text, x, y); return; }
+        }
+        ctx.fillText(fitText(ctx, text, nameMaxW), x, y);
+    };
+
+    teams.forEach((team, idx) => {
+        const col = idx % COLS, row = Math.floor(idx / COLS);
+        const cx = PAD + col * (CARD_W + GAP);
+        const cy = TITLE_H + row * (CARD_H + GAP);
+        const color = TEAM_COLORS[(team.teamNum - 1) % TEAM_COLORS.length];
+
+        ctx.fillStyle = '#1a1a2e';
+        roundedRect(ctx, cx, cy, CARD_W, CARD_H, 12); ctx.fill();
+        ctx.fillStyle = color;
+        roundedRect(ctx, cx, cy, CARD_W, HDR_H, 12, true); ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold 30px ${F}`;
+        const label = `${team.teamNum}팀`;
+        ctx.fillText(label, cx + ROW_PAD, cy + 42);
+        const lw = ctx.measureText(label).width;
+        ctx.font = `22px ${F}`;
+        ctx.fillText(`${team.members.length}명`, cx + ROW_PAD + lw + 12, cy + 41);
+
+        team.members.forEach((m, i) => {
+            const ry = cy + HDR_H + i * ROW_H;
+            const mid = ry + ROW_H / 2;
+            if (i % 2 === 1) {
+                ctx.fillStyle = 'rgba(255,255,255,0.045)';
+                ctx.fillRect(cx, ry, CARD_W, ROW_H);
+            }
+            ctx.fillStyle = '#f0f0ff';
+            drawName(m.name, cx + ROW_PAD, mid + 9);
+
+            // 오른쪽 칸: 모든 줄이 같은 칸의 가운데에 엠블럼(또는 글자)을 놓아 세로로 가지런하다
+            const slotX = cx + CARD_W - ROW_PAD - TIER_W;
+            const s = slotOf(m);
+            if (s.img) {
+                drawTierEmblem(ctx, s.img, slotX + (TIER_W - tierEmblemWidth(s.img, EMBLEM_H)) / 2, mid, EMBLEM_H);
+            } else {
+                ctx.font = `${TIER_FONT}px ${F}`;
+                ctx.fillStyle = s.muted ? '#6f6f8a' : '#d6d6ea';
+                ctx.textAlign = 'center';
+                ctx.fillText(s.text, slotX + TIER_W / 2, mid + 8);
+                ctx.textAlign = 'left';
+            }
+        });
+    });
+
+    return canvas.toBuffer('image/png');
+}
+
 // 다른 카드 모듈(gentleman-card 등)이 폰트·이미지 캐시·그리기 유틸을 재사용할 수 있도록 함께 내보낸다
 async function fontFamily() {
     await initPromise;
@@ -485,6 +627,6 @@ async function fontFamily() {
 function peekImg(key) { return imgCache.get(key) ?? null; }
 
 module.exports = {
-    generateResultCard, generateBracketCard, generateCharPoolCard,
+    generateResultCard, generateBracketCard, generateCharPoolCard, generateTeamRosterCard, UNSET_TIER_LABEL, TIER_URLS, loadTierEmblem,
     fontFamily, cachedImg, peekImg, fitText, roundedRect, TEAM_COLORS,
 };

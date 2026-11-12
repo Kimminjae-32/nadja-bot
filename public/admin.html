@@ -164,6 +164,28 @@
         .gm-modal-btns{display:flex;gap:.4rem;justify-content:flex-end;flex-wrap:wrap;}
         .gm-modal.wide{max-width:46rem;}
 
+        /* 팀 구성 공지 */
+        .ta-box{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:.2rem 0 .9rem;}
+        .ta-status{font-size:.78rem;color:var(--muted);}
+        .ta-status.ok{color:var(--green);}
+        .ta-stale{display:flex;align-items:center;gap:.5rem;margin:-.4rem 0 .9rem;padding:.55rem .75rem;border-radius:8px;
+            background:rgba(241,196,15,.1);border:1px solid #f1c40f;color:#f1c40f;font-size:.82rem;font-weight:600;}
+        .ta-modal-body{max-height:min(62vh,640px);overflow:auto;margin:.2rem 0 .8rem;}
+        .ta-notes{list-style:none;margin:0 0 .7rem;padding:0;font-size:.8rem;color:var(--muted);line-height:1.6;}
+        .ta-notes li.warn{color:#f1c40f;}
+        .ta-preview{background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:.4rem;text-align:center;}
+        .ta-preview img{max-width:100%;height:auto;display:block;margin:0 auto;border-radius:6px;}
+        .ta-text-teams{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.5rem;text-align:left;}
+        .ta-text-teams div{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:.45rem .6rem;font-size:.8rem;}
+        .ta-msg{font-size:.84rem;margin:0 0 .7rem;line-height:1.5;}
+        .ta-msg.err{color:var(--accent);}
+        .ta-msg.ok{color:var(--green);font-weight:700;}
+        .ta-msg.warn{color:#f1c40f;}
+        .ta-spin{display:inline-block;width:.85em;height:.85em;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+            border-radius:50%;animation:taSpin .7s linear infinite;vertical-align:-.1em;margin-right:.35rem;}
+        @keyframes taSpin{to{transform:rotate(360deg);}}
+        @media(max-width:560px){ .gm-modal-btns .btn{flex:1;} .ta-modal-body{max-height:58vh;} }
+
         /* 실험체 고르는 창 */
         .pick-current{font-size:.84rem;color:var(--muted);margin:.1rem 0 .7rem;}
         .pick-current b{color:var(--text);}
@@ -363,6 +385,12 @@
                 <button class="btn btn-primary btn-sm" id="tp-random">랜덤 배정</button>
                 <button class="btn btn-secondary btn-sm" id="tp-tier">티어 균형 배정</button>
             </div>
+            <!-- 팀 구성 공지: 팀원 이름과 티어를 모집 채널에 이미지로 알린다 -->
+            <div class="ta-box">
+                <button class="btn btn-success btn-sm" id="ta-btn">팀 구성 공지</button>
+                <span class="ta-status" id="ta-status"></span>
+            </div>
+            <div class="ta-stale" id="ta-stale" style="display:none">팀 구성이 변경되었습니다. 최신 결과를 다시 공지해 주세요.</div>
             <div class="tp-roster-head">
                 <strong style="font-size:.88rem">실제 참가자 선택</strong>
                 <span class="tp-mode" id="tp-selected"></span>
@@ -892,6 +920,7 @@ async function changeTier(cancelToken, tier){
     if(p) p.tier = data.tier || null;
     renderTable();
     renderTeams();
+    refreshTeamPlan();                   // 공지 뒤 티어를 고쳤으면 '다시 공지' 안내가 바로 뜨게 한다
     toast('티어가 변경됐어요');
 }
 
@@ -1048,8 +1077,130 @@ function renderTeamPanel(){
     document.getElementById('tp-random').disabled = blocked;
     document.getElementById('tp-tier').disabled = blocked;
 
+    renderAnnounceStatus(d.announce);
     renderRoster();
 }
+
+// ── 팀 구성 공지 ──
+// 미리 보기 → 확인 → 전송(예전 공지가 있으면 그 메시지를 고친다). 서버 규칙은 team-announce.js
+let taSending = false;        // 전송 중에는 창을 닫거나 다시 누를 수 없다
+let taPreview = null;         // 마지막 미리 보기 (보낼 때 이 구성과 같은지 서버가 확인한다)
+
+function renderAnnounceStatus(a){
+    const btn = document.getElementById('ta-btn');
+    const st  = document.getElementById('ta-status');
+    const stale = document.getElementById('ta-stale');
+    if(!btn || !a) return;
+    if(!taSending) btn.disabled = !!a.problem;
+    btn.title = a.problem || '팀원 이름과 티어를 디스코드 모집 채널에 공지합니다';
+    stale.style.display = a.stale ? '' : 'none';
+    if(a.problem){ st.className = 'ta-status'; st.textContent = a.problem; return; }
+    if(a.announced){
+        const t = a.at ? new Date(a.at) : null;
+        const hm = t ? `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}` : '';
+        st.className = 'ta-status' + (a.stale ? '' : ' ok');
+        st.textContent = a.stale ? `${hm} 공지 이후 바뀐 내용이 있어요` : `${hm} 공지함 · 최신 구성`;
+    } else {
+        st.className = 'ta-status';
+        st.textContent = '아직 공지하지 않았어요';
+    }
+}
+
+function taSetBusy(on, label){
+    taSending = on;
+    const btn = document.getElementById('ta-btn');
+    btn.disabled = on || !!teamPlan?.announce?.problem;
+    btn.innerHTML = on ? `<span class="ta-spin"></span>${esc(label || '처리 중…')}` : '팀 구성 공지';
+}
+
+function taPreviewHTML(p){
+    const notes = [];
+    notes.push(`<li>${p.teams.length}팀 · 총 ${p.total}명을 공지합니다.</li>`);
+    if(p.excludedCount) notes.push(`<li>팀 미지정 ${p.excludedCount}명은 공지에 넣지 않아요.</li>`);
+    if(p.activeUnassignedCount) notes.push(`<li class="warn">실제 진행 인원 중 ${p.activeUnassignedCount}명이 아직 팀이 없어요. 팀 구성을 마쳤는지 확인해주세요.</li>`);
+    if(p.noTierCount) notes.push(`<li>티어가 없는 ${p.noTierCount}명은 '티어 미설정'으로 표시돼요.</li>`);
+    if(p.missingEmblems?.length) notes.push(`<li class="warn">${p.missingEmblems.map(esc).join(', ')} 엠블럼을 불러오지 못해 티어 이름 글자로 표시돼요. 취소한 뒤 다시 누르면 엠블럼을 다시 받아 옵니다.</li>`);
+    if(p.mode === 'edit') notes.push(`<li>이미 올린 팀 구성 공지를 이 내용으로 고칩니다. 새 메시지는 올라가지 않아요.${p.unchanged?' (지난 공지와 같은 구성)':''}</li>`);
+    if(p.mock) notes.push(`<li class="warn">테스트 모드 — 실제 디스코드 대신 Mock 보관함에 기록됩니다.</li>`);
+    const body = p.preview
+        ? `<img src="${p.preview}" alt="팀 구성 공지 미리 보기">`
+        : `<div class="ta-text-teams">${p.teams.map(t=>`<div><b>${t.teamNum}팀</b> (${t.members.length}명)<br>${t.members.map(m=>`${esc(m.name)} · ${esc(m.tier||'티어 미설정')}`).join('<br>')}</div>`).join('')}</div>`;
+    return `<h3>팀 구성 공지</h3>
+        <p class="gm-modal-sub">아래 내용을 디스코드 모집 채널에 ${p.mode==='edit'?'다시 공지':'공지'}할까요?</p>
+        <div class="ta-modal-body"><ul class="ta-notes">${notes.join('')}</ul><div class="ta-preview">${body}</div></div>
+        <div class="ta-msg" id="ta-msg"></div>
+        <div class="gm-modal-btns">
+            <button class="btn btn-secondary btn-sm" id="ta-cancel" onclick="closeGmModal()">취소</button>
+            <button class="btn btn-success btn-sm" id="ta-confirm" onclick="taSend(false)">${p.mode==='edit'?'공지 갱신하기':'공지하기'}</button>
+        </div>`;
+}
+
+async function openTeamAnnounce(){
+    if(taSending) return;
+    const problem = teamPlan?.announce?.problem;
+    if(problem){ toast(problem, true); return; }
+    taSetBusy(true, '미리 보기 준비 중…');
+    let p;
+    try { p = await api('/api/admin/send-discord', { event:EVENT, token:TOKEN, dryRun:true }); }
+    catch { p = { error:'서버에 연결하지 못했어요.' }; }
+    taSetBusy(false);
+    if(p.error){ toast(p.error, true); return; }
+    taPreview = p;
+    openGmModal(taPreviewHTML(p), 'wide');
+}
+
+function taMsg(kind, html){
+    const el = document.getElementById('ta-msg');
+    if(el){ el.className = 'ta-msg ' + kind; el.innerHTML = html; }
+}
+
+async function taSend(allowNew){
+    if(taSending || !taPreview) return;
+    const confirmBtn = document.getElementById('ta-confirm');
+    const cancelBtn  = document.getElementById('ta-cancel');
+    taSetBusy(true, '공지 보내는 중…');
+    if(confirmBtn){ confirmBtn.disabled = true; confirmBtn.innerHTML = '<span class="ta-spin"></span>전송 중…'; }
+    if(cancelBtn) cancelBtn.disabled = true;
+    taMsg('', '');
+    let r;
+    try {
+        const res = await fetch('/api/admin/send-discord', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ event:EVENT, token:TOKEN, expectSignature: taPreview.signature, allowNew: !!allowNew }) });
+        r = await res.json().catch(()=>({ error:`서버 응답을 읽지 못했어요. (${res.status})` }));
+    } catch { r = { error:'서버에 연결하지 못했어요. 인터넷 연결을 확인해주세요.' }; }
+    taSetBusy(false);
+    if(cancelBtn) cancelBtn.disabled = false;
+    const restore = label => { if(confirmBtn){ confirmBtn.disabled = false; confirmBtn.textContent = label; } };
+
+    if(r.success){
+        if(teamPlan && r.announce){ teamPlan.announce = r.announce; renderAnnounceStatus(r.announce); }
+        const what = r.edited ? '기존 팀 구성 공지를 최신 구성으로 고쳤어요.'
+                   : r.replaced ? '기존 공지를 고칠 수 없어서 새 공지를 올렸어요.'
+                   : '디스코드에 팀 구성을 공지했어요.';
+        document.getElementById('gm-modal').innerHTML = `<h3>팀 구성 공지</h3>
+            <p class="ta-msg ok">✅ ${what}</p>
+            <p class="gm-modal-sub">${r.teamCount}팀 · 총 ${r.total}명${r.mock?' · 테스트 모드(Mock 보관함에 기록됨)':''}</p>
+            <div class="gm-modal-btns"><button class="btn btn-success btn-sm" onclick="closeGmModal()">확인</button></div>`;
+        toast(r.edited ? '팀 구성 공지를 갱신했어요' : '팀 구성을 공지했어요');
+        refreshTeamPlan();
+        return;
+    }
+    if(r.needsNew){
+        taMsg('warn', `${esc(r.error)}<br>예전 공지가 지워졌거나 봇이 고칠 수 없는 상태예요. 새 공지 메시지로 보낼까요?`);
+        if(confirmBtn){ confirmBtn.disabled = false; confirmBtn.textContent = '새 공지로 보내기'; confirmBtn.onclick = () => taSend(true); }
+        return;
+    }
+    if(r.changed){
+        taMsg('err', esc(r.error));
+        if(confirmBtn){ confirmBtn.disabled = false; confirmBtn.textContent = '다시 미리 보기'; confirmBtn.onclick = () => { closeGmModal(); openTeamAnnounce(); }; }
+        refreshTeamPlan();
+        return;
+    }
+    taMsg('err', `전송 실패: ${esc(r.error || '알 수 없는 오류')}`);
+    restore('다시 시도');
+}
+
+document.getElementById('ta-btn').addEventListener('click', openTeamAnnounce);
 
 function renderRoster(force){
     const box = document.getElementById('tp-roster');
@@ -1344,7 +1495,10 @@ function openGmModal(html, size){
     box.innerHTML = html;
     mask.classList.add('on');
 }
-function closeGmModal(){ document.getElementById('gm-modal-mask')?.classList.remove('on'); }
+function closeGmModal(){
+    if (typeof taSending !== 'undefined' && taSending) return;   // 팀 구성 공지를 보내는 동안에는 닫지 않는다
+    document.getElementById('gm-modal-mask')?.classList.remove('on');
+}
 
 // ── 실험체 배정 수정 ────────────────────────────────
 // 배정받은 실험체를 보유하지 않아 못 쓰는 참가자를 위한 관리자 전용 기능이다.
@@ -2090,16 +2244,8 @@ async function sendMatch(round, match){
     data.success ? toast('디스코드에 공지했어요!') : toast('전송 실패: '+data.error, true);
 }
 
-document.getElementById('send-btn').addEventListener('click', async ()=>{
-    const assigned = participants.filter(p=>p.team_num).length;
-    if(!assigned){ toast('팀 배정 먼저 해주세요!', true); return; }
-    if(!confirm('현재 팀 배정 결과를 디스코드 채널에 전송할까요?')) return;
-    const btn = document.getElementById('send-btn');
-    btn.disabled=true;
-    const data = await api('/api/admin/send-discord', { event:EVENT, token:TOKEN });
-    btn.disabled=false;
-    data.success ? toast('디스코드에 전송됐어요!') : toast('전송 실패: '+data.error, true);
-});
+// 상단 '디스코드에 결과 전송'도 같은 팀 구성 공지(미리 보기 · 갱신 · 중복 방지)를 쓴다
+document.getElementById('send-btn').addEventListener('click', openTeamAnnounce);
 
 // 모집 정원 조절 버튼
 document.getElementById('cap-minus').addEventListener('click', ()=>capStep(-1));
